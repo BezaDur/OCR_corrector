@@ -34,9 +34,13 @@ class EvaluatorTests(unittest.TestCase):
                                 _corrector=IdentityCorrector(), CANONICAL_METRICS=True), \
                     contextlib.redirect_stdout(io.StringIO()):
                 result = evaluator.process_single_page(str(gt))
-            self.assertEqual(result[:6], (3, 0, 0, 1, 0, 0))
-            self.assertGreaterEqual(result[6], 0)
-            self.assertEqual(result[7], 1)
+            self.assertEqual(result['canonical']['reference_characters'], 3)
+            self.assertEqual(result['canonical']['raw_character_errors'], 0)
+            self.assertEqual(result['strict']['raw_word_errors'], 1)
+            self.assertEqual(result['canonical']['clean_reference_tokens'], 1)
+            self.assertEqual(result['canonical']['damaged_clean_tokens'], 0)
+            self.assertGreaterEqual(result['correction_seconds'], 0)
+            self.assertEqual(result['input_tokens'], 1)
             self.assertEqual((Path(folder) / 'p.corr.txt').read_text(), 'ቤት።\n')
 
     def test_worker_uses_same_configuration(self):
@@ -50,6 +54,39 @@ class EvaluatorTests(unittest.TestCase):
             constructor.assert_called_once_with(kenlm_path='lm', confusion_matrix_path='matrix',
                                                 dict_vocab_path='dict', **options)
             self.assertTrue(evaluator.CANONICAL_METRICS)
+
+    def test_expected_page_count_checked_before_model_load(self):
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / 'p.gt.txt').write_text('ቤት')
+            with patch.multiple(evaluator, GT_DIR=folder, CORRECTED_OUT_DIR=folder, EXPECTED_PAGES=150), \
+                    patch.object(evaluator, 'build_corrector') as build:
+                with self.assertRaises(ValueError):
+                    evaluator.main()
+                build.assert_not_called()
+
+    def test_complete_run_and_damage_gate(self):
+        import json
+        from types import SimpleNamespace
+        class DamagingCorrector(IdentityCorrector):
+            def correct_text_block(self, text):
+                return 'ግብጽ'
+            _generate_candidates_cached = SimpleNamespace(cache_info=lambda: {})
+            _validate_morphology_cached = SimpleNamespace(cache_info=lambda: {})
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / 'p.gt.txt').write_text('ቤት')
+            (Path(folder) / 'p.ocr.txt').write_text('ቤት')
+            report_path = Path(folder) / 'report.json'
+            with patch.multiple(evaluator, GT_DIR=folder, RAW_OCR_DIR=folder,
+                                CORRECTED_OUT_DIR=str(Path(folder) / 'corrected'), EXPECTED_PAGES=1, USE_MP=False,
+                                JSON_REPORT=str(report_path), MAX_DAMAGE_RATE=0,
+                                CANONICAL_METRICS=True, _corrector=None), \
+                    patch.object(evaluator, 'build_corrector', return_value=DamagingCorrector()), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaisesRegex(RuntimeError, 'damage gate failed'):
+                    evaluator.main()
+            report = json.loads(report_path.read_text())
+            self.assertEqual(report['completed_pages'], 1)
+            self.assertEqual(report['metrics']['canonical']['rates']['clean_token_damage_rate_upper'], 100)
 
     def test_missing_raw_fails(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(evaluator, 'RAW_OCR_DIR', folder):
