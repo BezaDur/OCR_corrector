@@ -17,7 +17,7 @@ Small candidate-generation probes used the real confusion JSON and a tiny trie, 
 5. Each line is normalized and split on whitespace; outer punctuation is peeled and selected combining marks are removed.
 6. Frequent words bypass search. Other words get weighted trie candidates, plus an authenticated prefix repair and a trailing-character removal heuristic. The observed word is normally retained at zero cost.
 7. A left-to-right beam combines KenLM, optical cost, boolean morphology reward, and an observed-word anchor bonus.
-8. `04_evaluate_full_corrector.py` calculates raw/corrected CER and WER. `05_collect_error_cases.py` attempts to classify residual errors. `12_audit_raw_ocr_sentences.py` separately canonicalizes punctuation before a raw-OCR audit.
+8. `04_evaluate_full_corrector.py` calculates raw/corrected CER and WER. `05_collect_error_cases.py` classifies residual correction decisions from exact word alignments (see `docs/decision_audit.md`). `12_audit_raw_ocr_sentences.py` separately canonicalizes punctuation before a raw-OCR audit.
 
 **Good foundations:** directional confusion costs; always retaining the observed token; separating punctuation from lexical LM input; caching candidate sets; and a conservative bias toward keeping recognized words. Keep these ideas.
 
@@ -122,8 +122,8 @@ The prefix rule returns early without applying the ordinary candidate limit or o
 
 ## Evaluation issues to fix before claiming improvement
 
-- **Dataset mismatch:** scripts 03/04 use `ocr_new_model`; script 05 and several upstream diagnostics use `ocr_pred`. Reports may compare different OCR model generations.
-- **Raw-token misalignment:** script 05 estimates raw slices by proportional position in the gold page. A split, merge, dropped line, or earlier insertion shifts everything. Its 884 over-corrections and 2,363 segmentation cases are reported classifications, not trustworthy exact event counts.
+- **Dataset mismatch:** scripts 03/04 use `ocr_new_model`; several upstream diagnostics still use `ocr_pred`. Reports may compare different OCR model generations. *Partially fixed:* script 05 now defaults to `ocr_new_model`; scripts 02/06 remain on `ocr_pred`.
+- **Raw-token misalignment:** *Fixed for script 05.* It previously estimated raw slices by proportional position in the gold page, so a split, merge, dropped line, or earlier insertion shifted everything; its 884 over-corrections and 2,363 segmentation cases (still committed as `error_summary_report.txt` / `failed_cases.tsv`) are reported classifications, not trustworthy exact event counts. Script 05 now uses the exact word-edit DP and abstains on shifted, boundary, and multi-token cases. See `docs/decision_audit.md`.
 - **Normalization mismatch:** evaluator 04 compares uncanonicalized text, while audit 12 canonicalizes punctuation. Many reported failures are `፡፡` → `።`, not lexical mistakes. Report strict and canonical metrics separately, using the same declared policy on gold, raw, and corrected text. Include CER with spaces to expose boundary errors, as well as the current no-whitespace CER.
 - **Alignment contamination:** the matrix builder zips replacement line blocks. A fused/dropped line can create many false character confusions. Use layout-aware matching or well-aligned text spans and inspect difficult alignments. `'-'` as a gap sentinel collides with real hyphens; use `None` or a unique sentinel.
 - **SequenceMatcher is not edit-distance DP:** audit 12's docstring promises DP, but the implementation uses SequenceMatcher. Its default popular-token heuristic can distort repetitive pages. Use an explicit alignment method appropriate to the desired metric/classification.

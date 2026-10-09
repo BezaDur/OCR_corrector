@@ -1,140 +1,118 @@
 #!/usr/bin/env python3
-"""
-Diagnostic Tool: Extracts, aligns, and categorizes all remaining OCR errors.
-Compares: Ground Truth vs. Raw Tesseract vs. Post-Corrector Output.
-"""
-
-import os
-import glob
-import difflib
+"""Alignment-derived decision audit; no KenLM or morphology required."""
+import argparse
 import collections
+import csv
+from dataclasses import asdict
+from pathlib import Path
 
-DATASET_DIR = "/media/des/Tess/Tesseract2/synthetic_eval"
-GT_DIR = os.path.join(DATASET_DIR, "ground_truth")
-RAW_OCR_DIR = os.path.join(DATASET_DIR, "ocr_pred")
-CORRECTED_DIR = os.path.join(DATASET_DIR, "ocr_corrected")
+from amharic_canonical_normalizer import normalize_for_metric
+from ocr_decision_audit import DECISION_STATUSES, audit_tokens
 
-OUTPUT_REPORT = "/media/des/Tess/Tesseract2/error_summary_report.txt"
-OUTPUT_TSV = "/media/des/Tess/Tesseract2/failed_cases.tsv"
+DATASET_DIR = Path('/media/des/Tess/Tesseract2/synthetic_eval')
 
 
-def align_word_sequences(gt_words, raw_words, corr_words):
+def align_three_way(gt_tokens, raw_tokens, corr_tokens):
+    """Compatibility wrapper returning focused five-field event tuples.
+
+    Unlike the old positional comparison, unresolved rows have explicit status
+    labels and unmatched tails are retained. Use audit_tokens for index/options
+    metadata or the CLI for full TSV output including true negatives.
     """
-    Aligns three word sequences using SequenceMatcher to detect exact
-    word replacements, uncorrected errors, and over-corrections.
-    """
-    sm = difflib.SequenceMatcher(None, gt_words, corr_words)
-    matches = []
-
-    for tag, i1, i2, j1, j2 in sm.get_opcodes():
-        if tag == "equal":
-            continue
-
-        gt_chunk = " ".join(gt_words[i1:i2])
-        corr_chunk = " ".join(corr_words[j1:j2])
-        # Find corresponding raw OCR slice using proportional index mapping
-        r_start = int((i1 / max(1, len(gt_words))) * len(raw_words))
-        r_end = max(r_start + 1, int((i2 / max(1, len(gt_words))) * len(raw_words)))
-        raw_chunk = " ".join(raw_words[r_start:r_end])
-
-        matches.append((gt_chunk, raw_chunk, corr_chunk))
-
-    return matches
+    return [(e.status, e.gold, e.raw, e.corrected, e.context)
+            for e in audit_tokens(gt_tokens, raw_tokens, corr_tokens)
+            if e.status != 'TRUE_NEGATIVE']
 
 
-def main():
-    gt_files = sorted(glob.glob(os.path.join(GT_DIR, "*.gt.txt")))
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--gt-dir', type=Path, default=DATASET_DIR / 'ground_truth')
+    parser.add_argument('--raw-dir', type=Path, default=DATASET_DIR / 'ocr_new_model')
+    parser.add_argument('--corrected-dir', type=Path, default=DATASET_DIR / 'ocr_corrected')
+    parser.add_argument('--output-tsv', type=Path, default=Path('benchmark_results/correction_decisions.tsv'))
+    parser.add_argument('--output-summary', type=Path, default=Path('benchmark_results/correction_patterns_report.txt'))
+    parser.add_argument('--normalization', choices=('strict', 'canonical'), default='strict')
+    parser.add_argument('--expected-pages', type=int)
+    parser.add_argument('--allow-missing', action='store_true', help='Skip missing pairs, reporting every skip')
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
+    args = parse_args(argv)
+    gt_files = sorted(args.gt_dir.glob('*.gt.txt'))
     if not gt_files:
-        print("Error: No Ground Truth files found.")
-        return
-
-    print(f"Analyzing errors across {len(gt_files)} pages...")
-
-    # Categories
-    unrepaired_errors = collections.defaultdict(int)  # OCR was wrong, corrector left it wrong
-    over_corrections = collections.defaultdict(int)   # OCR was right, corrector broke it
-    suboptimal_repairs = collections.defaultdict(int) # Corrector changed OCR, but to the wrong word
-    segmentation_errors = collections.defaultdict(int) # Spaces / word boundaries
-
-    total_error_instances = 0
-
-    tsv_out = open(OUTPUT_TSV, "w", encoding="utf-8")
-    tsv_out.write("PAGE\tTYPE\tGROUND_TRUTH\tRAW_OCR\tCORRECTED\n")
-
-    for gt_path in gt_files:
-        base_name = os.path.basename(gt_path).replace(".gt.txt", "")
-        raw_path = os.path.join(RAW_OCR_DIR, f"{base_name}.ocr.txt")
-        corr_path = os.path.join(CORRECTED_DIR, f"{base_name}.corr.txt")
-
-        if not (os.path.exists(raw_path) and os.path.exists(corr_path)):
-            continue
-
-        with open(gt_path, "r", encoding="utf-8") as f:
-            gt_words = f.read().strip().split()
-        with open(raw_path, "r", encoding="utf-8") as f:
-            raw_words = f.read().strip().split()
-        with open(corr_path, "r", encoding="utf-8") as f:
-            corr_words = f.read().strip().split()
-
-        diffs = align_word_sequences(gt_words, raw_words, corr_words)
-
-        for gt_tok, raw_tok, corr_tok in diffs:
-            total_error_instances += 1
-
-            # Detect space segmentation errors
-            if " " in gt_tok or " " in raw_tok or " " in corr_tok:
-                err_type = "SEGMENTATION_SPACE"
-                segmentation_errors[(gt_tok, raw_tok, corr_tok)] += 1
-            # Detect over-corrections (OCR was already correct, but corrector changed it)
-            elif gt_tok == raw_tok and corr_tok != gt_tok:
-                err_type = "OVER_CORRECTION"
-                over_corrections[(gt_tok, corr_tok)] += 1
-            # Detect uncorrected slips (OCR was wrong, corrector changed nothing)
-            elif raw_tok == corr_tok and corr_tok != gt_tok:
-                err_type = "UNREPAIRED_TYPO"
-                unrepaired_errors[(gt_tok, raw_tok)] += 1
-            # Sub-optimal repair (corrector changed OCR, but didn't reach Gold)
-            else:
-                err_type = "SUBOPTIMAL_REPAIR"
-                suboptimal_repairs[(gt_tok, raw_tok, corr_tok)] += 1
-
-            tsv_out.write(f"{base_name}\t{err_type}\t{gt_tok}\t{raw_tok}\t{corr_tok}\n")
-
-    tsv_out.close()
-
-    # Generate Human-Readable Diagnostic Summary
-    with open(OUTPUT_REPORT, "w", encoding="utf-8") as f:
-        f.write("=====================================================\n")
-        f.write("      AMHARIC OCR POST-CORRECTION FAILURE AUDIT       \n")
-        f.write("=====================================================\n")
-        f.write(f"Total Failed Word Alignments: {total_error_instances:,}\n")
-        f.write(f"  • Unrepaired Typos:         {sum(unrepaired_errors.values()):,}\n")
-        f.write(f"  • Space/Segmentation Errors: {sum(segmentation_errors.values()):,}\n")
-        f.write(f"  • Suboptimal Repairs:       {sum(suboptimal_repairs.values()):,}\n")
-        f.write(f"  • Over-Corrections:         {sum(over_corrections.values()):,}\n\n")
-
-        f.write("-" * 55 + "\n")
-        f.write("TOP 25 UNREPAIRED TYPOS (Gold -> OCR Saw / Left Intact)\n")
-        f.write("-" * 55 + "\n")
-        for (g, r), cnt in sorted(unrepaired_errors.items(), key=lambda x: x[1], reverse=True)[:25]:
-            f.write(f"{cnt:4d}x | Gold: '{g}'  <--  Left As: '{r}'\n")
-
-        f.write("\n" + "-" * 55 + "\n")
-        f.write("TOP 25 WORD BOUNDARY & SPACE ERRORS\n")
-        f.write("-" * 55 + "\n")
-        for (g, r, c), cnt in sorted(segmentation_errors.items(), key=lambda x: x[1], reverse=True)[:25]:
-            f.write(f"{cnt:4d}x | Gold: '{g}' | Raw: '{r}' | Got: '{c}'\n")
-
-        f.write("\n" + "-" * 55 + "\n")
-        f.write("TOP 20 OVER-CORRECTIONS (Raw OCR Was Correct, Corrector Broke It)\n")
-        f.write("-" * 55 + "\n")
-        for (g, c), cnt in sorted(over_corrections.items(), key=lambda x: x[1], reverse=True)[:20]:
-            f.write(f"{cnt:4d}x | Gold: '{g}'  -->  Turned Into: '{c}'\n")
-
-    print("\nAudit Complete!")
-    print(f"Summary Report: {OUTPUT_REPORT}")
-    print(f"Detailed TSV:   {OUTPUT_TSV}")
+        raise ValueError(f'No ground truth files in {args.gt_dir}')
+    pages, missing = [], []
+    for gt in gt_files:
+        base = gt.name[:-len('.gt.txt')]
+        raw = args.raw_dir / (base + '.ocr.txt')
+        corrected = args.corrected_dir / (base + '.corr.txt')
+        if not raw.exists() or not corrected.exists():
+            missing.append(base)
+        else:
+            pages.append((base, gt, raw, corrected))
+    if missing and not args.allow_missing:
+        raise ValueError('Missing raw/corrected pairs: ' + ', '.join(missing))
+    if not pages:
+        raise ValueError('No complete page triples')
+    if args.expected_pages is not None and len(pages) != args.expected_pages:
+        raise ValueError(f'Expected {args.expected_pages} complete pages; found {len(pages)}')
+    # Do not allow accidental overwrites of source data or the TSV by summary.
+    outputs = {args.output_tsv.resolve(), args.output_summary.resolve()}
+    if len(outputs) != 2 or any(path.resolve() in outputs for _, *paths in pages for path in paths):
+        raise ValueError('Outputs must be distinct and must not overwrite input files')
+    for path in (args.output_tsv, args.output_summary):
+        path.parent.mkdir(parents=True, exist_ok=True)
+    stats = collections.Counter()
+    patterns = {status: collections.Counter() for status in DECISION_STATUSES if status != 'TRUE_NEGATIVE'}
+    token_counts = collections.Counter()
+    fields = ['PAGE', 'STATUS', 'GOLD_INDEX', 'RAW_INDEX', 'CORRECTED_INDEX',
+              'GROUND_TRUTH', 'RAW_OCR', 'CORRECTED', 'CONTEXT', 'RAW_OPTIONS', 'CORRECTED_OPTIONS']
+    with args.output_tsv.open('w', encoding='utf-8', newline='') as handle:
+        writer = csv.writer(handle, delimiter='\t')
+        writer.writerow(fields)
+        for base, *paths in pages:
+            texts = [path.read_text(encoding='utf-8') for path in paths]
+            if args.normalization == 'canonical':
+                texts = [normalize_for_metric(text) for text in texts]
+            tokens = [text.split() for text in texts]
+            for name, words in zip(('gold', 'raw', 'corrected'), tokens):
+                token_counts[name] += len(words)
+            for event in audit_tokens(*tokens):
+                stats[event.status] += 1
+                writer.writerow([base, *asdict(event).values()])
+                if event.status in patterns:
+                    patterns[event.status][(event.gold, event.raw, event.corrected)] += 1
+    lines = [
+        'AMHARIC OCR ALIGNMENT-DERIVED DECISION AUDIT',
+        f'Normalization: {args.normalization}',
+        f'Complete pages: {len(pages)}; skipped missing pairs: {len(missing)}',
+        'Missing pages: ' + (', '.join(missing) or 'none'),
+        f"Token totals: gold={token_counts['gold']}, raw={token_counts['raw']}, corrected={token_counts['corrected']}",
+        f'TSV rows (gold positions plus unmatched raw/corrected rows): {sum(stats.values())}',
+        'Indices/options are zero-based; <gap> denotes a missing token.',
+        'Only invariant one-to-one, cycle-consistent, isolated edits enter TP/FP/FN/flip counts.',
+        'DP objective: minimum word edits, then maximum exact matches.',
+        'Unresolved rows show representative tokens; consult mapping options, not just the token columns.',
+        'These are alignment-derived diagnostics, NOT causal edit provenance or corpus CER/WER.',
+        'Boundary/complex/ambiguous events remain in the TSV and are excluded from single-token counts.',
+        'RAW/CORRECTED_UNMATCHED rows can describe the same event; do not sum them as edit counts.',
+        '',
+    ]
+    for status in DECISION_STATUSES:
+        lines.append(f'{status:28s}: {stats[status]:,}')
+    for status in sorted(set(stats) - set(DECISION_STATUSES)):
+        lines.append(f'{status:28s}: {stats[status]:,}')
+    for status in ('FALSE_POSITIVE', 'TRUE_POSITIVE', 'FALSE_NEGATIVE', 'SUBOPTIMAL_FLIP'):
+        lines.extend(['', f'TOP 20 {status} PATTERNS (gold | raw | corrected)'])
+        for (g, r, c), count in patterns[status].most_common(20):
+            lines.append(f'{count:4d}x | Gold: {g!r} | Raw: {r!r} | Corrected: {c!r}')
+    summary = '\n'.join(lines) + '\n'
+    args.output_summary.write_text(summary, encoding='utf-8')
+    print(summary)
+    print(f'TSV: {args.output_tsv}\nSummary: {args.output_summary}')
+    return dict(stats)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
