@@ -46,6 +46,17 @@ def timed(call):
     return value, (time.perf_counter() - start) * 1000
 
 
+def timed_sentence(corrector, sentence):
+    before = corrector.morphology_stats()
+    output, elapsed = timed(lambda: corrector.correct_sentence(sentence))
+    after = corrector.morphology_stats()
+    delta = {key: after[key] - before[key] for key in
+             ('trusted_bypasses', 'segmenter_calls', 'segmenter_failures', 'segmenter_seconds')}
+    delta['cache_hits'] = after['cache']['hits'] - before['cache']['hits']
+    delta['cache_misses'] = after['cache']['misses'] - before['cache']['misses']
+    return output, elapsed, delta
+
+
 def peak_rss_mib():
     try:
         import resource
@@ -62,19 +73,23 @@ def run_benchmark(corrector, repeats=3):
     rows = []
     for sentence in TEST_SENTENCES:
         cold, warm = [], []
+        cold_morphology, warm_morphology = [], []
         checks = []
         outputs = []
         for _ in range(repeats):
             corrector.clear_caches()
-            output, elapsed = timed(lambda: corrector.correct_sentence(sentence))
+            output, elapsed, stats = timed_sentence(corrector, sentence)
             cold.append(elapsed)
+            cold_morphology.append(stats)
             checks.extend(check_targets(sentence, output))
             outputs.append(output)
-            warm_output, elapsed = timed(lambda: corrector.correct_sentence(sentence))
+            warm_output, elapsed, stats = timed_sentence(corrector, sentence)
             warm.append(elapsed)
+            warm_morphology.append(stats)
             checks.extend(check_targets(sentence, warm_output))
             outputs.append(warm_output)
         rows.append(dict(input=sentence, output=outputs[0], cold_ms=cold, warm_ms=warm,
+                         cold_morphology=cold_morphology, warm_morphology=warm_morphology,
                          cold_median_ms=statistics.median(cold), warm_median_ms=statistics.median(warm),
                          stable_output=len(set(outputs)) == 1, measured_outputs=outputs, checks=checks,
                          non_target_changes=[dict(position=i, before=before, after=after)
@@ -109,6 +124,8 @@ def main():
     parser.add_argument('--repeats', type=int, default=3)
     parser.add_argument('--max-optical-cost', type=float, default=4.0)
     parser.add_argument('--json-report', type=Path)
+    parser.add_argument('--trusted-long-word-frequency', type=int, default=1000)
+    parser.add_argument('--trusted-short-word-frequency', type=int, default=4000)
     parser.add_argument('--allow-no-morphology', action='store_true',
                         help='Allow a diagnostic run without morphology (not a full Phase A validation)')
     args = parser.parse_args()
@@ -119,7 +136,9 @@ def main():
             parser.error(f'Missing model/data file: {path}')
     options = dict(beam_width=4, lambda_optical=1.0, lambda_lm=1.8, lambda_morph=1.5,
                    candidate_backend=args.backend, symspell_max_edit_distance=args.symspell_distance,
-                   max_optical_cost=args.max_optical_cost)
+                   max_optical_cost=args.max_optical_cost,
+                   trusted_long_word_frequency=args.trusted_long_word_frequency,
+                   trusted_short_word_frequency=args.trusted_short_word_frequency)
     start = time.perf_counter()
     corrector = AmharicOCRCorrector(args.kenlm, args.confusion, args.dictionary, **options)
     initialization_seconds = time.perf_counter() - start
@@ -135,6 +154,15 @@ def main():
     for i, row in enumerate(report['sentences'], 1):
         print(f"Sentence {i}: cold median {row['cold_median_ms']:.2f}ms; "
               f"warm median {row['warm_median_ms']:.2f}ms")
+        print('Deep analyzer calls (cold/warm):',
+              [stats['segmenter_calls'] for stats in row['cold_morphology']], '/',
+              [stats['segmenter_calls'] for stats in row['warm_morphology']])
+        print('Deep analyzer ms (cold/warm):',
+              [round(stats['segmenter_seconds'] * 1000, 2) for stats in row['cold_morphology']], '/',
+              [round(stats['segmenter_seconds'] * 1000, 2) for stats in row['warm_morphology']])
+        print('Trusted dictionary bypasses (cold/warm):',
+              [stats['trusted_bypasses'] for stats in row['cold_morphology']], '/',
+              [stats['trusted_bypasses'] for stats in row['warm_morphology']])
         print('CORRECTED:', row['output'])
         if row['non_target_changes'] or row['token_count_changed']:
             print('REVIEW non-target changes:', row['non_target_changes'],

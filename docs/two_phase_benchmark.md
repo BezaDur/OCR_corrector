@@ -20,10 +20,11 @@ python test_page1_fixes.py --backend symspell --symspell-distance 1 --repeats 5 
   --json-report benchmark_results/phase_a_symspell.json
 ```
 
-Use separate processes so you do not keep two multi-million-word indexes in RAM or mix process high-water RSS. Both commands use identical beam/scoring settings: beam 4, optical ceiling 4.0, optical weight 1.0, LM weight 1.8, morphology weight 1.5.
+Use separate processes so you do not keep two multi-million-word indexes in RAM or mix process high-water RSS. Both commands use identical beam/scoring settings: beam 4, optical ceiling 4.0, optical weight 1.0, LM weight 1.8, morphology weight 1.5. Frequency trust defaults to > 1,000 for 4+ character words and > 4,000 for 2–3 character words (no one-character shortcut). Override both benchmarks consistently using `--trusted-long-word-frequency` and `--trusted-short-word-frequency`. Deep morphology caching defaults to 65,536 entries.
 
 The script:
 - Measures initialization, vocabulary size, and peak process RSS (where supported).
+- Records analyzer calls/time, failures, frequency-trust bypasses, and cache hits/misses separately for each cold/warm sentence. These snapshot deltas include morphology invoked during candidate generation and decoder scoring. The timer wraps analyzer execution plus tag handling, not the entire validation pipeline.
 - Clears application caches before each cold sentence repetition, then immediately measures a warm repetition. OS/model pages and analyzer-internal caches are **not** reset; this is not machine-cold startup latency.
 - Checks both occurrences of `አና -> እና` at their positions, plus `አንደሚያደርጉ -> እንደሚያደርጉ`, `ሶስትዮሽቨ -> ሶስትዮሽ`, and `በሀዳሴው -> በህዳሴው` in every cold/warm output.
 - Profiles cold/warm token generation in an independent pass after sentence measurements, and checks target candidate recall.
@@ -83,6 +84,6 @@ These values are **alignment-derived estimates**, not causal token provenance or
 
 ## Local validation and outstanding work
 
-39 automated tests pass, including the real SymSpell fixture tests and an exhaustive tiny-sequence oracle for alignment/tie counts. Phase A harness and evaluator tests use fake correction/LM components where necessary; none of those timings measure the full model.
+48 automated tests pass, including the real SymSpell fixture tests and an exhaustive tiny-sequence oracle for alignment/tie counts. Phase A harness and evaluator tests use fake correction/LM components where necessary; none of those timings measure the full model.
 
 The production KenLM binary, external segmenter, full lexicon, and 150 evaluation pages remain unavailable in the sandbox. Run the commands on the machine holding them and share the JSON reports for interpretation. The old script 05 failure categorizer is unchanged and should not be used for this damage metric.

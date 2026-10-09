@@ -225,6 +225,8 @@ def configure_from_cli():
     parser.add_argument("--lambda-optical", type=float, default=0.9)
     parser.add_argument("--lambda-lm", type=float, default=2.0)
     parser.add_argument("--lambda-morph", type=float, default=1.5)
+    parser.add_argument("--trusted-long-word-frequency", type=int, default=1000)
+    parser.add_argument("--trusted-short-word-frequency", type=int, default=4000)
     args = parser.parse_args()
     if args.workers < 1:
         parser.error("--workers must be positive")
@@ -241,6 +243,8 @@ def configure_from_cli():
     CORRECTOR_OPTIONS.update(candidate_backend=args.backend, trie_search=args.trie_search,
                              beam_width=args.beam_width, lambda_optical=args.lambda_optical,
                              lambda_lm=args.lambda_lm, lambda_morph=args.lambda_morph,
+                             trusted_long_word_frequency=args.trusted_long_word_frequency,
+                             trusted_short_word_frequency=args.trusted_short_word_frequency,
                              symspell_max_edit_distance=args.symspell_distance,
                              max_optical_cost=args.max_optical_cost, score_eos=not args.no_eos)
 

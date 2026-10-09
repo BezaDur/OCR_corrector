@@ -12,7 +12,8 @@ Architecture:
      - Cheap reverse-confusion neighbors also cover frequent real-word errors.
      - Seeded with main_i7.txt and segmenter's lexical frequencies.
   3. Morphological Prior (AmharicMorphologicalSegmenter):
-     - Validates Out-of-Vocabulary agglutinated forms (prefixes + stems + suffixes).
+     - Trusts high-frequency dictionary entries; deeply validates lower-frequency
+       dictionary words and OOV agglutinated forms, with cached results.
      - Protects legitimate morphological forms from destructive over-correction.
   4. Conservative Viterbi Decoder (KenLM 5-gram):
      - Beam search decoder with an explicit Anchor Margin (ANCHOR_MARGIN).
@@ -29,6 +30,7 @@ except ImportError:
     kenlm = None
 from functools import lru_cache
 import math
+from time import perf_counter
 
 _AUTO_SEGMENTER = object()
 
@@ -140,6 +142,9 @@ class AmharicOCRCorrector:
         indel_cost_cap: float = 2.4,
         anchor_margin: float = 1.6,
         score_eos: bool = True,
+        trusted_long_word_frequency: int = 1000,
+        trusted_short_word_frequency: int = 4000,
+        morphology_cache_size: int = 65536,
         lm=None,
         state_factory=None,
         segmenter=_AUTO_SEGMENTER
@@ -154,6 +159,14 @@ class AmharicOCRCorrector:
             raise ValueError("indel_cost_cap must be nonnegative or None")
         if trie_search not in ("adaptive", "full"):
             raise ValueError("trie_search must be 'adaptive' or 'full'")
+        for name, value in (("trusted_long_word_frequency", trusted_long_word_frequency),
+                            ("trusted_short_word_frequency", trusted_short_word_frequency)):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{name} must be a nonnegative integer")
+        if isinstance(morphology_cache_size, bool) or not isinstance(morphology_cache_size, int) or morphology_cache_size < 1:
+            raise ValueError("morphology_cache_size must be a positive integer")
+        self.trusted_long_word_frequency = trusted_long_word_frequency
+        self.trusted_short_word_frequency = trusted_short_word_frequency
         self.candidate_backend = candidate_backend
         self.trie_search = trie_search
         self.indel_cost_cap = indel_cost_cap
@@ -257,18 +270,19 @@ class AmharicOCRCorrector:
         # High-frequency ambiguity list (words that must evaluate real-word optical neighbors)
         self.ambiguous_frequent_words = {"አና", "እና", "በ", "ከ", "ይህ", "ይሀ"}
 
-        # Frequent words skip the trie walk but still get reverse-confusion candidates:
-        # 1. Any word of len >= 4 with freq >= 100
-        # 2. Any word of len >= 2 with freq >= 1000 (excluding known ambiguous pairs like አና)
+        # Use the same frequency policy for dictionary trust and the trie fast path.
+        # Ambiguous words still get the trie walk even when trusted for scoring.
+        # All frequent words still get reverse-confusion/SymSpell alternatives.
         print("Extracting high-frequency word set...", flush=True)
         self.common_words = {
-            w for w, freq in self.vocab.items()
-            if (freq >= 1000 or (freq >= 100 and len(w) >= 4))
-            and w not in self.ambiguous_frequent_words
+            w for w in self.vocab
+            if self.is_trusted_dictionary_word(w) and w not in self.ambiguous_frequent_words
         }
         print(f"Frequent-word set active with {len(self.common_words):,} words.", flush=True)
         # Bind caches after index construction, avoiding millions of empty cache clears.
-        self._validate_morphology_cached = lru_cache(maxsize=32768)(self._validate_morphology_uncached)
+        self._validate_morphology_cached = lru_cache(maxsize=morphology_cache_size)(self._validate_morphology_uncached)
+        self._morphology_counters = dict(trusted_bypasses=0, segmenter_calls=0,
+                                        segmenter_failures=0, segmenter_seconds=0.0)
         self._generate_candidates_cached = lru_cache(maxsize=32768)(self._generate_candidates_tuple)
 
     def _add_to_trie(self, word: str, freq: int = 1):
@@ -283,8 +297,28 @@ class AmharicOCRCorrector:
             for ch in word:
                 node = node.setdefault(ch, {})
             node["$"] = True
+        if hasattr(self, "common_words"):
+            if self.is_trusted_dictionary_word(word) and word not in self.ambiguous_frequent_words:
+                self.common_words.add(word)
+            else:
+                self.common_words.discard(word)
         if hasattr(self, "_generate_candidates_cached"):
             self._generate_candidates_cached.cache_clear()
+
+    def is_trusted_dictionary_word(self, word: str) -> bool:
+        """Frequency-based lexical prior, NOT proof of a morphological analysis.
+
+        Lookup-token lengths are Unicode characters (normally fidel). Length >= 4
+        requires frequency > trusted_long_word_frequency; lengths 2–3 require
+        frequency > trusted_short_word_frequency. One-character words never pass.
+        Abbreviation protection is a separate explicit policy.
+        """
+        size = len(word)
+        if size < 2:
+            return False
+        threshold = (self.trusted_long_word_frequency if size >= 4
+                     else self.trusted_short_word_frequency)
+        return self.vocab.get(word, 0) > threshold
 
     def _get_sub_cost(self, c_true: str, c_obs: str) -> float:
         if c_true == c_obs:
@@ -302,19 +336,47 @@ class AmharicOCRCorrector:
     def _validate_morphology_uncached(self, word: str) -> bool:
         if not self.segmenter or not word:
             return False
-        res = self.segmenter.segment_word(word)
-        pos = res.get("pos")
-        # Support string tags and common Enum return values without authenticating UNKNOWN.
-        tag = getattr(pos, "name", pos)
-        tag = str(tag or "").upper().rsplit(".", 1)[-1]
-        return bool(tag and tag not in ("UN", "UNKNOWN", "NONE"))
+        self._morphology_counters['segmenter_calls'] += 1
+        start = perf_counter()
+        try:
+            res = self.segmenter.segment_word(word)
+            pos = res.get("pos")
+            # Support string tags and Enum values without authenticating UNKNOWN.
+            tag = getattr(pos, "name", pos)
+            tag = str(tag or "").upper().rsplit(".", 1)[-1]
+            return bool(tag and tag not in ("UN", "UNKNOWN", "NONE"))
+        except Exception:
+            self._morphology_counters['segmenter_failures'] += 1
+            raise
+        finally:
+            self._morphology_counters['segmenter_seconds'] += perf_counter() - start
 
     def validate_morphology(self, word: str) -> bool:
+        """Accept trusted dictionary words, otherwise use cached deep validation.
+
+        This legacy method now returns lexical OR morphological legitimacy for
+        scoring. A trusted word gets the same reward even without an analyzer.
+        The shortcut does not remove competing correction candidates.
+        """
+        # Check before the LRU: trusted dictionary words consume no analysis entries,
+        # and a newly trusted word cannot be hidden by an older cached rejection.
+        if self.is_trusted_dictionary_word(word):
+            self._morphology_counters['trusted_bypasses'] += 1
+            return True
         try:
             return self._validate_morphology_cached(word)
         except Exception:
             # Exceptions are not cached: a transient analyzer failure can recover.
             return False
+
+    def morphology_stats(self):
+        """Cumulative counters since construction, plus current deep-validation LRU stats.
+
+        clear_caches resets LRU statistics, not these counters. Snapshot differences
+        isolate a measured call. segmenter_seconds includes result/tag handling.
+        """
+        return {**self._morphology_counters,
+                'cache': self._validate_morphology_cached.cache_info()._asdict()}
 
     def clear_caches(self):
         """Call after changing scoring/search settings or replacing the analyzer."""
@@ -485,7 +547,7 @@ class AmharicOCRCorrector:
             for cand_word, opt_cost in candidates:
                 opt_score = -self.lambda_optical * opt_cost
 
-                # Morphological legitimacy reward
+                # Lexical/morphological legitimacy reward (frequency-gated bypass).
                 morph_score = self.lambda_morph if (
                     has_alternatives and self.lambda_morph and self.validate_morphology(cand_word)
                 ) else 0.0

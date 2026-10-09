@@ -10,6 +10,12 @@ class FakeCorrector:
         self.sentence_calls = 0
         self.saw_profile = False
 
+    def morphology_stats(self):
+        # Fake telemetry verifies snapshot deltas without sleeping in tests.
+        return dict(trusted_bypasses=self.sentence_calls, segmenter_calls=self.sentence_calls * 2,
+                    segmenter_failures=0, segmenter_seconds=self.sentence_calls * 0.01,
+                    cache=dict(hits=self.sentence_calls, misses=self.sentence_calls * 2))
+
     def clear_caches(self):
         self.cleared = True
 
@@ -43,6 +49,9 @@ class PhaseATests(unittest.TestCase):
         self.assertTrue(report['passed'])
         self.assertEqual(len(report['sentences'][0]['cold_ms']), 2)
         self.assertEqual(len(report['sentences'][0]['warm_ms']), 2)
+        self.assertEqual(report['sentences'][0]['cold_morphology'][0]['segmenter_calls'], 2)
+        self.assertEqual(report['sentences'][0]['warm_morphology'][0]['trusted_bypasses'], 1)
+        self.assertAlmostEqual(report['sentences'][0]['cold_morphology'][0]['segmenter_seconds'], 0.01)
         # First sentence has two conjunction positions plus prefix repair.
         self.assertEqual(len(report['sentences'][0]['checks']), 12)
 
