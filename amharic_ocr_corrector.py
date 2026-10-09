@@ -7,11 +7,13 @@ Architecture:
      - Isolates leading and trailing punctuation from lexical tokens.
      - Preserves abbreviation symbols ('/' and '.') inside words.
      - Strips non-spacing combining diacritics for dictionary lookups.
-  2. Core Trie & Vocabulary:
-     - In-memory nested prefix tree for bounded Levenshtein optical distance search.
+  2. Candidate retrieval & Vocabulary:
+     - Bounded weighted trie or optional SymSpell retrieval with optical reranking.
+     - Cheap reverse-confusion neighbors also cover frequent real-word errors.
      - Seeded with main_i7.txt and segmenter's lexical frequencies.
   3. Morphological Prior (AmharicMorphologicalSegmenter):
-     - Validates Out-of-Vocabulary agglutinated forms (prefixes + stems + suffixes).
+     - Trusts high-frequency dictionary entries; deeply validates lower-frequency
+       dictionary words and OOV agglutinated forms, with cached results.
      - Protects legitimate morphological forms from destructive over-correction.
   4. Conservative Viterbi Decoder (KenLM 5-gram):
      - Beam search decoder with an explicit Anchor Margin (ANCHOR_MARGIN).
@@ -22,8 +24,15 @@ import os
 import sys
 import re
 import json
-import kenlm
+try:
+    import kenlm
+except ImportError:
+    kenlm = None
 from functools import lru_cache
+import math
+from time import perf_counter
+
+_AUTO_SEGMENTER = object()
 
 # ----------------- Dynamic Import of Morphological Suite -----------------
 for p in [
@@ -69,21 +78,21 @@ class EthiopicPunctuationManager:
             return ""
 
         # 1. Double colons, double hulet neteb, or double periods -> Arat Neteb (።)
-        text = re.sub(r'([:፡]{2,}|\.{2,}|፣{2,})', '።', text)
+        text = re.sub(r'([:፡]{2,}|\.{2,})', '።', text)
 
         # 2. Terminal/trailing single colons or hulet neteb before newlines/quotes -> ።
         text = re.sub(r'[:፡]\s*$', '።', text, flags=re.MULTILINE)
         text = re.sub(r'[:፡]\s*([”"»‹\n])', r'።\1', text)
 
         # 3. Inter-word isolated single colon/hulet neteb -> clean space
-        text = re.sub(r'[:፡]', ' ', text)
+        text = re.sub(r'(?<![0-9])[:፡]|[:፡](?![0-9])', ' ', text)
 
         # 4. Collapse spaces
         text = re.sub(r'[ ]+', ' ', text)
         return text.strip()
 
     @classmethod
-    def decompose_token(cls, raw_token: str):
+    def decompose_token(cls, raw_token: str, strip_diacritics: bool = True):
         """
         Splits a surface token into (leading_punct, clean_word, trailing_punct).
         e.g., '“ፕርጀከት' -> ('“', 'ፕርጀከት', '')
@@ -107,7 +116,8 @@ class EthiopicPunctuationManager:
 
         # Core lexical word with combining diacritics stripped for dictionary lookup
         core_word = raw_token[start:end]
-        core_word = cls.DIACRITICS_REGEX.sub('', core_word)
+        if strip_diacritics:
+            core_word = cls.DIACRITICS_REGEX.sub('', core_word)
 
         return leading_punct, core_word, trailing_punct
 
@@ -123,10 +133,68 @@ class AmharicOCRCorrector:
         lambda_optical: float = 1.0,
         lambda_lm: float = 1.8,
         lambda_morph: float = 1.5,
-        max_candidates: int = 25
+        max_candidates: int = 25,
+        *,
+        candidate_backend: str = "trie",
+        trie_search: str = "adaptive",
+        symspell_max_edit_distance: int = 1,
+        symspell_prefix_length: int = 7,
+        indel_cost_cap: float = 2.4,
+        anchor_margin: float = 1.6,
+        score_eos: bool = True,
+        trusted_long_word_frequency: int = 1000,
+        trusted_short_word_frequency: int = 4000,
+        morphology_cache_size: int = 65536,
+        lm=None,
+        state_factory=None,
+        segmenter=_AUTO_SEGMENTER
     ):
-        print(f"Loading KenLM Language Model: {kenlm_path}...", flush=True)
-        self.lm = kenlm.Model(kenlm_path)
+        if beam_width < 1 or max_candidates < 1:
+            raise ValueError("beam_width and max_candidates must be positive")
+        if not math.isfinite(max_optical_cost) or max_optical_cost < 0:
+            raise ValueError("max_optical_cost must be finite and nonnegative")
+        if candidate_backend not in ("trie", "symspell"):
+            raise ValueError("candidate_backend must be 'trie' or 'symspell'")
+        if indel_cost_cap is not None and (not math.isfinite(indel_cost_cap) or indel_cost_cap < 0):
+            raise ValueError("indel_cost_cap must be nonnegative or None")
+        if trie_search not in ("adaptive", "full"):
+            raise ValueError("trie_search must be 'adaptive' or 'full'")
+        for name, value in (("trusted_long_word_frequency", trusted_long_word_frequency),
+                            ("trusted_short_word_frequency", trusted_short_word_frequency)):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{name} must be a nonnegative integer")
+        if isinstance(morphology_cache_size, bool) or not isinstance(morphology_cache_size, int) or morphology_cache_size < 1:
+            raise ValueError("morphology_cache_size must be a positive integer")
+        self.trusted_long_word_frequency = trusted_long_word_frequency
+        self.trusted_short_word_frequency = trusted_short_word_frequency
+        self.candidate_backend = candidate_backend
+        self.trie_search = trie_search
+        self.indel_cost_cap = indel_cost_cap
+        self.anchor_margin = anchor_margin
+        self.score_eos = score_eos
+        if lm is None:
+            if kenlm is None:
+                raise ImportError("Install kenlm to load a language model")
+            print(f"Loading KenLM Language Model: {kenlm_path}...", flush=True)
+            lm = kenlm.Model(kenlm_path)
+        self.lm = lm
+        self._state_factory = state_factory or (kenlm.State if kenlm else None)
+        if self._state_factory is None:
+            raise ValueError("An injected LM requires state_factory when kenlm is unavailable")
+        self.symspell = None
+        if candidate_backend == "symspell":
+            try:
+                from symspellpy import SymSpell, Verbosity
+            except ImportError as exc:
+                raise ImportError("Install requirements-symspell.txt for the SymSpell backend") from exc
+            if symspell_max_edit_distance < 1 or symspell_prefix_length <= symspell_max_edit_distance:
+                raise ValueError("SymSpell requires distance >= 1 and prefix_length > distance")
+            self.symspell = SymSpell(
+                max_dictionary_edit_distance=symspell_max_edit_distance,
+                prefix_length=symspell_prefix_length,
+            )
+            self._symspell_verbosity = Verbosity.ALL
+            self.symspell_max_edit_distance = symspell_max_edit_distance
 
         print(f"Loading Optical Confusion Matrix: {confusion_matrix_path}...", flush=True)
         with open(confusion_matrix_path, "r", encoding="utf-8") as f:
@@ -142,16 +210,28 @@ class AmharicOCRCorrector:
         self.default_sub = float(self.costs.get("default_sub", 4.5))
         self.default_del = float(self.costs.get("default_del", 5.0))
         self.default_ins = float(self.costs.get("default_ins", 5.0))
+        all_costs = [self.default_sub, self.default_del, self.default_ins]
+        all_costs.extend(value for row in self.costs.get("sub", {}).values() for value in row.values())
+        all_costs.extend(self.costs.get("ins", {}).values())
+        all_costs.extend(self.costs.get("del", {}).values())
+        if any(not math.isfinite(float(cost)) or float(cost) < 0 for cost in all_costs):
+            raise ValueError("Optical costs must be finite and nonnegative")
 
         # Initialize Morphological Segmenter
-        self.segmenter = None
-        if HAS_MORPH:
+        self.segmenter = None if segmenter is _AUTO_SEGMENTER else segmenter
+        if segmenter is _AUTO_SEGMENTER and HAS_MORPH:
             print("Initializing Amharic Morphological Segmenter...", flush=True)
             self.segmenter = AmharicMorphologicalSegmenter()
             print("Segmenter ready.", flush=True)
 
+        self.reverse_confusions = {}
+        for true_ch, observations in self.costs.get("sub", {}).items():
+            for observed_ch, cost in observations.items():
+                if len(true_ch) == len(observed_ch) == 1:
+                    self.reverse_confusions.setdefault(observed_ch, []).append((true_ch, float(cost)))
+
         # Build Core Prefix Trie and Vocabulary
-        print("Building Core Trie & Vocabulary...", flush=True)
+        print(f"Building {candidate_backend} index & vocabulary...", flush=True)
         self.vocab = {}
         self.trie = {}
 
@@ -161,7 +241,10 @@ class AmharicOCRCorrector:
                 self._add_to_trie(w, f)
 
         # 2. Seed Trie with main_i7.txt lexicon
-        if dict_vocab_path and os.path.exists(dict_vocab_path):
+        if dict_vocab_path:
+            # A misspelled path must not silently leave an abbreviations-only index.
+            if not os.path.isfile(dict_vocab_path):
+                raise FileNotFoundError(dict_vocab_path)
             with open(dict_vocab_path, "r", encoding="utf-8", errors="ignore") as f:
                 for i, line in enumerate(f, 1):
                     parts = line.strip().split()
@@ -178,162 +261,242 @@ class AmharicOCRCorrector:
             "ም/ቤት", "ት/ቤት", "ፍ/ቤት", "ጽ/ቤት", "ክ/ከተማ", "ዶ/ር", "ጠ/ሚኒስትር",
             "ወ/ሮ", "ወ/ሪት", "መ/ር", "ዓ.ም", "እ.ኤ.አ", "ቤ/ክርስቲያን", "ፕ/ር"
         ]
+        self.protected_words = frozenset(COMMON_ABBRS)
         for abbr in COMMON_ABBRS:
             self._add_to_trie(abbr, freq=1000)
 
-        print(f"Trie successfully built with {len(self.vocab):,} active words.", flush=True)
+        print(f"Index successfully built with {len(self.vocab):,} active words.", flush=True)
 
         # High-frequency ambiguity list (words that must evaluate real-word optical neighbors)
         self.ambiguous_frequent_words = {"አና", "እና", "በ", "ከ", "ይህ", "ይሀ"}
 
-        # Build in-memory O(1) fast-bypass table:
-        # 1. Any word of len >= 4 with freq >= 100
-        # 2. Any word of len >= 2 with freq >= 1000 (excluding known ambiguous pairs like አና)
-        print("Extracting high-frequency clean word set for O(1) bypass...", flush=True)
+        # Use the same frequency policy for dictionary trust and the trie fast path.
+        # Ambiguous words still get the trie walk even when trusted for scoring.
+        # All frequent words still get reverse-confusion/SymSpell alternatives.
+        print("Extracting high-frequency word set...", flush=True)
         self.common_words = {
-            w for w, freq in self.vocab.items()
-            if (freq >= 1000 or (freq >= 100 and len(w) >= 4))
-            and w not in self.ambiguous_frequent_words
+            w for w in self.vocab
+            if self.is_trusted_dictionary_word(w) and w not in self.ambiguous_frequent_words
         }
-        print(f"Fast-bypass set active with {len(self.common_words):,} verified words.", flush=True)
+        print(f"Frequent-word set active with {len(self.common_words):,} words.", flush=True)
+        # Bind caches after index construction, avoiding millions of empty cache clears.
+        self._validate_morphology_cached = lru_cache(maxsize=morphology_cache_size)(self._validate_morphology_uncached)
+        self._morphology_counters = dict(trusted_bypasses=0, segmenter_calls=0,
+                                        segmenter_failures=0, segmenter_seconds=0.0)
+        self._generate_candidates_cached = lru_cache(maxsize=32768)(self._generate_candidates_tuple)
 
     def _add_to_trie(self, word: str, freq: int = 1):
-        if not word or len(word) < 2:
+        if not word:
             return
-        self.vocab[word] = max(self.vocab.get(word, 0), freq)
-        node = self.trie
-        for ch in word:
-            node = node.setdefault(ch, {})
-        node["$"] = True
+        old_freq = self.vocab.get(word, 0)
+        self.vocab[word] = max(old_freq, freq, 1)
+        if self.symspell is not None:
+            self.symspell.create_dictionary_entry(word, self.vocab[word] - old_freq)
+        else:
+            node = self.trie
+            for ch in word:
+                node = node.setdefault(ch, {})
+            node["$"] = True
+        if hasattr(self, "common_words"):
+            if self.is_trusted_dictionary_word(word) and word not in self.ambiguous_frequent_words:
+                self.common_words.add(word)
+            else:
+                self.common_words.discard(word)
+        if hasattr(self, "_generate_candidates_cached"):
+            self._generate_candidates_cached.cache_clear()
+
+    def is_trusted_dictionary_word(self, word: str) -> bool:
+        """Frequency-based lexical prior, NOT proof of a morphological analysis.
+
+        Lookup-token lengths are Unicode characters (normally fidel). Length >= 4
+        requires frequency > trusted_long_word_frequency; lengths 2–3 require
+        frequency > trusted_short_word_frequency. One-character words never pass.
+        Abbreviation protection is a separate explicit policy.
+        """
+        size = len(word)
+        if size < 2:
+            return False
+        threshold = (self.trusted_long_word_frequency if size >= 4
+                     else self.trusted_short_word_frequency)
+        return self.vocab.get(word, 0) > threshold
 
     def _get_sub_cost(self, c_true: str, c_obs: str) -> float:
         if c_true == c_obs:
             return 0.0
-        return self.costs.get("sub", {}).get(c_true, {}).get(c_obs, self.default_sub)
+        return float(self.costs.get("sub", {}).get(c_true, {}).get(c_obs, self.default_sub))
 
     def _get_del_cost(self, c_true: str) -> float:
-        raw_cost = self.costs.get("del", {}).get(c_true, self.default_del)
-        return min(float(raw_cost), 2.4)
+        cost = float(self.costs.get("del", {}).get(c_true, self.default_del))
+        return cost if self.indel_cost_cap is None else min(cost, self.indel_cost_cap)
 
     def _get_ins_cost(self, c_obs: str) -> float:
-        raw_cost = self.costs.get("ins", {}).get(c_obs, self.default_ins)
-        return min(float(raw_cost), 2.4)
+        cost = float(self.costs.get("ins", {}).get(c_obs, self.default_ins))
+        return cost if self.indel_cost_cap is None else min(cost, self.indel_cost_cap)
 
-    def validate_morphology(self, word: str) -> bool:
-        """
-        Validates whether an Out-of-Vocabulary token decomposes cleanly
-        into legitimate stems + affixes via the morphological segmenter.
-        """
+    def _validate_morphology_uncached(self, word: str) -> bool:
         if not self.segmenter or not word:
             return False
+        self._morphology_counters['segmenter_calls'] += 1
+        start = perf_counter()
         try:
             res = self.segmenter.segment_word(word)
-            pos = str(res.get("pos", ""))
-            return bool(pos and pos not in ("UN", "UNKNOWN", ""))
+            pos = res.get("pos")
+            # Support string tags and Enum values without authenticating UNKNOWN.
+            tag = getattr(pos, "name", pos)
+            tag = str(tag or "").upper().rsplit(".", 1)[-1]
+            return bool(tag and tag not in ("UN", "UNKNOWN", "NONE"))
         except Exception:
+            self._morphology_counters['segmenter_failures'] += 1
+            raise
+        finally:
+            self._morphology_counters['segmenter_seconds'] += perf_counter() - start
+
+    def validate_morphology(self, word: str) -> bool:
+        """Accept trusted dictionary words, otherwise use cached deep validation.
+
+        This legacy method now returns lexical OR morphological legitimacy for
+        scoring. A trusted word gets the same reward even without an analyzer.
+        The shortcut does not remove competing correction candidates.
+        """
+        # Check before the LRU: trusted dictionary words consume no analysis entries,
+        # and a newly trusted word cannot be hidden by an older cached rejection.
+        if self.is_trusted_dictionary_word(word):
+            self._morphology_counters['trusted_bypasses'] += 1
+            return True
+        try:
+            return self._validate_morphology_cached(word)
+        except Exception:
+            # Exceptions are not cached: a transient analyzer failure can recover.
             return False
 
-    @lru_cache(maxsize=32768)
-    def _generate_candidates_cached(self, ocr_token: str) -> tuple:
-        """Internal cached worker returning an immutable tuple of (word, cost)."""
-        return tuple(self._generate_candidates_uncached(ocr_token))
+    def morphology_stats(self):
+        """Cumulative counters since construction, plus current deep-validation LRU stats.
+
+        clear_caches resets LRU statistics, not these counters. Snapshot differences
+        isolate a measured call. segmenter_seconds includes result/tag handling.
+        """
+        return {**self._morphology_counters,
+                'cache': self._validate_morphology_cached.cache_info()._asdict()}
+
+    def clear_caches(self):
+        """Call after changing scoring/search settings or replacing the analyzer."""
+        self._validate_morphology_cached.cache_clear()
+        self._generate_candidates_cached.cache_clear()
+
+    def _generate_candidates_tuple(self, ocr_token: str, max_cost: float) -> tuple:
+        return tuple(self._generate_candidates_uncached(ocr_token, max_cost))
 
     def generate_candidates(self, ocr_token: str, max_cost: float = None) -> list:
-        # Wrap candidate generation with LRU process cache for microsecond repeat lookups
-        return list(self._generate_candidates_cached(ocr_token))
+        """Return candidates with optical cost <= max_cost (defaults to max_optical_cost).
 
-    def _generate_candidates_uncached(self, ocr_token: str):
+        This is an acceptance ceiling, not exhaustive retrieval: adaptive trie search,
+        SymSpell edit distance, frequent-word shortcuts, and max_candidates limit recall.
         """
-        Length-Adaptive Candidate Generator:
-          1. O(1) Fast-Path: Words in top-common set (len >= 4, freq >= 100) bypass Trie immediately.
-          2. Length-Adaptive Search Radius:
-             - Short tokens (len <= 3): search radius 2.6 (prevents real-word blindness: አና -> እና).
-             - Medium tokens (4 <= len <= 6): search radius 3.0.
-             - Long tokens (len >= 7): search radius 2.4 (prunes exponential 5M sub-branch explosion).
-          3. Fast Prefix Anchor for agglutinated compounds: checks known subordinator slips (አንደ- -> እንደ-).
-        """
-        if not ocr_token:
-            return [("", 0.0)]
+        budget = self.max_optical_cost if max_cost is None else float(max_cost)
+        if not math.isfinite(budget) or budget < 0:
+            raise ValueError("max_cost must be finite and nonnegative")
+        return list(self._generate_candidates_cached(ocr_token, budget))
 
-        # --- TIER 1: O(1) FAST BYPASS FOR HIGH-FREQUENCY LONG WORDS ---
-        if hasattr(self, 'common_words') and ocr_token in self.common_words:
-            return [(ocr_token, 0.0)]
+    def optical_distance(self, true_word: str, observed_word: str) -> float:
+        """Weighted Levenshtein in channel direction P(observed | true), not SymSpell distance."""
+        ins_costs = [self._get_ins_cost(ch) for ch in observed_word]
+        row = [0.0]
+        for cost in ins_costs:
+            row.append(row[-1] + cost)
+        for true_ch in true_word:
+            deletion = self._get_del_cost(true_ch)
+            subs = self.costs.get("sub", {}).get(true_ch, {})
+            cur = [row[0] + deletion]
+            for j, obs_ch in enumerate(observed_word, 1):
+                sub = 0.0 if true_ch == obs_ch else float(subs.get(obs_ch, self.default_sub))
+                cur.append(min(cur[-1] + ins_costs[j-1], row[j] + deletion, row[j-1] + sub))
+            row = cur
+        return row[-1]
 
-        token_freq = self.vocab.get(ocr_token, 0)
-        is_valid_morph = self.validate_morphology(ocr_token)
-
-        results = {}
-        # Observed token is ALWAYS candidate #1 with zero optical cost
-        results[ocr_token] = 0.0
-
-        n = len(ocr_token)
-
-        # --- FAST PREFIX ANCHOR FOR AGGLUTINATED LONG TOKENS ---
-        # e.g., 'አንደሚያደርጉ' starts with 'አንደ' (slip of subordinator 'እንደ')
-        if n >= 6 and ocr_token.startswith("አንደ"):
-            repaired_cand = "እንደ" + ocr_token[3:]
-            if repaired_cand in self.vocab or self.validate_morphology(repaired_cand):
-                results[repaired_cand] = self._get_sub_cost("እ", "አ")
-                # Fast exit: The exact agglutinated repair is found and authenticated.
-                # Avoid walking 5 million Trie nodes for 1000 ms.
-                return [(repaired_cand, self._get_sub_cost("እ", "አ")), (ocr_token, 0.0)]
-
-        # --- TERMINAL GHOST-LOOP HANDLER ---
-        # e.g., 'ሶስትዮሽቨ' -> 'ሶስትዮሽ'
-        # --- TERMINAL GHOST-LOOP HANDLER ---
-        # Only strip trailing character if the original token is NOT a clean dictionary word
-        if n >= 4 and token_freq == 0 and not is_valid_morph:
-            stem_stripped = ocr_token[:-1]
-            if (stem_stripped in self.vocab) or self.validate_morphology(stem_stripped):
-                results[stem_stripped] = self._get_ins_cost(ocr_token[-1])
-
-        # --- ADAPTIVE DEPTH PRUNING BASED ON TOKEN LENGTH ---
-        if is_valid_morph or token_freq > 0:
-            effective_cost = 2.4
-        elif n <= 3:
-            effective_cost = 2.6  # Shallow depth: fast & explores real-word neighbors (አና -> እና)
-        elif 4 <= n <= 6:
-            effective_cost = 3.0
+    def _trie_radius(self, word: str, max_cost: float) -> float:
+        if self.trie_search == "full":
+            return max_cost
+        if word in self.vocab or self.validate_morphology(word):
+            radius = 2.4
+        elif len(word) <= 3:
+            radius = 2.6
+        elif len(word) <= 6:
+            radius = 3.0
         else:
-            effective_cost = 2.2  # Long tokens: bounds exponential branch explosion
+            radius = 2.2
+        return min(max_cost, radius)
 
-        # Length bound: Candidate words cannot exceed input token length by more than 1 character
-        MAX_CAND_LEN = n + 1
+    def _generate_candidates_uncached(self, ocr_token: str, max_cost: float):
+        if not ocr_token or ocr_token in self.protected_words:
+            return [(ocr_token, 0.0)]
+        results = {ocr_token: 0.0}
 
-        def search_trie(node, prefix, prev_row):
-            # Prune search branches that exceed reasonable candidate word lengths
-            if len(prefix) >= MAX_CAND_LEN:
-                return
+        def add(word):
+            cost = self.optical_distance(word, ocr_token)
+            if cost <= max_cost:
+                results[word] = min(results.get(word, float("inf")), cost)
 
-            for ch, next_node in node.items():
-                if ch == "$":
-                    continue
+        # Cheap known optical substitutions, including real-word errors on the fast path.
+        for i, observed_ch in enumerate(ocr_token):
+            for true_ch, cost in self.reverse_confusions.get(observed_ch, ()):
+                if cost <= max_cost:
+                    candidate = ocr_token[:i] + true_ch + ocr_token[i+1:]
+                    if candidate in self.vocab:
+                        add(candidate)
 
-                cur_row = [prev_row[0] + self._get_del_cost(ch)]
-                for j in range(1, n + 1):
-                    obs_ch = ocr_token[j - 1]
-                    ins = cur_row[j - 1] + self._get_ins_cost(obs_ch)
-                    dlt = prev_row[j] + self._get_del_cost(ch)
-                    sub = prev_row[j - 1] + self._get_sub_cost(ch, obs_ch)
-                    cur_row.append(min(ins, dlt, sub))
+        if self.symspell is not None:
+            # ALL is essential: TOP/CLOSEST can suppress alternatives for known words.
+            for suggestion in self.symspell.lookup(
+                ocr_token, self._symspell_verbosity,
+                max_edit_distance=self.symspell_max_edit_distance,
+            ):
+                add(suggestion.term)
+        elif ocr_token not in self.common_words:
+            # Keep fallback walks bounded; cheap confusion neighbors use the full ceiling.
+            radius = self._trie_radius(ocr_token, max_cost)
+            n = len(ocr_token)
+            ins_costs = [self._get_ins_cost(ch) for ch in ocr_token]
+            initial = [0.0]
+            for cost in ins_costs:
+                initial.append(initial[-1] + cost)
 
-                if min(cur_row) <= effective_cost:
-                    if "$" in next_node and cur_row[-1] <= effective_cost:
-                        matched_word = prefix + ch
-                        results[matched_word] = min(results.get(matched_word, float("inf")), cur_row[-1])
-                    search_trie(next_node, prefix + ch, cur_row)
+            def search(node, prefix, prev):
+                # Retain the old explicit length guard: zero-cost deletions exist.
+                if len(prefix) >= n + 1:
+                    return
+                for ch, child in node.items():
+                    if ch == "$":
+                        continue
+                    deletion = self._get_del_cost(ch)
+                    subs = self.costs.get("sub", {}).get(ch, {})
+                    cur = [prev[0] + deletion]
+                    for j, obs_ch in enumerate(ocr_token, 1):
+                        sub = 0.0 if ch == obs_ch else float(subs.get(obs_ch, self.default_sub))
+                        cur.append(min(cur[-1] + ins_costs[j-1], prev[j] + deletion, prev[j-1] + sub))
+                    if min(cur) <= radius:
+                        word = prefix + ch
+                        if "$" in child and cur[-1] <= radius:
+                            results[word] = cur[-1]
+                        search(child, word, cur)
 
-        init_row = [0.0]
-        for c in ocr_token:
-            init_row.append(init_row[-1] + self._get_ins_cost(c))
+            search(self.trie, "", initial)
 
-        search_trie(self.trie, "", init_row)
+        # Heuristics are additional sources, never exclusive early exits.
+        if len(ocr_token) >= 6 and ocr_token.startswith("አንደ"):
+            repaired = "እንደ" + ocr_token[3:]
+            if repaired in self.vocab or self.validate_morphology(repaired):
+                add(repaired)
+        if len(ocr_token) >= 4 and ocr_token not in self.vocab and not self.validate_morphology(ocr_token):
+            stem = ocr_token[:-1]
+            if stem in self.vocab or self.validate_morphology(stem):
+                add(stem)
 
-        ranked = sorted(
-            results.items(),
-            key=lambda x: (x[1], -self.vocab.get(x[0], 0), len(x[0]))
+        # Always reserve one slot for the original, even with zero-cost alternatives.
+        alternatives = sorted(
+            ((word, cost) for word, cost in results.items() if word != ocr_token),
+            key=lambda item: (item[1], -self.vocab.get(item[0], 0), len(item[0]), item[0]),
         )
-        return ranked[:self.max_candidates]
+        return [(ocr_token, 0.0)] + alternatives[:self.max_candidates - 1]
 
     def correct_sentence(self, sentence: str) -> str:
         """
@@ -348,38 +511,54 @@ class AmharicOCRCorrector:
         if not raw_tokens:
             return ""
 
-        token_tuples = [EthiopicPunctuationManager.decompose_token(tok) for tok in raw_tokens]
+        surface_tuples = [
+            EthiopicPunctuationManager.decompose_token(tok, strip_diacritics=False)
+            for tok in raw_tokens
+        ]
+        token_tuples = [
+            (lead, EthiopicPunctuationManager.DIACRITICS_REGEX.sub('', word), trail)
+            for lead, word, trail in surface_tuples
+        ]
 
-        # Beam state: (accumulated_score, kenlm_state, [(leading, cand_word, trailing)])
-        start_state = kenlm.State()
+        # Beam state: (score, LM state, backpointer); only surviving paths are reconstructed.
+        start_state = self._state_factory()
         self.lm.BeginSentenceWrite(start_state)
-        beam = [(0.0, start_state, [])]
+        beam = [(0.0, start_state, None)]
 
         # Anchor margin: score buffer that a candidate must overcome to displace an observed word
-        ANCHOR_MARGIN = 1.6
+        ANCHOR_MARGIN = self.anchor_margin
 
-        for leading, orig_word, trailing in token_tuples:
+        for token_index, (leading, orig_word, trailing) in enumerate(token_tuples):
             if not orig_word:
                 # Standalone punctuation token (e.g. '“' or '።')
-                beam = [(score, state, path + [(leading + trailing, "", "")]) for score, state, path in beam]
+                surface = leading + surface_tuples[token_index][1] + trailing
+                beam = [(score, state, (path, (surface, "", "")))
+                        for score, state, path in beam]
                 continue
 
             candidates = self.generate_candidates(orig_word)
             new_beam = []
 
-            is_orig_known = (orig_word in self.vocab) or self.validate_morphology(orig_word)
+            has_alternatives = len(candidates) > 1
+            is_orig_known = has_alternatives and (
+                orig_word in self.vocab or self.validate_morphology(orig_word)
+            )
 
             for cand_word, opt_cost in candidates:
                 opt_score = -self.lambda_optical * opt_cost
 
-                # Morphological legitimacy reward
-                morph_score = self.lambda_morph if self.validate_morphology(cand_word) else 0.0
+                # Lexical/morphological legitimacy reward (frequency-gated bypass).
+                morph_score = self.lambda_morph if (
+                    has_alternatives and self.lambda_morph and self.validate_morphology(cand_word)
+                ) else 0.0
 
                 # Anchor bonus: protect verified words from being flipped by LM frequency bias
                 anchor_bonus = ANCHOR_MARGIN if (cand_word == orig_word and is_orig_known) else 0.0
 
+                surface_word = surface_tuples[token_index][1] if cand_word == orig_word else cand_word
+                token = (leading, surface_word, trailing)
                 for acc_score, prev_state, path in beam:
-                    next_state = kenlm.State()
+                    next_state = self._state_factory()
                     lm_score = self.lm.BaseScore(prev_state, cand_word, next_state)
 
                     total_score = (
@@ -389,15 +568,25 @@ class AmharicOCRCorrector:
                         + morph_score
                         + anchor_bonus
                     )
-                    new_beam.append((total_score, next_state, path + [(leading, cand_word, trailing)]))
+                    new_beam.append((total_score, next_state, (path, token)))
 
             new_beam.sort(key=lambda x: x[0], reverse=True)
             beam = new_beam[:self.beam_width]
 
-        best_score, best_state, best_path = beam[0]
+        if self.score_eos:
+            def final_score(hypothesis):
+                score, state, _ = hypothesis
+                return score + self.lambda_lm * self.lm.BaseScore(state, "</s>", self._state_factory())
+            best_score, best_state, best_path = max(beam, key=final_score)
+        else:
+            best_score, best_state, best_path = beam[0]
 
+        tokens = []
+        while best_path is not None:
+            best_path, token = best_path
+            tokens.append(token)
         reconstructed_tokens = []
-        for lead, word, trail in best_path:
+        for lead, word, trail in reversed(tokens):
             if not word:
                 reconstructed_tokens.append(lead)
             else:
