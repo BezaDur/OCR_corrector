@@ -1,0 +1,23 @@
+# Ignore a specific folder at the root level (e.g., node_modules)
+/frozen_baseline_working/
+/live_eval/
+/training/
+/training_ground_truth/
+/fonts/
+/langdata_lstm/
+/0_ground_truth/
+/font_diag_google/
+/synthetic_eval/
+
+
+
+# Ignore any folder named "temp" anywhere in the project
+temp/
+
+# Ignore build output folders
+target/
+dist/
+
+# Ignore local environment configuration files
+.env
+

@@ -1,0 +1,90 @@
+=====================================================
+      AMHARIC OCR POST-CORRECTION FAILURE AUDIT       
+=====================================================
+Total Failed Word Alignments: 7,979
+  • Unrepaired Typos:         1,775
+  • Space/Segmentation Errors: 2,363
+  • Suboptimal Repairs:       2,957
+  • Over-Corrections:         884
+
+-------------------------------------------------------
+TOP 25 UNREPAIRED TYPOS (Gold -> OCR Saw / Left Intact)
+-------------------------------------------------------
+  30x | Gold: 'በሽታው'  <--  Left As: 'በሸታው'
+  21x | Gold: 'ውስጥ'  <--  Left As: 'ውሰጥ'
+  13x | Gold: 'በላይ'  <--  Left As: 'በካይ'
+  12x | Gold: 'ፓርቲ'  <--  Left As: 'ፖርቲ'
+  12x | Gold: 'በሽታ'  <--  Left As: 'በሸታ'
+  12x | Gold: 'ሺህ'  <--  Left As: 'ሺሀ'
+  11x | Gold: 'መንግስት'  <--  Left As: 'መንግሰት'
+  11x | Gold: 'ኮሚቴ'  <--  Left As: 'ኮሜቴ'
+  10x | Gold: 'የትምህርት'  <--  Left As: 'የትምሀርት'
+  10x | Gold: 'የቀድሞ'  <--  Left As: 'የቀድም'
+  10x | Gold: 'ምንዛሬ'  <--  Left As: 'ምንዛሪ'
+   9x | Gold: 'ያለው'  <--  Left As: 'ያከው'
+   8x | Gold: 'ይህም'  <--  Left As: 'ይሀም'
+   8x | Gold: 'ባንክ'  <--  Left As: 'ባንከ'
+   8x | Gold: 'ከፍተኛ'  <--  Left As: 'ከፍተሻ'
+   7x | Gold: '2012'  <--  Left As: '2ዐ12'
+   7x | Gold: 'ነው”'  <--  Left As: 'ነው"'
+   7x | Gold: 'ሚኒስቴር'  <--  Left As: 'ሚኒሰቴር'
+   7x | Gold: 'ምስል'  <--  Left As: 'ምሰል'
+   7x | Gold: 'አምስት'  <--  Left As: 'አምሰት'
+   6x | Gold: 'በሁለት'  <--  Left As: 'በሁከት'
+   6x | Gold: 'ከተማ'  <--  Left As: 'ክተማ'
+   6x | Gold: 'ከዚህ'  <--  Left As: 'ከዚሀ'
+   6x | Gold: 'ህብረተሰብ'  <--  Left As: 'ሀብረተሰብ'
+   6x | Gold: 'እንደ'  <--  Left As: 'አንደ'
+
+-------------------------------------------------------
+TOP 25 WORD BOUNDARY & SPACE ERRORS
+-------------------------------------------------------
+  10x | Gold: 'ጥላበት ነበር፡፡' | Raw: 'ጥላበት ነበር፡፡' | Got: 'ጥሎበት ነበር።'
+   5x | Gold: 'ጉዳይ ሚኒስቴር' | Raw: '?ዳይ ሚኒሰቴር' | Got: '?ጉዳይ ሚኒሰቴር'
+   4x | Gold: 'ያገዛል ተብሏል፡፡' | Raw: 'ያገዛል ተብሏል፡፡' | Got: 'ያግዛል ተብሏል።'
+   4x | Gold: 'የ7.8' | Raw: '.' | Got: 'የ7 . 8'
+   4x | Gold: 'አፈ-ጉባኤው' | Raw: 'አፈ' | Got: 'አፈ -ጉባኤው'
+   4x | Gold: 'ፃይሂ ቺ' | Raw: 'ፃይሂ ቺ' | Got: 'አይሂ ጋ'
+   4x | Gold: 'ዓለም ባንክ' | Raw: 'ዓከም ባንከ' | Got: 'ማከም ባንከ'
+   4x | Gold: 'የህዝብ ደኅንነት' | Raw: 'የሰካምና የሀዝብ' | Got: 'የሀዝብ ደኅገነት'
+   3x | Gold: 'ገልጸዋል።“ለምሳሌ' | Raw: 'ገልጸዋል።፡“ለምሳሌ' | Got: 'ገልጸዋል። “ለምሳሌ'
+   3x | Gold: 'በረንታ-ዕድ' | Raw: '-ዕድ' | Got: 'በረንታ -ዕድ'
+   3x | Gold: 'የኦሮሞ ነፃነት' | Raw: 'የኦርሞ ነፃነት' | Got: 'የኦርሞ ነጻነት'
+   3x | Gold: 'ያለ ችግር' | Raw: 'ያከ ችገር' | Got: 'ያሉ ችገር'
+   3x | Gold: 'ሚሊ ግራም' | Raw: 'ሚኪ ገራም' | Got: 'ሚኪ ገራም'
+   3x | Gold: 'ለመመለስ እየተሰራ' | Raw: 'ለመመለሰ አየተሰራ' | Got: 'ለመመለሰ አየተሰራ'
+   3x | Gold: 'ዕለት በሁለት' | Raw: 'ዕከት በሁከት' | Got: 'ሁከት በሁከት'
+   3x | Gold: 'ያስቀመጡት፡፡ ዶ/ር' | Raw: 'ያስቀመጡት፡፡ ዶ/ር' | Got: 'ያስቀመጡት። ዶላር'
+   3x | Gold: 'በዜጂያንግ እና በፉጂያን' | Raw: 'በዜጂያንግ እና በፉጂያን' | Got: 'በዜጅያንግ እና በፉጅያን'
+   2x | Gold: 'ይደረጋል” ብለዋል::' | Raw: 'ይደረጋል" ብለዋል።' | Got: 'ይደረጋል" ብለዋል።'
+   2x | Gold: '30ዎቹ' | Raw: 'የተባለ' | Got: '3 ሰዎቹ'
+   2x | Gold: 'ምዕራፍ ሃማስ' | Raw: 'በመያመሪያው ምፅራፍ' | Got: 'ምእራፍ ሃማሰ'
+   2x | Gold: 'አንስቶ ሃማስ' | Raw: '2025 አንሰቶ' | Got: 'አንሰቶ ሃማሰ'
+   2x | Gold: 'አዲስ የወርሃዊ' | Raw: 'በመቆጣጠር አዲሰ' | Got: 'አነሰ ያወርሃዊ'
+   2x | Gold: 'አዲስ ክብረ' | Raw: '2024 አዲሰ' | Got: 'አነሰ ከብረ'
+   2x | Gold: 'ተናግረዋል።“ሩሲያ' | Raw: '“ሩሲያ' | Got: 'ተናግረዋል። “ሩሲያ'
+   2x | Gold: 'ብሏል።ሜ' | Raw: 'ብሏል።' | Got: 'ብሏል። ሜ'
+
+-------------------------------------------------------
+TOP 20 OVER-CORRECTIONS (Raw OCR Was Correct, Corrector Broke It)
+-------------------------------------------------------
+  69x | Gold: 'ም/ቤት'  -->  Turned Into: 'ምግቤት'
+  23x | Gold: 'አስታውቋል፡፡'  -->  Turned Into: 'አስታውቋል።'
+  21x | Gold: 'ዓመታዊ'  -->  Turned Into: 'አመታዊ'
+  21x | Gold: 'በንጹሃን'  -->  Turned Into: 'በንጹሀን'
+  19x | Gold: '(ዶ/ር)'  -->  Turned Into: '(ዶላር)'
+  19x | Gold: 'ይታወሳል፡፡'  -->  Turned Into: 'ይታወሳል።'
+  19x | Gold: 'ጂንፒንግ'  -->  Turned Into: 'ጅንፒንግ'
+  17x | Gold: 'ብሏል፡፡'  -->  Turned Into: 'ብሏል።'
+  16x | Gold: 'ኢነርጂ'  -->  Turned Into: 'ኢነርጅ'
+  14x | Gold: 'አይደለም፡፡'  -->  Turned Into: 'አይደለም።'
+  13x | Gold: 'ተብሏል፡፡'  -->  Turned Into: 'ተብሏል።'
+  12x | Gold: 'በአዲስ'  -->  Turned Into: 'በአድስ'
+  11x | Gold: 'ይሆናል፡፡'  -->  Turned Into: 'ይሆናል።'
+  11x | Gold: 'ባዮሃዛርድ'  -->  Turned Into: 'ባዮሀዛርድ'
+  11x | Gold: 'ዐይነት'  -->  Turned Into: 'አይነት'
+  10x | Gold: 'ነው፡፡'  -->  Turned Into: 'ነው።'
+  10x | Gold: 'ዘገባ፡፡'  -->  Turned Into: 'ዘገባ።'
+  10x | Gold: 'ተነግሯል፡፡'  -->  Turned Into: 'ተነግሯል።'
+   9x | Gold: 'ተከሰተው፤'  -->  Turned Into: 'ተከስተው፤'
+   9x | Gold: 'እንደሚለቅም'  -->  Turned Into: 'እንደሚለቅና'
