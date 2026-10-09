@@ -84,6 +84,6 @@ These values are **alignment-derived estimates**, not causal token provenance or
 
 ## Local validation and outstanding work
 
-48 automated tests pass, including the real SymSpell fixture tests and an exhaustive tiny-sequence oracle for alignment/tie counts. Phase A harness and evaluator tests use fake correction/LM components where necessary; none of those timings measure the full model.
+60 automated tests pass, including the real SymSpell fixture tests and exhaustive tiny-sequence oracles for alignment/tie counts and for optimal mapping options, gap slots, and adjacent-edit flags. Phase A harness and evaluator tests use fake correction/LM components where necessary; none of those timings measure the full model.
 
-The production KenLM binary, external segmenter, full lexicon, and 150 evaluation pages remain unavailable in the sandbox. Run the commands on the machine holding them and share the JSON reports for interpretation. The old script 05 failure categorizer is unchanged and should not be used for this damage metric.
+The production KenLM binary, external segmenter, full lexicon, and 150 evaluation pages remain unavailable in the sandbox. Run the commands on the machine holding them and share the JSON reports for interpretation. Script 05 is now alignment-derived (see `docs/decision_audit.md`), but it is a per-token decision audit and still must not be used for this damage metric.
