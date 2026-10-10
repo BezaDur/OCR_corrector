@@ -166,7 +166,7 @@ class AmharicOCRCorrector:
         max_optical_cost: float = 3.6,
         max_optical_cost_pairwise: float = None,
         max_reverse_sub_cost: float = None,
-        reserved_pairwise_slots: int = 6,
+        reserved_pairwise_slots: int = 20,
         lambda_optical: float = 1.2,
         lambda_lm: float = 1.8,
         lambda_morph: float = 1.5,
@@ -315,6 +315,17 @@ class AmharicOCRCorrector:
         self._known_word_cache[word] = result
         return result
 
+    def _is_in_vocab(self, word: str) -> bool:
+        """
+        Strict, vocab-only membership check (no segmenter fallback). Used in the
+        O(n) / O(n^2) candidate-generation hot loops (single/pairwise optical
+        reversal), where we specifically want "is this exactly a known real
+        word" -- not "could this structurally parse as a word" (the segmenter
+        fallback in is_known_word), which is both slower and a weaker signal
+        for accepting reversal-generated candidates.
+        """
+        return self._norm(word) in self.vocab
+
     def _compute_is_known_word(self, word: str) -> bool:
         norm_w = self._norm(word)
         if norm_w in self.vocab:
@@ -438,7 +449,7 @@ class AmharicOCRCorrector:
         for i, obs_ch in enumerate(ocr_token):
             for true_ch, cost in self.reverse_sub_map.get(obs_ch, []):
                 variant = ocr_token[:i] + true_ch + ocr_token[i + 1:]
-                if self.is_known_word(variant):
+                if self._is_in_vocab(variant):
                     raw_candidates.append((variant, cost, "single_reversal"))
                 single_reversals.append((i, true_ch, cost))
 
@@ -449,7 +460,7 @@ class AmharicOCRCorrector:
                 for idx2, c2, cost2 in single_reversals:
                     if idx2 > idx1:
                         t2 = t1[:idx2] + c2 + t1[idx2 + 1:]
-                        if self.is_known_word(t2):
+                        if self._is_in_vocab(t2):
                             tot_cost = cost1 + cost2
                             raw_candidates.append((t2, tot_cost, "pairwise_reversal"))
 
@@ -476,7 +487,7 @@ class AmharicOCRCorrector:
         # single global cost-rank truncation. A flat top-12-by-cost slice
         # systematically starves out legitimate (necessarily pricier) pairwise
         # repairs once enough cheap single-edit candidates exist to fill the cap.
-        TOTAL_CAP = 12
+        TOTAL_CAP = 24
         RESERVED_PAIRWISE_SLOTS = self.reserved_pairwise_slots
 
         all_sorted = sorted(best_cost.items(), key=lambda x: x[1])
@@ -615,7 +626,7 @@ def main():
     parser.add_argument("--max-optical-cost", type=float, default=3.6)
     parser.add_argument("--max-optical-cost-pairwise", type=float, default=None)
     parser.add_argument("--max-reverse-sub-cost", type=float, default=None)
-    parser.add_argument("--reserved-pairwise-slots", type=int, default=6)
+    parser.add_argument("--reserved-pairwise-slots", type=int, default=20)
     parser.add_argument("--text", default=None, help="Single line/sentence to correct")
     parser.add_argument("--file", default=None, help="Path to a text file to correct, line by line")
     args = parser.parse_args()
