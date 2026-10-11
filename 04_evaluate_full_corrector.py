@@ -248,6 +248,25 @@ def configure_from_cli():
     # gain the anchor barrier's protection and skip the pairwise-reversal
     # search. Measured on real corpus data that is 56% of OOV tokens -- so this
     # flag is the single most important ablation in the system.
+    # --- restored / retired options ----------------------------------------
+    # These four were present at HEAD but pointed at a corrector revision that
+    # no longer exists (candidate_backend, trie_search, trusted_*_frequency,
+    # symspell_max_edit_distance). At HEAD they were accepted by argparse and
+    # then passed to a constructor that rejected them, so every run with them
+    # died with a TypeError. One has been restored for real; the rest now fail
+    # with an explanation instead of "unrecognized arguments".
+    parser.add_argument("--symspell-distance", type=int, default=1,
+                        dest="symspell_distance",
+                        help="SymSpell max edit distance (default 1; "
+                             "2+ will OOM on a large lexicon)")
+    # Retired: accepted so the error is actionable rather than "unrecognized".
+    parser.add_argument("--trie-search", action="store_true",
+                        help=argparse.SUPPRESS)
+    parser.add_argument("--trusted-long-word-frequency", type=int,
+                        help=argparse.SUPPRESS)
+    parser.add_argument("--trusted-short-word-frequency", type=int,
+                        help=argparse.SUPPRESS)
+
     # Lexicon size caps. SymSpell costs ~1.03 KB per dictionary type
     # (measured), so an uncapped multi-million-type lexicon will OOM.
     # Measured on real corpus data: the top 300k types cover 92.4% of running
@@ -265,6 +284,33 @@ def configure_from_cli():
         "--require-morphology", dest="use_morphology", action="store_true",
         help="Fail if the morphological analyzer cannot be imported")
     args = parser.parse_args()
+
+    retired = [
+        ("--trie-search", args.trie_search,
+         "the trie candidate backend was removed; SymSpell + the weighted "
+         "optical reversal generator replaced it"),
+        ("--trusted-long-word-frequency", args.trusted_long_word_frequency,
+         "trusted_*_frequency thresholds were removed; the anchor barrier "
+         "plus the peel guard replaced them"),
+        ("--trusted-short-word-frequency", args.trusted_short_word_frequency,
+         "trusted_*_frequency thresholds were removed; the anchor barrier "
+         "plus the peel guard replaced them"),
+    ]
+    used = [name for name, val, _ in retired if val]
+    if used:
+        parser.error(
+            "removed option(s): " + ", ".join(used) + ". " +
+            "; ".join(reason for name, val, reason in retired if val) +
+            ". Drop them from the command line.")
+
+    if args.symspell_distance < 1:
+        parser.error("--symspell-distance must be >= 1")
+    if args.symspell_distance > 1:
+        print(f"[WARN] --symspell-distance {args.symspell_distance}: the "
+              f"SymSpell index grows steeply with edit distance (~1.03 KB/type "
+              f"at distance 1). This will likely OOM on a large lexicon; "
+              f"consider --max-lexicon-types alongside it.", flush=True)
+
     if args.workers < 1:
         parser.error("--workers must be positive")
     if args.expected_pages is not None and args.expected_pages < 1:
@@ -286,7 +332,8 @@ def configure_from_cli():
                              require_morphemes_json=args.require_morphemes_json,
                              use_morphology=args.use_morphology,
                              max_lexicon_types=args.max_lexicon_types,
-                             dict_min_freq=args.dict_min_freq)
+                             dict_min_freq=args.dict_min_freq,
+                             symspell_max_edit_distance=args.symspell_distance)
 
 
 if __name__ == "__main__":

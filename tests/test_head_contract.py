@@ -436,6 +436,58 @@ class TestLexiconCap(CorrectorTestCase):
         self.assertLessEqual(len(c._affix_seq_memo._data), c._affix_seq_memo.maxsize)
 
 
+class TestSymSpellDistance(CorrectorTestCase):
+    """--symspell-distance was accepted at HEAD but rejected by the
+    constructor, so every run using it died with a TypeError. Restored."""
+
+    def test_default_is_one(self):
+        c = self.make([("በሽታ", 1)])
+        self.assertEqual(c.symspell_max_edit_distance, 1)
+
+    def test_distance_is_configurable(self):
+        c = self.make([("በሽታ", 1)], symspell_max_edit_distance=2)
+        self.assertEqual(c.symspell_max_edit_distance, 2)
+
+    def test_distance_two_finds_strictly_more(self):
+        """Sanity check that the knob is actually wired to SymSpell."""
+        words = [("ኢትዮጵያ", 900), ("በሽታ", 800), ("መንግስት", 700)]
+        d1 = self.make(words, symspell_max_edit_distance=1)
+        d2 = self.make(words, symspell_max_edit_distance=2)
+        probe = "ኢትዮጵያ"[::-1]  # far from anything at distance 1
+        n1 = len(d1.symspell.lookup(probe, 2, max_edit_distance=1))
+        n2 = len(d2.symspell.lookup(probe, 2, max_edit_distance=2))
+        self.assertGreaterEqual(n2, n1)
+
+    def test_evaluator_accepts_the_flag(self):
+        """The CLI must accept it, and reject retired ones with a reason."""
+        import subprocess
+        import sys
+        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        script = os.path.join(here, "04_evaluate_full_corrector.py")
+        r = subprocess.run(
+            [sys.executable, script, "--symspell-distance", "1", "--help"],
+            capture_output=True, text=True, timeout=120)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("--symspell-distance", r.stdout)
+
+    def test_retired_flags_fail_with_an_explanation(self):
+        import subprocess
+        import sys
+        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        script = os.path.join(here, "04_evaluate_full_corrector.py")
+        for flag, value in (("--trie-search", None),
+                            ("--trusted-long-word-frequency", "5"),
+                            ("--trusted-short-word-frequency", "5")):
+            with self.subTest(flag=flag):
+                cmd = [sys.executable, script, flag]
+                if value is not None:
+                    cmd.append(value)
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                self.assertNotEqual(r.returncode, 0, f"{flag} should fail")
+                self.assertIn("removed option", r.stderr,
+                              f"{flag} gave: {r.stderr[-200:]}")
+
+
 class TestMorphemesJson(CorrectorTestCase):
     def test_missing_file_warns_and_degrades_the_peel_guard(self):
         """§3.5 / §6.2.2.
@@ -687,12 +739,25 @@ class TestEvaluatorContract(CorrectorTestCase):
         self.assertTrue(c.score_eos)
 
     def test_evaluator_module_exposes_compatible_defaults(self):
-        """The evaluator's own defaults must not name removed options."""
+        """The evaluator's own defaults must not name removed options.
+
+        `symspell_max_edit_distance` is deliberately NOT in this list: it was
+        dead at HEAD (accepted by argparse, rejected by the constructor), but
+        has since been restored as a real constructor parameter, so the
+        evaluator passing it is now correct.
+        """
         src = (ROOT / "04_evaluate_full_corrector.py").read_text(encoding="utf-8")
-        for dead in ("candidate_backend", "trie_search", "symspell_max_edit_distance",
+        for dead in ("candidate_backend", "trie_search",
                      "trusted_long_word_frequency", "trusted_short_word_frequency"):
             self.assertNotIn(f"{dead}=", src,
                              f"evaluator still passes removed option {dead!r}")
+
+    def test_restored_option_is_accepted_by_the_constructor(self):
+        """The restored flag must round-trip, not just parse."""
+        import inspect
+        from amharic_ocr_corrector import AmharicOCRCorrector
+        params = set(inspect.signature(AmharicOCRCorrector.__init__).parameters)
+        self.assertIn("symspell_max_edit_distance", params)
 
     def test_morphology_stats_serialises_for_the_json_report(self):
         import json

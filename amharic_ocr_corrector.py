@@ -287,6 +287,12 @@ class AmharicOCRCorrector:
         confusion_matrix_path: str,
         dict_vocab_path: str,
         morphemes_json_path: str = None,
+        # SymSpell's maximum edit distance. 1 is the default and the only
+        # safe value at scale: the index grows steeply with distance, and at
+        # multi-million types distance=2 will OOM (see
+        # docs/segmenter_integration.md §7). Exposed because a previous
+        # revision accepted it via --symspell-distance.
+        symspell_max_edit_distance: int = 1,
         # --- lexicon size caps (memory) -------------------------------------
         # SymSpell costs ~1.03 KB per dictionary type (measured), so a
         # multi-million-type lexicon OOMs. These bound it. Both are off by
@@ -331,6 +337,7 @@ class AmharicOCRCorrector:
         self.beam_width = beam_width
         self.max_optical_cost = max_optical_cost
         self.max_candidates = max_candidates
+        self.symspell_max_edit_distance = int(symspell_max_edit_distance)
         self.score_eos = score_eos
         self.indel_cost_cap = indel_cost_cap
         self.require_morphemes_json = require_morphemes_json
@@ -600,7 +607,14 @@ class AmharicOCRCorrector:
                       f"({100.0*len(self.vocab)/max(raw_types,1):.1f}% kept)", flush=True)
 
         # --- Pass 2: build SymSpell from the (possibly capped) set ----------
-        self.symspell = _SymSpell(max_dictionary_edit_distance=1, prefix_length=7)
+        if self.symspell_max_edit_distance > 1 and self.verbose:
+            print(f"[WARN] symspell_max_edit_distance="
+                  f"{self.symspell_max_edit_distance}: the SymSpell index grows "
+                  f"steeply with edit distance (~1.03 KB/type at distance 1). "
+                  f"On a multi-million-type lexicon this will OOM.", flush=True)
+        self.symspell = _SymSpell(
+            max_dictionary_edit_distance=self.symspell_max_edit_distance,
+            prefix_length=7)
         for norm_w, freq in self.vocab.items():
             self.symspell.create_dictionary_entry(norm_w, freq)
 

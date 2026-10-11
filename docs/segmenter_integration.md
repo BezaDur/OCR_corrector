@@ -461,7 +461,26 @@ Review item 7.9 — merge `vocab` + `surface_form` into one dict — would remov
 another full copy. Dropping SymSpell entirely in favour of the weighted
 reversal generator (review §6.4) would remove the dominant structure outright.
 
-## 8. Risks and caveats
+## 8. CLI compatibility with the pre-refactor evaluator
+
+Four options present at HEAD pointed at a corrector revision that no longer
+exists. At HEAD they were *accepted by argparse* and then passed to a
+constructor that rejected them, so any run using them died with a `TypeError`
+rather than a clean error.
+
+| Option | Status |
+| --- | --- |
+| `--symspell-distance N` | **Restored and working.** Wired to a real `symspell_max_edit_distance` constructor arg (previously hard-coded to 1). Warns above 1 — the index grows steeply with edit distance and will OOM on a large lexicon. |
+| `--trie-search` | **Removed.** Fails with an explanation. The trie backend is gone; SymSpell plus the weighted optical reversal generator replaced it. |
+| `--trusted-long-word-frequency N` | **Removed.** Fails with an explanation. Superseded by the anchor barrier plus the peel guard. |
+| `--trusted-short-word-frequency N` | **Removed.** Fails with an explanation. Same. |
+| `--backend {trie,symspell}` | **Narrowed** to `symspell` only; kept so old command lines still parse, and not forwarded to the constructor. |
+
+The three removed options are still registered with argparse (hidden) purely so
+the failure message explains what happened instead of saying
+`unrecognized arguments`.
+
+## 9. Risks and caveats
 
 * **The vendored snapshot will drift** from the live suite. It is a *frozen*
   copy; treat any refresh as a behaviour change worth measuring.
@@ -482,7 +501,7 @@ reversal generator (review §6.4) would remove the dominant structure outright.
 
 ---
 
-## 9. Quick reference
+## 10. Quick reference
 
 | Question | Answer |
 | --- | --- |
