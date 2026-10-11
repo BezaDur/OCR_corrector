@@ -17,6 +17,8 @@ CHAR_ARGS=()
 [ -n "$CHAR_LM" ] && CHAR_ARGS=(--char-lm "$CHAR_LM")
 TSV_DIR="${TSV_DIR:-}"
 [ -n "$TSV_DIR" ] && CHAR_ARGS+=(--tsv-dir "$TSV_DIR")
+VERDICT_DIR="${VERDICT_DIR:-}"
+[ -n "$VERDICT_DIR" ] && CHAR_ARGS+=(--verdict-dir "$VERDICT_DIR")
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
 

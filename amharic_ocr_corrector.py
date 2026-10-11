@@ -403,6 +403,8 @@ class AmharicOCRCorrector:
         self.enable_merge_split = bool(enable_merge_split)
         self.merge_split_penalty = float(merge_split_penalty)
         self._conf_dropped = 0
+        # Set to a list to record each Stage 1 verdict (see stage1_labels.py).
+        self.verdict_log = None
         self.canonicalize_surface = bool(canonicalize_surface)
         self._surface_fixes = 0
         self.suspicion = None
@@ -1485,6 +1487,10 @@ class AmharicOCRCorrector:
                 conf = confs[idx] if confs is not None else None
                 verdict = self.suspicion.verdict(word, ctx, ocr_conf=conf)
                 self._stage1[verdict.label] += 1
+                if self.verdict_log is not None:
+                    self.verdict_log.append({"word": word, "label": verdict.label,
+                                             "suspicion": verdict.suspicion,
+                                             "ocr_conf": conf})
                 if verdict.label == "pass":
                     # Recognised, so the token is kept. Its spelling may still differ
                     # from the lexicon's surface form (homoglyph collapse), so restore
