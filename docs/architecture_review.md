@@ -4,6 +4,11 @@ Scope: the *general architecture* and workflow, with emphasis on the question
 "is SymSpell integrated properly with the morphological analyzer (segmenter)?"
 Specific bugs and per-decision tuning are deliberately left for a later pass.
 
+> **Companion document:** `docs/segmenter_integration.md` is the reference for
+> *what exactly is connected* between the segmenter suite and the corrector —
+> the call graph, the API surface used vs unused, and the remaining work. This
+> review asks whether the design is sound; that one is a status map.
+
 Method: static reading of `amharic_ocr_corrector.py` (HEAD),
 `amharic_ocr_corrector (copy).py`, `normalizer.py`, `04_evaluate_full_corrector.py`,
 `05_collect_error_cases.py`, `tests/`, `docs/`, plus the checked-in artifacts
