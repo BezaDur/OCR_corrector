@@ -909,12 +909,18 @@ class TestStage1Detection(unittest.TestCase):
         return self.mod.AmharicOCRCorrector(
             kenlm_path="", confusion_matrix_path="confusion_matrix.json",
             dict_vocab_path=self.lex, lm=self.NullLM(),
+            state_factory=lambda: self.NullLM.S(),
             max_lexicon_types=200, segmenter=None, **kw)
 
-    def test_stage1_off_by_default(self):
+    def test_stage1_on_by_default(self):
+        """Framework Stage 1: only suspicious tokens reach candidate search."""
         c = self._mk()
+        self.assertIsNotNone(c.suspicion)
+        self.assertTrue(c.stage1_detection)
+
+    def test_stage1_can_be_disabled_explicitly(self):
+        c = self._mk(stage1_detection=False)
         self.assertIsNone(c.suspicion)
-        self.assertFalse(c.stage1_detection)
 
     def test_stage1_passes_clean_words(self):
         c = self._mk(stage1_detection=True)

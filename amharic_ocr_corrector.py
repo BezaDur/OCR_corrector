@@ -312,8 +312,21 @@ class AmharicOCRCorrector:
         lambda_lm: float = 1.8,
         lambda_morph: float = 1.5,
         anchor_margin: float = 3.5,
-        stage1_detection: bool = False,
+        # Stage 1 gates every token. On by default: the framework's first rule is
+        # that only suspicious tokens may reach candidate generation and the LM.
+        stage1_detection: bool = True,
         gray_margin: float = 3.0,
+        # Do-no-harm margin for an OUT-OF-LEXICON original that is not flagged.
+        # The original must be beaten by this margin (plus the gray margin when
+        # Stage 1 says gray) before it is replaced. UNTUNED: set from validation data.
+        oov_anchor_margin: float = 3.0,
+        # Cost given to curated visually-similar pairs the learned matrix lacks
+        # (framework Stage 2: 0.5 for visually similar). Learned costs take precedence.
+        curated_confusion_cost: float = 0.5,
+        # Stage 4: split an OOV token / merge two OOV tokens when the result is
+        # in the lexicon. The penalty is in score units and is UNTUNED.
+        enable_merge_split: bool = True,
+        merge_split_penalty: float = 2.0,
         suspicion_weights: Optional[Dict[str, float]] = None,
         suspicion_pass_below: float = 0.30,
         suspicion_flag_above: float = 0.70,
@@ -382,6 +395,11 @@ class AmharicOCRCorrector:
         self.anchor_margin = anchor_margin
         self.stage1_detection = bool(stage1_detection)
         self.gray_margin = float(gray_margin)
+        self.oov_anchor_margin = float(oov_anchor_margin)
+        self.curated_confusion_cost = float(curated_confusion_cost)
+        self.enable_merge_split = bool(enable_merge_split)
+        self.merge_split_penalty = float(merge_split_penalty)
+        self._conf_dropped = 0
         self.canonicalize_surface = bool(canonicalize_surface)
         self._surface_fixes = 0
         self.suspicion = None
@@ -728,6 +746,7 @@ class AmharicOCRCorrector:
 
         # Precompute reverse optical substitutions. Gated by max_reverse_sub_cost
         # (the TIGHT component-level cutoff), NOT by max_optical_cost_pairwise.
+        self._inject_curated_confusions()
         self.reverse_sub_map = collections.defaultdict(list)
         for true_ch, obs_map in self.costs.get("sub", {}).items():
             if isinstance(obs_map, dict):
@@ -738,6 +757,27 @@ class AmharicOCRCorrector:
 
         if self.verbose:
             print(f"Corrector initialized successfully ({len(self.vocab):,} active words).\n", flush=True)
+
+    def _inject_curated_confusions(self) -> None:
+        """Add curated confusion pairs to the cost table where the learned matrix is silent.
+
+        Stage 1 (suspicion.py) already uses the curated classes in its one-flip test.
+        Without this, Stage 1 could flag a token whose only real-word repair Stage 2
+        can never propose (the cost of e.g. ኘ->ነ is 4.5, above the 3.6 ceiling).
+        One table, one source of truth: learned costs win, curated pairs fill gaps.
+        Orientation matches the matrix: sub[true][observed].
+        """
+        from suspicion import CONFUSION_CLASSES
+        sub = self.costs.setdefault("sub", {})
+        cost = self.curated_confusion_cost
+        for cls in CONFUSION_CLASSES:
+            for a in cls:
+                for b in cls:
+                    if a == b:
+                        continue
+                    row = sub.setdefault(a, {})
+                    if b not in row:
+                        row[b] = cost
 
     def _norm(self, word: str) -> str:
         if not word or not self.normalizer:
@@ -1313,7 +1353,83 @@ class AmharicOCRCorrector:
                 self._morph_stats["trusted_bypasses"] += 1
         return self.lambda_morph if cand_known else 0.0
 
-    def correct_sentence(self, sentence: str) -> str:
+    # ------------------------------------------------------------------ #
+    # Sentence decoding                                                    #
+    # ------------------------------------------------------------------ #
+    # Path entries are (leading, text, trailing, span): `span` is the number
+    # of input tokens the entry consumes (2 for a merge, 1 otherwise).
+    # Beams are kept per input position so a merge can jump two positions.
+
+    def _prune(self, entries):
+        entries.sort(key=lambda x: x[0], reverse=True)
+        return entries[: self.beam_width]
+
+    def _advance_kept(self, beam, word, leading, trailing):
+        """Keep a token unchanged but still feed it to the LM.
+
+        Skipping the LM here (as the first Stage 1 wiring did) leaves the model
+        seeing only </s>; every later token was then scored in the wrong context.
+        """
+        norm = self._norm(word)
+        out = []
+        for acc, state, path in beam:
+            next_state = self._state_factory()
+            lm_score = self.lm.BaseScore(state, norm, next_state)
+            out.append((acc + self.lambda_lm * lm_score, next_state,
+                        path + [(leading, word, trailing, 1)]))
+        return out
+
+    def _merge_split_candidates(self, idx, token_tuples, beam, is_orig_verified):
+        """Stage 4: segmentation repairs. Yields (target_position, new_entries)."""
+        out = []
+        leading, word, trailing = token_tuples[idx]
+        n = len(token_tuples)
+        penalty = self.merge_split_penalty
+
+        # Merge: under-segmentation (two OOV tokens that are one word).
+        if idx + 1 < n:
+            l2, w2, t2 = token_tuples[idx + 1]
+            if (w2 and not trailing and not l2 and not is_orig_verified
+                    and not self.is_known_word(w2)):
+                merged = word + w2
+                if self._is_in_vocab(merged):
+                    norm_m = self._norm(merged)
+                    morph = self._morphology_score(word, merged, False)
+                    entries = []
+                    for acc, state, path in beam:
+                        nxt = self._state_factory()
+                        lm = self.lm.BaseScore(state, norm_m, nxt)
+                        entries.append((acc + self.lambda_lm * lm + morph - penalty, nxt,
+                                        path + [(leading, merged, t2, 2)]))
+                    out.append((idx + 2, entries))
+
+        # Split: over-segmentation in reverse (one OOV token that is two words).
+        if not is_orig_verified and len(word) >= 4:
+            for k in range(1, len(word)):
+                left, right = word[:k], word[k:]
+                if not (self._is_in_vocab(left) and self._is_in_vocab(right)):
+                    continue
+                norm_l, norm_r = self._norm(left), self._norm(right)
+                morph = (self._morphology_score(word, left, False)
+                         + self._morphology_score(word, right, False))
+                entries = []
+                for acc, state, path in beam:
+                    mid = self._state_factory()
+                    lm1 = self.lm.BaseScore(state, norm_l, mid)
+                    end = self._state_factory()
+                    lm2 = self.lm.BaseScore(mid, norm_r, end)
+                    entries.append((acc + self.lambda_lm * (lm1 + lm2) + morph - penalty, end,
+                                    path + [(leading, f"{left} {right}", trailing, 1)]))
+                out.append((idx + 1, entries))
+        return out
+
+    def correct_sentence(self, sentence: str, confidences=None) -> str:
+        """Correct one line.
+
+        `confidences` (optional) are Tesseract word confidences on a 0-100 scale,
+        one per whitespace token of `sentence` as given. They feed Stage 1. If the
+        count does not match the tokens after normalisation they are dropped.
+        """
         normalized_text = EthiopicPunctuationManager.normalize_sentence_text(sentence)
         if not normalized_text:
             return ""
@@ -1323,66 +1439,77 @@ class AmharicOCRCorrector:
             return ""
 
         token_tuples = [EthiopicPunctuationManager.decompose_token(tok) for tok in raw_tokens]
+        n = len(token_tuples)
+
+        confs = None
+        if confidences is not None:
+            if len(confidences) == n:
+                confs = [float(c) if c is not None else None for c in confidences]
+            else:
+                self._conf_dropped += 1
 
         start_state = self._state_factory()
         self.lm.BeginSentenceWrite(start_state)
-        beam = [(0.0, start_state, [])]
+        beams = [[] for _ in range(n + 1)]
+        beams[0] = [(0.0, start_state, [])]
 
         for idx, (leading, word, trailing) in enumerate(token_tuples):
+            beam = self._prune(beams[idx])
+            beams[idx] = []
+            if not beam:
+                continue
+
             if not word:
-                beam = [(score, state, path + [(leading + trailing, "", "")]) for score, state, path in beam]
+                # Punctuation-only token: no LM event, state unchanged.
+                beams[idx + 1].extend(
+                    (score, state, path + [(leading + trailing, "", "", 1)])
+                    for score, state, path in beam)
                 continue
 
             # ---- Stage 1: error detection -------------------------------
-            # At an 8% word error rate most tokens are already right. Building
-            # candidates and scoring them with the LM is wasted work on those,
-            # and -- more importantly -- it is the ONLY way this system can
-            # damage them. A PASS verdict emits the original untouched: no
-            # candidates, no LM, no morphology, no risk.
+            verdict = None
             extra_margin = 0.0
             if self.suspicion is not None:
                 ctx = [t[1] for t in token_tuples[max(0, idx - 2):idx] if t[1]]
-                verdict = self.suspicion.verdict(word, ctx)
+                conf = confs[idx] if confs is not None else None
+                verdict = self.suspicion.verdict(word, ctx, ocr_conf=conf)
                 self._stage1[verdict.label] += 1
                 if verdict.label == "pass":
-                    # The word is recognised, but its SPELLING may still be
-                    # wrong. _norm() collapses the Amharic homoglyph families
-                    # (ሠ->ሰ, ፀ->ጸ, ዐ->አ, ሐ->ኀ->ሀ), so "ሠላም" is correctly
-                    # identified as "ሰላም" -- yet we would emit "ሠላም" and CER
-                    # would still count an error. Restore the lexicon's own
-                    # surface form. This is not a guess between candidates:
-                    # the token is already known, we are only normalising its
-                    # spelling to the dictionary's.
+                    # Recognised, so the token is kept. Its spelling may still differ
+                    # from the lexicon's surface form (homoglyph collapse), so restore
+                    # the dictionary spelling when that option is enabled.
                     if self.canonicalize_surface:
                         canon = self.surface_form.get(self._norm(word))
                         if canon and canon != word:
                             self._surface_fixes += 1
                             word = canon
-                    beam = [(score, state, path + [(leading, word, trailing)])
-                            for score, state, path in beam]
+                    beams[idx + 1].extend(self._advance_kept(beam, word, leading, trailing))
                     continue
                 if verdict.label == "gray":
-                    # Uncertain: only accept a change with clear evidence.
                     extra_margin = self.gray_margin
 
-            candidates = self.generate_candidates(word)
-            new_beam = []
             is_orig_verified = self.is_known_word(word)
 
-            for cand_word, opt_cost in candidates:
+            # ---- Do-no-harm margin on the original --------------------
+            # Framework Stage 4: an original that is not in the lexicon (names,
+            # loanwords, rare places) is kept unless the best alternative beats it
+            # by a margin. Verified words get the anchor. Gray adds its margin on
+            # top. A flag raises the candidates' standing, not the original's.
+            if is_orig_verified:
+                orig_margin = self.anchor_margin + extra_margin
+            else:
+                orig_margin = self.oov_anchor_margin + extra_margin
+
+            # ---- Stage 2/3: single-token candidates --------------------
+            new_beam = []
+            for cand_word, opt_cost in self.generate_candidates(word):
                 opt_score = -self.lambda_optical * opt_cost
-
                 morph_score = self._morphology_score(word, cand_word, is_orig_verified)
-
-                # Protective Anchor Barrier on verified original words
-                anchor_bonus = (self.anchor_margin + extra_margin) if (cand_word == word and is_orig_verified) else 0.0
-
+                anchor_bonus = orig_margin if cand_word == word else 0.0
                 norm_cand = self._norm(cand_word)
-
                 for acc_score, prev_state, path in beam:
                     next_state = self._state_factory()
                     lm_score = self.lm.BaseScore(prev_state, norm_cand, next_state)
-
                     total_score = (
                         acc_score
                         + (self.lambda_lm * lm_score)
@@ -1390,38 +1517,44 @@ class AmharicOCRCorrector:
                         + morph_score
                         + anchor_bonus
                     )
-                    new_beam.append((total_score, next_state, path + [(leading, cand_word, trailing)]))
+                    new_beam.append((total_score, next_state,
+                                     path + [(leading, cand_word, trailing, 1)]))
+            beams[idx + 1].extend(new_beam)
 
-            new_beam.sort(key=lambda x: x[0], reverse=True)
-            beam = new_beam[: self.beam_width]
+            # ---- Stage 4: split / merge ---------------------------------
+            if self.enable_merge_split:
+                for target, entries in self._merge_split_candidates(
+                        idx, token_tuples, beam, is_orig_verified):
+                    beams[target].extend(entries)
 
-        # Fold in end-of-sentence scoring before picking the winner, so the
-        # final word isn't chosen ignoring P(</s> | context).
+        final = self._prune(beams[n])
         if self.score_eos:
             finalized = []
-            for score, state, path in beam:
+            for score, state, path in final:
                 end_state = self._state_factory()
                 eos_score = self.lm.BaseScore(state, "</s>", end_state)
                 finalized.append((score + self.lambda_lm * eos_score, path))
             finalized.sort(key=lambda x: x[0], reverse=True)
         else:
-            finalized = [(score, path) for score, _, path in beam]
+            finalized = [(score, path) for score, _, path in final]
         best_path = finalized[0][1]
 
         reconstructed_tokens = []
-        for (lead, word, trail), orig in zip(best_path, token_tuples):
-            if not word:
+        pos = 0
+        for lead, text, trail, span in best_path:
+            if not text:
                 reconstructed_tokens.append(lead)
+                self._morph_stats["tokens_seen"] += 1
+                pos += 1
                 continue
-            reconstructed_tokens.append(f"{lead}{word}{trail}")
-            # Change accounting. Paired with the evaluator's clean-token
-            # damage this separates real repairs from damage:
-            #     repairs ~= tokens_changed - damaged.
-            # A corrector that changes many tokens and damages many is
-            # net-negative no matter what its CER looks like.
-            self._morph_stats["tokens_seen"] += 1
-            if word != orig[1]:
+            reconstructed_tokens.append(f"{lead}{text}{trail}")
+            orig = "".join(t[1] for t in token_tuples[pos:pos + span])
+            # Change accounting: repairs ~= tokens_changed - damaged.
+            # A merge changes the token count even when the letters are identical.
+            self._morph_stats["tokens_seen"] += span
+            if span > 1 or text != orig:
                 self._morph_stats["tokens_changed"] += 1
+            pos += span
 
         return " ".join(reconstructed_tokens)
 
