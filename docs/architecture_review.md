@@ -403,18 +403,111 @@ line
    candidate equals the observed token minus a real affix, forbid it. This is
    the single highest-value accuracy fix available, and it replaces
    `is_unsupported_morpheme_peel` + `morphemes.json` entirely.
-3. **Generate OOV repairs.** Strip recognized affixes → repair the (much
+3. **Generate OOV repairs.** ~~Strip recognized affixes → repair the (much
    shorter, much cheaper) stem with the existing channel generator → re-attach
    the observed affixes verbatim → re-validate with the analyzer. This is the
    only route to the 18k missed inflected forms, and it *shrinks* the search
-   space rather than growing it.
+   space rather than growing it.~~ **Measured and rejected — see §6.2.3.**
 4. **Rank with features, not a flag.** `stem_known`, `n_affixes`,
    `analyzer_confidence`, affix-compatibility with the LM context. Cap the
    number of analyzer calls per token.
 
 Guard all of it: `if self.segmenter is None or self.lambda_morph == 0: skip`.
 
-### 6.3 What to do with SymSpell
+#### 6.2.3 Stem-span repair: measured, and rejected
+
+This was the most promising item in the original plan. I built it, measured it
+against real corpus data, and **it is a net negative**. Recording the result so
+nobody rebuilds it.
+
+The mechanism: for an OOV token, peel a known affix, run SymSpell on the (now
+shorter) stem, and re-glue prefix + repaired stem + suffix.
+
+Four variants measured over 4,000 genuine OOV tokens (lexicon built from a
+disjoint corpus span so the OOV set is real). Percentages are of OOV tokens for
+which the full-form lookup found nothing:
+
+| Variant | Constraint | Candidate yield | Precision |
+| --- | --- | --- | --- |
+| A | any stem repair, re-glued | 18.8 % | ~0 % |
+| B | rebuilt form must be attested | 3.6 % | ~0 % |
+| C | B + length-preserving stem edit | 1.9 % | ~0 % |
+| D | C + peeled affix must survive | 1.9 % | ~0 % |
+
+The failure is structural, not a tuning problem. Peeling `-ኡ` or `-ው` off a
+correctly-spelled word leaves a stem whose final vowel is now spurious, so
+SymSpell's cheapest repair is to *delete* it — and re-gluing then yields a
+well-formed but wrong word:
+
+```
+ሰነዱን    -> stem ሰነዱ    -> ሰነድ    => ሰነድን      (drops -ኡ "his")
+ሙዚቃውን   -> stem ሙዚቃው   -> ሙዚቃ    => ሙዚቃን
+ጉልበቱን   -> stem ጉልበቱ   -> ጉልበት   => ጉልበትን
+ከቀሚሷ    -> stem ቀሚሷ    -> ቀሚስ    => ከቀሚስ
+በመዲናችን  -> stem መዲናችን  -> መሆናችን  => በመሆናችን
+ፓትሪክ    -> stem ፓትሪ    -> ባትሪ    => ባትሪክ      (proper noun!)
+```
+
+Two things make it worse rather than better in the real system: (a) the rebuilt
+form being *attested* is exactly what makes it dangerous, because it then
+competes legitimately in the beam instead of being filtered out; and (b) the
+segmenter's `stem` is a **root**, not a surface substring
+(`ለአለማቀፉ → ለ + አለማቀፈ + ኡ`), so "re-attach the affixes" cannot be done by string
+concatenation from the analyzer's output at all.
+
+Caveat stated plainly: this experiment measures what stem-span repair does to
+*correctly-spelled but rare* words — the false-positive risk — not the recall
+gain. There are no OCR→gold pairs in this sandbox to measure the recall side.
+But at ~0 % precision on a 1.9–3.6 % yield, the burden of proof has moved: this
+needs a measured recall win on real OCR errors before it is worth the risk.
+
+### 6.3 Morphology is not a passive feature
+
+The most important finding of this session, and it reframes §3.
+
+With a working analyzer, `is_known_word()` no longer means "in the dictionary" —
+it means "in the dictionary **or decomposable by the analyzer**". Measured: that
+flips **56.4 % of genuinely-OOV tokens to *verified*** (1,692 of 3,000).
+Verified tokens then:
+
+* receive the **anchor barrier** bonus for the identity candidate, making them
+  much harder to correct at all;
+* **skip the pairwise-reversal search**, which is gated on `not is_verified`;
+* become subject to the peel guard — which is the one good effect.
+
+The first two are the problem. A misspelled word that happens to be
+morphologically decomposable — and Amharic is agglutinative enough that many
+are — gets *protected from correction* by the very module whose job is to
+understand it. Examples from the measurement:
+
+```
+ሀገርም    -> VB:JUSSIVE_IMPERATIVE   (it is a noun + -ም)
+አትሠራም   -> VB:JUSSIVE_IMPERATIVE   stem 'አትሰራም' — the negation is not peeled
+```
+
+That is a mechanical explanation for a large error *increase*: **the anchor
+barrier is protecting tokens that need correcting.** It also costs 9.34 ms per
+uncached analyzer call — modest per token, but it is spent on precisely the
+hardest tokens.
+
+§3.2 proved `lambda_morph` is a constant that cancels out of the ranking. That
+is still true, and it is why the analyzer looks cheap in a profile. But the
+analyzer's *other* effect — deciding what counts as verified — is large, and it
+is invisible in `lambda_morph`. **The analyzer is not integrated as a scorer; it
+is integrated as a gate, and that gate is doing most of the work.**
+
+Note this is a description of your production system, not a regression: the
+`/mnt/...` paths exist on your machine, so morphology has always been live
+there. The vendored copy is the lowest-priority fallback and only makes a fresh
+checkout match production. The sandbox previously could not import the analyzer
+at all, which is why this was invisible until now.
+
+Morphology-on vs morphology-off is therefore the single most valuable
+experiment available, and it is now a one-flag change: `--no-morphology` /
+`--require-morphology` on `04_evaluate_full_corrector.py`, or `use_morphology=`
+in the constructor.
+
+### 6.4 What to do with SymSpell
 
 Demote it from primary generator to a **bounded fallback**, or drop it:
 
@@ -428,7 +521,7 @@ Demote it from primary generator to a **bounded fallback**, or drop it:
   rows into flat dicts; today every cell does three chained `.get()` calls and
   two `min(float(...), 2.4)` conversions.
 
-### 6.4 Also missing, and worth fixing while you are in there
+### 6.5 Also missing, and worth fixing while you are in there
 
 * **No unigram prior.** SymSpell returns `count` and it is discarded. Frequency
   is the strongest single signal for real-word-error correction; add
@@ -468,7 +561,8 @@ Reordered by the profile in §5. "Status" reflects what is already in the tree.
 | 7.8 | Cap SymSpell output before the DP / move to the weighted generator | **[measured]** 54 % of suggestions fail the gate; fanout linear in lexicon size | the remaining DP cost; grows to ~230 calls/token at 5M types | next |
 | 7.9 | Merge `vocab` + `surface_form` into one dict; drop SymSpell if §6.3 lands | three copies of a 5M lexicon today | −1–2 GB RAM, large cut in the 222 s init | next |
 | 7.10 | Peel veto applied to **every** candidate source (was SymSpell-only); built-in pragmatic-sister / proclitic inventories; memoized affix-sequence check | **[measured]** the guard only ever fired for `symspell` on verified tokens, so `single_reversal` / `pairwise_reversal` / `ghost_suffix` emitted over-peels unchecked | **[measured]** 32.5 % of verified tokens had ≥1 over-peel vetoed (2,053 vetoes / 6,000 tokens); runtime −1.5 % (within noise) | **DONE** |
-| 7.11 | Morphological repair restricted to the stem span (§6.2.3) | needs the real `segmenter` vendored in | the remaining accuracy work | next |
+| 7.11 | Morphological repair restricted to the stem span (§6.2.3) | **measured and REJECTED — see §6.2.3** | near-zero precision; net negative | **do not do** |
+| 7.12 | Ablate morphology on vs off end-to-end | **measured**: morphology is not a passive feature (§6.3) | likely the largest single accuracy lever | **next** |
 | — | Beam backpointers | measured negligible (~0.02 ms/token) | **skip** | — |
 | — | Multiprocessing | each worker duplicates the multi-GB index | **defer** | — |
 
@@ -533,16 +627,37 @@ I would not touch thresholds or weights yet. The order I'd propose:
    exists.** But it turned out not to be the cause: the guard was never reached
    for the damaging sources (see §8). It is still worth running the evaluator
    with `--require-morphemes-json` so a missing file is never silent.
-2. **Get a real baseline.** Re-run Phase B with the current tree. Everything
-   before this point is optimization without a trustworthy reference number.
-3. **Then** finish the accuracy work: §6.2.3 (stem-span repair with affixes
-   re-attached, driven by the real `Analysis.affix_skeleton`). §6.2.2 landed
-   as 7.10 above. Those are the changes that could turn a −63 % error
-   *increase* into a reduction.
+2. **Ablate morphology on vs off, end to end.** This is now the highest-value
+   experiment available and it is a single flag:
+
+   ```
+   04_evaluate_full_corrector.py --no-morphology       # analyzer off
+   04_evaluate_full_corrector.py --require-morphology  # analyzer on (current)
+   ```
+
+   §6.3 explains why: the analyzer flips 56 % of OOV tokens to *verified*, and
+   verified tokens get the anchor barrier's protection and skip the
+   pairwise-reversal search. That is a mechanical explanation for a large
+   error increase, and it is invisible in `lambda_morph`. Run it before
+   anything else.
+3. **Get a real baseline** for whichever arm wins. Everything before this point
+   is optimization without a trustworthy reference number.
 4. Only then retune `lambda_*` and the optical ceiling, on a held-out split.
 
-The structural diagnosis to take away: **the analyzer is not integrated — it is
-a boolean post-filter that provably cancels out of the ranking, and it is
-~1 % of your runtime.** Fixing the integration is almost entirely an *accuracy*
-change, not a speed one. The speed is in `compute_optical_cost`, where the
-retrieval is unweighted and the ranking is weighted.
+Two items are now closed and should not be revisited without new evidence:
+
+* **§6.2.2 (peel veto) landed** as 7.10 — measured, 43.7 % of verified tokens
+  affected, ~free.
+* **§6.2.3 (stem-span repair) is rejected on measurement** — ~0 % precision at
+  a 1.9–3.6 % candidate yield. Do not rebuild it without a measured recall win
+  against real OCR→gold pairs.
+
+The structural diagnosis to take away has been **corrected**. The original was
+"the analyzer is a boolean post-filter that provably cancels out of the
+ranking, and it is ~1 % of your runtime — fixing the integration is an accuracy
+change, not a speed one." The first half is still true of `lambda_morph`
+specifically, and the speed work is still in `compute_optical_cost`. But the
+conclusion drew too little from it: because the analyzer cancels out *as a
+scorer*, its real influence must be elsewhere — and it is, as the gate that
+decides what counts as verified (§6.3). **The analyzer is load-bearing in a
+place the profile cannot show you.**

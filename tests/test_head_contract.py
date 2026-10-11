@@ -348,6 +348,41 @@ class TestVendoredSegmenter(CorrectorTestCase):
         self.assertEqual(c.protected_suffixes, set())
 
 
+class TestMorphologySwitch(CorrectorTestCase):
+    """use_morphology makes an accidental import result an explicit switch."""
+
+    def test_explicit_off_disables_the_analyzer(self):
+        c = self.make([("በሽታ", 1)], segmenter=Ellipsis, use_morphology=False)
+        self.assertIsNone(c.segmenter)
+
+    def test_explicit_on_requires_an_importable_analyzer(self):
+        import amharic_ocr_corrector as m
+        if not m.HAS_MORPH:
+            with self.assertRaises(RuntimeError):
+                self.make([("በሽታ", 1)], segmenter=Ellipsis, use_morphology=True)
+            return
+        c = self.make([("በሽታ", 1)], segmenter=Ellipsis, use_morphology=True)
+        self.assertIsNotNone(c.segmenter)
+
+    def test_default_preserves_historical_behaviour(self):
+        """use_morphology=None must not shift any existing setup."""
+        import amharic_ocr_corrector as m
+        c = self.make([("በሽታ", 1)], segmenter=Ellipsis)
+        self.assertEqual(c.segmenter is not None, m.HAS_MORPH)
+
+    def test_disabled_morphology_never_accepts_oov(self):
+        """Without the analyzer, unknown really means unknown."""
+        c = self.make([("በሽታ", 1)], segmenter=Ellipsis, use_morphology=False)
+        a = c.analyze("የማይታወቅበት")
+        self.assertFalse(a["known"])
+        self.assertEqual(a["error"], "no_segmenter")
+
+    def test_injected_segmenter_is_not_overridden_by_the_switch(self):
+        seg = FakeSegmenter("N")
+        c = self.make([("በሽታ", 1)], segmenter=seg, use_morphology=False)
+        self.assertIs(c.segmenter, seg)
+
+
 class TestMorphemesJson(CorrectorTestCase):
     def test_missing_file_warns_and_degrades_the_peel_guard(self):
         """§3.5 / §6.2.2.

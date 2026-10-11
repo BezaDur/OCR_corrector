@@ -306,6 +306,11 @@ class AmharicOCRCorrector:
         #     AmharicMorphologicalSegmenter(); pass None explicitly to disable
         #     morphology (tests, ablations, analyzer-free deployments).
         segmenter=...,
+        # use_morphology: explicit on/off switch for the default analyzer.
+        #     None (default) = use it when importable; False = never;
+        #     True = required. Kept separate from `segmenter=` so the
+        #     morphology-on vs morphology-off ablation is a one-flag change.
+        use_morphology=None,
         # --- search / scoring knobs -----------------------------------------
         max_candidates: int = 24,
         score_eos: bool = True,
@@ -401,8 +406,25 @@ class AmharicOCRCorrector:
         # 2. Morphological Segmenter & Declarative Morpheme Inventory
         #    `segmenter=...` means "use the module default"; `segmenter=None`
         #    explicitly disables morphology.
+        #
+        #    `use_morphology` makes the switch explicit and A/B-able rather
+        #    than an accident of whether the import succeeded. It matters
+        #    because morphology is not a passive feature: with a working
+        #    analyzer, is_known_word() accepts any *decomposable* OOV token,
+        #    and verified tokens get the anchor barrier's protection and skip
+        #    the pairwise-reversal search. Measured on real corpus data that is
+        #    56 % of OOV tokens, so "morphology on" is a large behavioural
+        #    change, not a refinement. Default None preserves the historical
+        #    behaviour (on when importable) so existing setups do not shift.
         if segmenter is not ...:
             self.segmenter = segmenter
+        elif use_morphology is False:
+            self.segmenter = None
+        elif use_morphology is True and not HAS_MORPH:
+            raise RuntimeError(
+                "use_morphology=True but the segmenter suite is not importable. "
+                "Set AMHARIC_MORPH_PATHS, or check vendor/segmenter/."
+            )
         else:
             self.segmenter = AmharicMorphologicalSegmenter() if HAS_MORPH else None
         if self.segmenter and self.verbose:
