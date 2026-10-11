@@ -299,6 +299,55 @@ class TestDecoderMorphologyCall(CorrectorTestCase):
         self.assertEqual(seg.calls, 0)
 
 
+class TestVendoredSegmenter(CorrectorTestCase):
+    """The vendored suite must be importable, or morphology is dead code.
+
+    See vendor/segmenter/VENDORING.md. These tests skip (rather than fail) when
+    the vendor tree is absent, so the suite still runs on a checkout without it.
+    """
+
+    def setUp(self):
+        import amharic_ocr_corrector as m
+        self.mod = m
+        if not m.HAS_MORPH:
+            self.skipTest("segmenter suite not importable")
+
+    def test_segmenter_is_importable(self):
+        self.assertTrue(self.mod.HAS_MORPH)
+        from segmenter import AmharicMorphologicalSegmenter  # noqa: F401
+
+    def test_vendored_path_is_the_lowest_priority_fallback(self):
+        """Live checkouts must win over the frozen snapshot."""
+        paths = self.mod.MORPH_PATHS
+        vendored = [p for p in paths if os.path.join("vendor", "segmenter") in p]
+        if not vendored:
+            self.skipTest("vendored copy not present")
+        # The loader inserts at sys.path[0] in list order, so the LAST entry
+        # has the highest priority. Vendored must come before any live path.
+        self.assertEqual(vendored[0], paths[0])
+
+    def test_vendored_morphemes_json_is_discovered(self):
+        c = self.make([("በሽታ", 1)])
+        self.assertTrue(os.path.exists(c.morphemes_json_path),
+                        c.morphemes_json_path)
+        self.assertTrue(c.protected_suffixes)
+        self.assertTrue(c.protected_prefixes)
+
+    def test_segment_word_returns_a_structured_analysis(self):
+        seg = self.mod.AmharicMorphologicalSegmenter()
+        r = seg.segment_word("ለአለማቀፉ")
+        self.assertIsInstance(r, dict)
+        for key in ("word", "prefix", "stem", "suffix", "pos"):
+            self.assertIn(key, r)
+
+    def test_explicit_morphemes_path_is_honoured_even_when_missing(self):
+        """The vendored fallback must not mask an explicitly requested path."""
+        c = self.make([("በሽታ", 1)],
+                      morphemes_json_path="/nonexistent/morphemes.json")
+        self.assertEqual(c.morphemes_json_path, "/nonexistent/morphemes.json")
+        self.assertEqual(c.protected_suffixes, set())
+
+
 class TestMorphemesJson(CorrectorTestCase):
     def test_missing_file_warns_and_degrades_the_peel_guard(self):
         """§3.5 / §6.2.2.

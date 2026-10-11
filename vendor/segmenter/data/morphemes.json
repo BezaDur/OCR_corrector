@@ -1,0 +1,1220 @@
+{
+  "_comment_architecture": "SCHEMA SPECIFICATION: Every affix key strictly terminates in '_exclusive' (unambiguous category evidence) or '_ambiguous' (polysemous across categories). Composite inventories are synthesized dynamically at runtime.",
+  "======================================================================": "",
+  "suffix_nominal_plural_exclusive": [
+    "ኦች"
+  ],
+  "suffix_nominal_plural_ambiguous": [
+    "አት",
+    "ያት"
+  ],
+  "suffix_nominal_definiteness_exclusive": [
+    "ኢቱ",
+    "ኢቷ",
+    "ይቱ",
+    "ዪቱ",
+    "ቷ",
+    "ቲቷ",
+    "ቲቱ"
+  ],
+  "suffix_nominal_definiteness_ambiguous": [
+    "ኡ",
+    "ው",
+    "ዋ",
+    "ቱ"
+  ],
+  "suffix_nominal_possessive_exclusive": [
+    "ዬ",
+    "እህ",
+    "እሽ",
+    "አችን",
+    "ችን"
+  ],
+  "suffix_nominal_possessive_ambiguous": [
+    "ኤ",
+    "ህ",
+    "ሽ",
+    "ኡ",
+    "ዋ",
+    "አችሁ",
+    "አቹ",
+    "አቸው",
+    "ዎ",
+    "ዎት"
+  ],
+  "suffix_nominal_abstract_exclusive": [
+    "ነት",
+    "ስና",
+    "ግልና",
+    "ቁና"
+  ],
+  "suffix_nominal_abstract_ambiguous": [
+    "ና",
+    "ቴ"
+  ],
+  "suffix_nominal_derivational_exclusive": [
+    "ኛ",
+    "ኧኛ",
+    "ኧኞች",
+    "ኧኝነት",
+    "ኞች",
+    "አም",
+    "አማ",
+    "አዊ",
+    "አዊያን",
+    "አዊት",
+    "ዊት",
+    "ኣይ",
+    "ኢት"
+  ],
+  "suffix_nominal_derivational_ambiguous": [
+    "ቴ"
+  ],
+  "suffix_nominal_instrumental_exclusive": [
+    "ኢያ",
+    "ኢያው"
+  ],
+  "suffix_nominal_instrumental_ambiguous": [],
+  "suffix_nominal_accusative_ambiguous": [
+    "ን"
+  ],
+  "suffix_verb_subject_exclusive": [
+    "ኩ",
+    "ኹ",
+    "ሁ",
+    "ክ",
+    "ኽ",
+    "ኧች",
+    "ንእ"
+  ],
+  "suffix_verb_subject_ambiguous": [
+    "ሽ",
+    "ን",
+    "ነን",
+    "አችሁ",
+    "አቹ",
+    "ኡ",
+    "ኢ"
+  ],
+  "suffix_verb_object_exclusive": [
+    "ኝ",
+    "ከን"
+  ],
+  "suffix_verb_object_ambiguous": [
+    "ት",
+    "አት",
+    "ህ",
+    "ሽ",
+    "ው",
+    "ን",
+    "ነን",
+    "አችሁ",
+    "አቹ",
+    "አቸው",
+    "ዎ",
+    "ዎት"
+  ],
+  "suffix_verb_applicative_exclusive": [
+    "ልኝ",
+    "ልህ",
+    "ልሽ",
+    "ለት",
+    "ለው",
+    "ላት",
+    "ልን",
+    "ላችሁ",
+    "ላቹ",
+    "ላቸው",
+    "ብኝ",
+    "ብህ",
+    "ብሽ",
+    "በት",
+    "ባት",
+    "ብን",
+    "ባችሁ",
+    "ባቹ",
+    "ባቸው"
+  ],
+  "suffix_verb_applicative_ambiguous": [
+    "ል",
+    "ብ"
+  ],
+  "suffix_verb_coverb_exclusive": [
+    "ቼ",
+    "ቶ",
+    "ተው",
+    "ተን",
+    "ታ",
+    "ታችሁ",
+    "ታቹ",
+    "ተህ",
+    "ተሽ"
+  ],
+  "suffix_verb_coverb_ambiguous": [
+    "ኦ",
+    "አ",
+    "ኤ",
+    "ው",
+    "ዋ",
+    "ህ",
+    "ሽ",
+    "ን",
+    "አችሁ",
+    "አቹ"
+  ],
+  "suffix_verb_auxiliary_exclusive": [
+    "አለሁ",
+    "አለህ",
+    "አለሽ",
+    "አለች",
+    "አለን",
+    "አላችሁ",
+    "አላቹ",
+    "አሉ",
+    "ለሁ",
+    "ለህ",
+    "ለሽ",
+    "ለች",
+    "ለን",
+    "ላችሁ",
+    "ላቹ",
+    "ሉ",
+    "ዋለሁ",
+    "ዋልህ",
+    "ዋልሽ",
+    "ዋለች",
+    "ዋለን",
+    "ዋላችሁ",
+    "ዋላቹ",
+    "ዋሉ"
+  ],
+  "suffix_verb_auxiliary_ambiguous": [
+    "አል",
+    "ል",
+    "ዋል"
+  ],
+  "suffix_verb_negative_finiteness_exclusive": [
+    "እም"
+  ],
+  "suffix_verb_negative_finiteness_ambiguous": [
+    "ም"
+  ],
+  "prefix_nominal_associatives_exclusive": [
+    "እነ",
+    "ከእነ",
+    "ለእነ",
+    "በእነ",
+    "የእነ",
+    "ስለእነ",
+    "ወደእነ"
+  ],
+  "prefix_nominal_associatives_ambiguous": [
+    "ከነ",
+    "ለነ",
+    "በነ",
+    "የነ",
+    "ስለነ",
+    "ወደነ"
+  ],
+  "prefix_nominal_compound_exclusive": [
+    "ለስነ",
+    "ለባለ",
+    "ስነ",
+    "ባለ",
+    "ጸረ"
+  ],
+  "prefix_nominal_compound_ambiguous": [],
+  "prefix_nominal_prepositional_exclusive": [
+    "ወደ",
+    "ያለ"
+  ],
+  "prefix_nominal_prepositional_ambiguous": [
+    "እ"
+  ],
+  "prefix_verb_aspectual_perfective_exclusive": [
+    "የተ",
+    "በተ",
+    "ከተ",
+    "ለተ",
+    "ስለተ",
+    "እንደተ",
+    "የአስ",
+    "በአስ",
+    "ከአስ",
+    "ለአስ",
+    "ስላል",
+    "ያል"
+  ],
+  "prefix_verb_aspectual_imperfective_ambiguous": [
+    "ይ",
+    "ት",
+    "እ",
+    "እን"
+  ],
+  "prefix_verb_negative_exclusive": [
+    "ሳይ",
+    "ሳት",
+    "ሳን",
+    "ሳል",
+    "ባይ",
+    "ባት",
+    "ባን",
+    "ባል",
+    "የማይ",
+    "የማት",
+    "የማን",
+    "የማል",
+    "እንዳይ",
+    "እንዳት",
+    "እንዳን",
+    "እንዳል",
+    "ስለማይ",
+    "ስለማት",
+    "ስለማን",
+    "ስለማል",
+    "በማይ",
+    "በማት",
+    "በማን",
+    "በማል",
+    "ከማይ",
+    "ከማት",
+    "ከማን",
+    "ከማል",
+    "ለማይ",
+    "ለማት",
+    "ለማል"
+  ],
+  "prefix_verb_negative_ambiguous": [
+    "አል",
+    "አላ",
+    "አይ",
+    "አት",
+    "አን"
+  ],
+  "prefix_verb_subordinate_exclusive": [
+    "ስለሚ",
+    "እንደሚ",
+    "በሚ",
+    "ከሚ",
+    "ለሚ",
+    "ሲ",
+    "ሲያ",
+    "ቢ",
+    "ቢያ",
+    "ሊ",
+    "ሊያ",
+    "እንዲ",
+    "እንዲያ",
+    "ሲያስ",
+    "ቢያስ",
+    "ሊያስ",
+    "እንዲያስ",
+    "ለማስ",
+    "ስለማስ",
+    "እንደማስ"
+  ],
+  "prefix_verb_subordinate_ambiguous": [
+    "ል",
+    "ስ",
+    "ብ",
+    "እንድ",
+    "እስኪ",
+    "እስክ"
+  ],
+  "prefix_verb_progressive_exclusive": [
+    "እየ",
+    "እያ"
+  ],
+  "prefix_verb_progressive_ambiguous": [],
+  "prefix_universal_prepositional_exclusive": [
+    "እስከ",
+    "እንደ",
+    "ስለ",
+    "በየ",
+    "ለየ",
+    "ከየ",
+    "ወደየ",
+    "እንደየ",
+    "እስከየ"
+  ],
+  "prefix_universal_prepositional_ambiguous": [
+    "ለ",
+    "በ",
+    "ከ",
+    "የ"
+  ],
+  "prefix_relative_pronoun": [
+    "የ"
+  ],
+  "prefix_rel_imperfective_particle": [
+    "እም"
+  ],
+  "prefix_rel_imperfective_particle_allomorphs": [
+    "ም",
+    "ሚ",
+    "ሚያ"
+  ],
+  "prefix_rel_imperfective_agreement": [
+    "ኢ",
+    "ት",
+    "ን",
+    "ያ"
+  ],
+  "suffix_universal_clitics_exclusive": [
+    "ንና",
+    "ንም"
+  ],
+  "suffix_universal_clitics_ambiguous": [
+    "ም",
+    "ማ",
+    "ስ",
+    "ና"
+  ],
+  "prefix_verb_negative_vn": [
+    "አለ"
+  ],
+  "pronoun_stems": [
+    "እሱ",
+    "እሷ",
+    "እኔ",
+    "እኛ",
+    "እነሱ",
+    "እነርሱ",
+    "እርስዎ",
+    "እሱዋ",
+    "አንተ",
+    "አንቺ",
+    "እናንተ",
+    "ይህ",
+    "ይህች",
+    "ይሄ",
+    "ያ",
+    "ያች",
+    "እዚህ",
+    "እዚያ",
+    "እነዚህ",
+    "እነዚያ",
+    "እነዚሁ",
+    "እነዛ",
+    "እነኝህ",
+    "እነኘህ",
+    "እነዚ",
+    "እነኛ",
+    "እነዝህ",
+    "እነሆ",
+    "እነማን",
+    "ማን",
+    "ምን",
+    "የት",
+    "መቼ",
+    "እንዴት",
+    "ስንት"
+  ],
+  "geez_plurals": [
+    "አካላት",
+    "ነፍሳት",
+    "ብሉያት",
+    "ትኩሳት",
+    "ፍትሐት",
+    "ፍጥረታት",
+    "እንስሳት",
+    "ጽሑፋት",
+    "ካህናት",
+    "ህጻናት",
+    "መላክት",
+    "መልክት",
+    "ሰርቆት",
+    "መክፈልት",
+    "ዐቃቢት",
+    "ዋድያት",
+    "ጕርናት",
+    "ሙጭራት",
+    "አገራት",
+    "ወራት",
+    "መንግስታት",
+    "ሰማያት",
+    "ህጋት"
+  ],
+  "confirmed_sparse_nouns": [
+    "ሆታ",
+    "ሆጃ",
+    "ባና",
+    "ተራዳ",
+    "አሉማ",
+    "አሜታ",
+    "አምባሻ",
+    "አሬራ",
+    "አሽታ",
+    "አሹራ",
+    "አንኮላ",
+    "አኮፋዳ",
+    "አወንታ",
+    "አውላላ",
+    "ኰልኵላ",
+    "ኰነኔ",
+    "ወደሮ",
+    "ዋርዳ",
+    "ዐረብያ",
+    "ዳጣ",
+    "ገመሳ",
+    "ገቻ",
+    "ጠላላ",
+    "ጠራራ",
+    "ጣማ",
+    "ጣቃ",
+    "ዝሀ",
+    "ማየ",
+    "ርእሰ",
+    "መርሀ",
+    "ክፍለ"
+  ],
+  "confirmed_sparse_verbs": [
+    "አማ",
+    "አየ",
+    "አሸ",
+    "አራ",
+    "አሻ",
+    "አዠ",
+    "አጨ",
+    "ሻ",
+    "ላ",
+    "ዛ",
+    "ጣ",
+    "ጫ",
+    "ማ",
+    "ካ",
+    "ራ",
+    "ያ",
+    "ጩዃል",
+    "ቦክቷል",
+    "ተቀባብለዋል",
+    "ተጯጩኸዋል",
+    "ማስኗል",
+    "ሞክቷል",
+    "ነኩሯል",
+    "ናኝቷል",
+    "ኮርፏል",
+    "ጎጥጧል",
+    "ጮምቷል",
+    "ጮብቷል"
+  ],
+  "irregular_verbs_say": [
+    "እላ",
+    "ይላ",
+    "ትላ",
+    "እንላ",
+    "የሚላ",
+    "የምትላ",
+    "የምና",
+    "እል",
+    "ይል",
+    "ትል",
+    "እንል"
+  ],
+  "verb_stems": [
+    "እላ",
+    "ይላ",
+    "ትላ",
+    "እንላ",
+    "የሚላ",
+    "የምትላ",
+    "የምና",
+    "አለ",
+    "ነበር",
+    "ነበረ",
+    "የለ",
+    "የለም",
+    "ቻል",
+    "ችል",
+    "ደል"
+  ],
+  "verbs_ending_in_gna": [
+    "ተኛ",
+    "አስተኛ",
+    "ተመኛ",
+    "አመኛ",
+    "ቃኛ",
+    "ዳኛ",
+    "ዋኘ"
+  ],
+  "weak_coverb_lemma_endings": [
+    "ጣ",
+    "ባ",
+    "ፋ",
+    "ሳ",
+    "ማ",
+    "ራ",
+    "ና",
+    "ዳ",
+    "ጃ",
+    "ላ",
+    "ጠፋ",
+    "ሰማ",
+    "ነሳ",
+    "ገባ"
+  ],
+  "imperfective_negative_prefixes": [
+    "አይ",
+    "አት",
+    "አን",
+    "የማይ",
+    "እንዳይ"
+  ],
+  "verbal_prefixes_requiring_attestation": [
+    "ል",
+    "ሊ",
+    "ብ",
+    "ቢ",
+    "ሲ",
+    "አን",
+    "አይ",
+    "አት",
+    "አል",
+    "አላ"
+  ],
+  "subject_e_exclusions": [
+    "እንደ",
+    "እስከ",
+    "እነ",
+    "እየ"
+  ],
+  "unambiguous_assoc_prefixes": [
+    "እነ",
+    "የእነ",
+    "ከእነ",
+    "ለእነ",
+    "በእነ"
+  ],
+  "possessive_1pl_endings": [
+    "ችን",
+    "አችን",
+    "ያችን",
+    "ዋችን"
+  ],
+  "closed_class_quantifiers": [
+    "ሁሉ",
+    "ሙሉ"
+  ],
+  "inherent_terminal_u_stems": [
+    "ሁሉ",
+    "ሙሉ",
+    "ብዙ",
+    "ጥሩ",
+    "ልዩ",
+    "ኢዮቤልዩ",
+    "ሂንዱ",
+    "ፔሩ",
+    "ሜኑ",
+    "ቶፉ",
+    "መላኩ",
+    "ብርሃኑ"
+  ],
+  "voice_morphology": {
+    "direct_causative": [
+      "አ"
+    ],
+    "indirect_causative": [
+      "አስ"
+    ],
+    "non_active": [
+      "ተ"
+    ]
+  },
+  "voice_nonactive_deponents": [
+    "ተሟጨ",
+    "ተቆያዩ",
+    "ተያዩ"
+  ],
+  "voice_active_deponents": [],
+  "voice_bound_stems": [
+    "ተናጋ",
+    "አናጋ"
+  ],
+  "prefix_verb_voice_exclusive": [
+    "አስ",
+    "አስተ"
+  ],
+  "bipartite_applicative_mappings": {
+    "ልኝ": [
+      "ል",
+      "ኝ"
+    ],
+    "ልህ": [
+      "ል",
+      "ህ"
+    ],
+    "ልሽ": [
+      "ል",
+      "ሽ"
+    ],
+    "ለት": [
+      "ል",
+      "ት"
+    ],
+    "ለው": [
+      "ል",
+      "ው"
+    ],
+    "ላት": [
+      "ል",
+      "አት"
+    ],
+    "ልን": [
+      "ል",
+      "ን"
+    ],
+    "ላችሁ": [
+      "ል",
+      "አችሁ"
+    ],
+    "ላቹ": [
+      "ል",
+      "አቹ"
+    ],
+    "ላቸው": [
+      "ል",
+      "አቸው"
+    ],
+    "ብኝ": [
+      "ብ",
+      "ኝ"
+    ],
+    "ብህ": [
+      "ብ",
+      "ህ"
+    ],
+    "ብሽ": [
+      "ብ",
+      "ሽ"
+    ],
+    "በት": [
+      "ብ",
+      "ት"
+    ],
+    "ባት": [
+      "ብ",
+      "አት"
+    ],
+    "ብን": [
+      "ብ",
+      "ን"
+    ],
+    "ባችሁ": [
+      "ብ",
+      "አችሁ"
+    ],
+    "ባቹ": [
+      "ብ",
+      "አቹ"
+    ],
+    "ባቸው": [
+      "ብ",
+      "አቸው"
+    ]
+  },
+  "auxiliary_coda_shifts": {
+    "ለሁ": "አለሁ",
+    "ለህ": "አለህ",
+    "ለሽ": "አለሽ",
+    "ለች": "አለች",
+    "ለን": "አለን",
+    "ላችሁ": "አላችሁ",
+    "ላቹ": "አላቹ",
+    "ሉ": "አሉ",
+    "ል": "አል"
+  },
+  "compound_auxiliary_suffixes": {
+    "ታለች": {
+      "stem_suffix": "",
+      "affixes": [
+        "ታ",
+        "አለች"
+      ],
+      "rule": "compound_coverb_talech"
+    },
+    "ተናል": {
+      "stem_suffix": "",
+      "affixes": [
+        "ተን",
+        "አል"
+      ],
+      "rule": "compound_coverb_tenal"
+    },
+    "ተዋል": {
+      "stem_suffix": "",
+      "affixes": [
+        "ተው",
+        "አል"
+      ],
+      "rule": "compound_coverb_tewal"
+    },
+    "ቻለሁ": {
+      "stem_suffix": "",
+      "affixes": [
+        "ቼ",
+        "አለሁ"
+      ],
+      "rule": "compound_coverb_chalehu"
+    },
+    "ችኋለሁ": {
+      "stem_suffix": "",
+      "affixes": [
+        "አችሁ",
+        "አለሁ"
+      ],
+      "rule": "compound_obj_achhu_alehu"
+    },
+    "ሃል": {
+      "stem_suffix": "",
+      "affixes": [
+        "ህ",
+        "አል"
+      ],
+      "rule": "compound_obj_h_al"
+    },
+    "ሀል": {
+      "stem_suffix": "",
+      "affixes": [
+        "ህ",
+        "አል"
+      ],
+      "rule": "compound_obj_h_al"
+    },
+    "ኛል": {
+      "stem_suffix": "",
+      "affixes": [
+        "ኝ",
+        "አል"
+      ],
+      "rule": "compound_obj_gn_al"
+    }
+  },
+  "compound_plural_possessives": {
+    "ዎቻችን": [
+      "ዎች",
+      "አችን"
+    ],
+    "ዎቻቸው": [
+      "ዎች",
+      "አቸው"
+    ],
+    "ዎቻችሁ": [
+      "ዎች",
+      "አችሁ"
+    ],
+    "ዎቻቹ": [
+      "ዎች",
+      "አችሁ"
+    ],
+    "ኦቻችን": [
+      "ኦች",
+      "አችን"
+    ],
+    "ኦቻቸው": [
+      "ኦች",
+      "አቸው"
+    ],
+    "ኦቻችሁ": [
+      "ኦች",
+      "አችሁ"
+    ],
+    "ኦቻቹ": [
+      "ኦች",
+      "አችሁ"
+    ],
+    "ቻችን": [
+      "ኦች",
+      "አችን"
+    ],
+    "ቻቸው": [
+      "ኦች",
+      "አቸው"
+    ],
+    "ቻችሁ": [
+      "ኦች",
+      "አችሁ"
+    ],
+    "ቻቹ": [
+      "ኦች",
+      "አችሁ"
+    ]
+  },
+  "type_c_shield_words": [
+    "ባረከ",
+    "ባረቀ",
+    "ባለገ",
+    "ባረረ",
+    "ባተለ",
+    "ባከነ",
+    "ባዘነ",
+    "ባሰነ",
+    "ባርክ",
+    "ባልግ",
+    "ባርቅ",
+    "ባትል",
+    "ባክን",
+    "ባዝን"
+  ],
+  "privative_vn_prefix_map": {
+    "እስካለ": [
+      "እስከ",
+      "አለ"
+    ],
+    "እንዳለ": [
+      "እንደ",
+      "አለ"
+    ],
+    "ስላለ": [
+      "ስለ",
+      "አለ"
+    ],
+    "ወዳለ": [
+      "ወደ",
+      "አለ"
+    ],
+    "ባለ": [
+      "በ",
+      "አለ"
+    ],
+    "ካለ": [
+      "ከ",
+      "አለ"
+    ],
+    "ላለ": [
+      "ለ",
+      "አለ"
+    ],
+    "ያለ": [
+      "የ",
+      "አለ"
+    ]
+  },
+  "multi_rabe_prefixes": {
+    "እስካ": {
+      "components": [
+        "እስከ"
+      ],
+      "rule": "pfx_prep_eska_coalescence"
+    },
+    "እንዳ": {
+      "components": [
+        "እንደ"
+      ],
+      "rule": "pfx_prep_enda_coalescence"
+    },
+    "ስላ": {
+      "components": [
+        "ስለ"
+      ],
+      "rule": "pfx_prep_sla_coalescence"
+    },
+    "ወዳ": {
+      "components": [
+        "ወደ"
+      ],
+      "rule": "pfx_prep_weda_coalescence"
+    },
+    "እያ": {
+      "components": [
+        "እየ"
+      ],
+      "rule": "pfx_progressive_eyye_coalescence"
+    },
+    "አላ": {
+      "components": [
+        "አል"
+      ],
+      "rule": "pfx_neg_atomic_al"
+    },
+    "አያ": {
+      "components": [
+        "አይ"
+      ],
+      "rule": "pfx_neg_imp_ay_a"
+    },
+    "ሳያ": {
+      "components": [
+        "ሳይ"
+      ],
+      "rule": "pfx_neg_subord_saya"
+    },
+    "ያልተ": {
+      "components": [
+        "የ",
+        "አል",
+        "ተ"
+      ],
+      "rule": "pfx_rel_neg_passive"
+    },
+    "ያል": {
+      "components": [
+        "የ",
+        "አል"
+      ],
+      "rule": "pfx_rel_neg_ye_al"
+    }
+  },
+  "syncretic_imp_juss_orders": [
+    [
+      0,
+      5
+    ],
+    [
+      3,
+      5
+    ],
+    [
+      3
+    ]
+  ],
+  "syncretic_imp_juss_lexemes": [
+    "መንን",
+    "ሸኝ",
+    "ለይ",
+    "በጅ",
+    "ተው",
+    "ገጭ",
+    "ፈጅ",
+    "ፈጭ",
+    "ነጭ",
+    "ሻ"
+  ],
+  "auxiliary_verbs_standalone": [
+    "ነው",
+    "ነኝ",
+    "ነህ",
+    "ነሽ",
+    "ናት",
+    "ነች",
+    "ነን",
+    "ናችሁ",
+    "ናቹ",
+    "ናቸው",
+    "ነበር",
+    "ነበረ",
+    "የለም",
+    "የለ",
+    "አይደለም",
+    "አይደል",
+    "አይደለ"
+  ],
+  "closed_class_conjunctions": [
+    "እና",
+    "ግን",
+    "ወይም",
+    "እንጂ",
+    "እንጅ",
+    "ስለዚህ",
+    "እንዲሁም",
+    "እንድሁም",
+    "ወይስ",
+    "ዳሩ",
+    "ነገር_ግን",
+    "ስለሆነም",
+    "በመሆኑም",
+    "ሆኖም",
+    "ቢሆንም",
+    "ብሎም",
+    "ወይ"
+  ],
+  "closed_class_adpositions": [
+    "ላይ",
+    "ውስጥ",
+    "ጋር",
+    "ጋ",
+    "ስር",
+    "መካከል",
+    "መሀል",
+    "ዘንድ",
+    "ድረስ",
+    "ዙሪያ",
+    "ረገድ",
+    "ፊት",
+    "ኋላ",
+    "በኋላ",
+    "በፊት",
+    "በላይ",
+    "በኩል",
+    "አጠገብ",
+    "አኳያ",
+    "ሳቢያ",
+    "ባሻገር",
+    "ታች",
+    "ውጭ",
+    "ስለ",
+    "እንደ",
+    "ወደ",
+    "እስከ",
+    "ያለ"
+  ],
+  "ambiguous_verbal_nouns": [
+    "መስቀል",
+    "መብራት"
+  ],
+  "biradical_type_b_verbs": [
+    "ጠጣ",
+    "ለካ",
+    "ላላ",
+    "ሳሳ",
+    "ቀማ",
+    "ቀባ",
+    "አሸ",
+    "ቆየ",
+    "ቈየ",
+    "ለማ",
+    "ቀጣ",
+    "ቀባ"
+  ],
+  "biradical_type_a_medial_a_verbs": [
+    "ጣለ",
+    "ዛለ",
+    "ማለ",
+    "ሻለ",
+    "ዋለ",
+    "ቻለ",
+    "ሳለ",
+    "ዳነ",
+    "ሳመ",
+    "ላሰ",
+    "ካሰ",
+    "ናቀ",
+    "ጣሰ",
+    "ፋቀ",
+    "ዳጠ",
+    "ባሰ"
+  ],
+  "closed_class_adverbs": [
+    "አሁን",
+    "በጣም",
+    "ብቻ",
+    "ደግሞ",
+    "ዳግም",
+    "እንኳን",
+    "ልክ",
+    "ይልቅ",
+    "ይበልጥ",
+    "እጅግ",
+    "ከፍ",
+    "ዝቅ",
+    "ቀደም",
+    "ቅድም",
+    "ቀስ",
+    "ዘንድሮ",
+    "ሁሌ",
+    "እኩል",
+    "እኮ",
+    "ገደማ",
+    "ጭምር",
+    "ጭራሽ",
+    "እንዲሁ",
+    "ቀድሞ",
+    "ቀጥሎ",
+    "ቀና",
+    "ለየት",
+    "ለወደፊት",
+    "እንደገና",
+    "እንደልብ",
+    "የግድ",
+    "በተለይ",
+    "በተጨማሪ",
+    "በእርግጥ",
+    "በርግጥ",
+    "በአጠቃላይ",
+    "በትክክል",
+    "በቀላሉ",
+    "በቅድሚያ",
+    "በቅጡ",
+    "በአማካይ",
+    "በአብዛኛው",
+    "በአጭሩ",
+    "በተደጋጋሚ",
+    "በተመሳሳይ",
+    "በተቃራኒ",
+    "በተቃራኒው",
+    "በቅርቡ",
+    "በሰፊው",
+    "በአጋጣሚ",
+    "በአግባቡ",
+    "በጥቅሉ",
+    "በጽኑ",
+    "በዋዛ",
+    "በወጉ",
+    "በመጨረሻ",
+    "በምትኩ",
+    "በቀጣይ",
+    "በአፍታ",
+    "በእጥፍ",
+    "በአንጻሩ",
+    "እንድህ",
+    "እስካሁን",
+    "ገና",
+    "እንኳ",
+    "ከዚያ",
+    "እንግድህ",
+    "እንግዲህ",
+    "ወድህ",
+    "ወዲህ"
+  ],
+  "closed_class_question_words": [
+    "እንዴት",
+    "ለምን",
+    "ማን",
+    "ምን",
+    "የት",
+    "መቼ",
+    "ስንት",
+    "ምንድን"
+  ],
+  "closed_class_ideophones": [
+    "ደስ",
+    "ዝም",
+    "እምቢ",
+    "ቀስ",
+    "ቁጭ",
+    "ብድግ",
+    "እሰይ",
+    "ውልብ",
+    "ፍንክች",
+    "ድፍት",
+    "ቅው",
+    "ፉት"
+  ],
+  "suppletive_stem_templates": {
+    "ብል": {
+      "lemma": "አለ",
+      "pos": "COVERB"
+    },
+    "ል": {
+      "lemma": "አለ",
+      "pos": "IMPERFECTIVE"
+    },
+    "በል": {
+      "lemma": "አለ",
+      "pos": "JUSSIVE_IMPERATIVE"
+    },
+    "ተብል": {
+      "lemma": "አለ",
+      "pos": "COVERB"
+    },
+    "ባል": {
+      "lemma": "አለ",
+      "pos": "IMPERFECTIVE"
+    },
+    "ይዝ": {
+      "lemma": "ያዘ",
+      "pos": "COVERB"
+    },
+    "ሆን": {
+      "lemma": "ሆነ",
+      "pos": "COVERB"
+    },
+    "ሁን": {
+      "lemma": "ሆነ",
+      "pos": "JUSSIVE_IMPERATIVE"
+    }
+  },
+  "defective_verbal_forms": {},
+  "proclitic_root_shield": [
+    "በረገደ"
+  ]
+}

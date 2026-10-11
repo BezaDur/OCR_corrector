@@ -86,7 +86,30 @@ logger = logging.getLogger("amharic_ocr_corrector")
 # ----------------- Dynamic Import of NLP & Morphological Suite -----------------
 # Configurable via AMHARIC_MORPH_PATHS (os.pathsep-separated). Falls back to the
 # original hardcoded defaults so existing setups keep working unchanged.
+def _vendored_segmenter_path():
+    """Path to the morphological suite vendored into this repo, if present.
+
+    The suite normally lives outside the repo (see ``_DEFAULT_MORPH_PATHS``),
+    which meant a fresh checkout could not import it at all -- the corrector
+    silently ran with morphology disabled and the whole ``lambda_morph`` term
+    cancelled out. Vendoring a frozen copy makes the integration reproducible.
+    """
+    try:
+        p = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "vendor", "segmenter")
+        return p if os.path.isfile(os.path.join(p, "segmenter.py")) else None
+    except Exception:
+        return None
+
+
+# NOTE ON ORDER: the loop below inserts each existing path at sys.path[0], so
+# LATER entries in this list END UP WITH HIGHER PRIORITY. The vendored copy is
+# therefore listed first, making it the lowest-priority fallback: a live
+# checkout on AMHARIC_MORPH_PATHS or on the machine paths below still wins, and
+# the vendored copy is only used when nothing else is available.
 _DEFAULT_MORPH_PATHS = [
+    p for p in [_vendored_segmenter_path()] if p
+] + [
     "/mnt/mintdata/Users/Des/Mint/4_Dataset_wo/Projects/p16_morpheme_analysis",
     "/mnt/mintdata/Users/Des/Mint/4_Dataset_wo/Projects/p16_morpheme_segmenter",
 ]
@@ -396,9 +419,23 @@ class AmharicOCRCorrector:
         self.morpheme_families = {}          # affix string -> family tag
         self.pragmatic_sisters = set(PRAGMATIC_SISTERS)
         self.proclitic_peel_targets = set(PROCLITIC_PEEL_TARGETS)
+        _mj_explicit = bool(morphemes_json_path)
         morphemes_json_path = morphemes_json_path or os.environ.get(
             "AMHARIC_MORPHEMES_JSON", _DEFAULT_MORPHEMES_JSON
         )
+
+        # Fall back to the vendored copy when the *default* path is absent, for
+        # the same reason the segmenter suite is vendored: a fresh checkout
+        # otherwise runs with the peel guard silently inert. An explicitly
+        # requested path is honoured even when it does not exist, so
+        # require_morphemes_json keeps its teeth and tests can still simulate a
+        # missing file.
+        if not _mj_explicit and not os.path.exists(morphemes_json_path):
+            _vend = _vendored_segmenter_path()
+            if _vend:
+                _vend_mj = os.path.join(_vend, "data", "morphemes.json")
+                if os.path.isfile(_vend_mj):
+                    morphemes_json_path = _vend_mj
 
         self.morphemes_json_path = morphemes_json_path
 
@@ -462,6 +499,13 @@ class AmharicOCRCorrector:
         # Memo for the affix-sequence recursion (bounded: the inventory is
         # fixed for the life of the instance, so entries never go stale).
         self._affix_seq_memo = {}
+        # First-character index over the inventories. The affix-sequence walk
+        # below is the guard's hot path (once per candidate per token), and
+        # with ~120 affixes a linear scan dominates. Indexing by the leading
+        # character turns "try every affix" into "try the handful that can
+        # possibly match".
+        self._suffix_by_first = self._index_by_first_char(self._suffixes_sorted)
+        self._prefix_by_first = self._index_by_first_char(self._prefixes_sorted)
 
         # 4. Vocabulary & SymSpell
         if self.verbose:
@@ -776,6 +820,15 @@ class AmharicOCRCorrector:
 
         return dp[m][n]
 
+    @staticmethod
+    def _index_by_first_char(inventory):
+        """{first_char: [affixes starting with it, longest-first]}."""
+        idx = {}
+        for aff in inventory:
+            if aff:
+                idx.setdefault(aff[0], []).append(aff)
+        return idx
+
     def _is_valid_affix_sequence(self, chunk: str, sorted_inventory) -> bool:
         """
         Validate that a stripped chunk is a valid layered affix sequence.
@@ -793,8 +846,10 @@ class AmharicOCRCorrector:
         if hit is not None:
             return hit
         result = False
-        for aff in sorted_inventory:
-            if aff and chunk.startswith(aff):
+        index = (self._suffix_by_first if sorted_inventory is self._suffixes_sorted
+                 else self._prefix_by_first)
+        for aff in index.get(chunk[0], ()):
+            if chunk.startswith(aff):
                 if self._is_valid_affix_sequence(chunk[len(aff):], sorted_inventory):
                     result = True
                     break

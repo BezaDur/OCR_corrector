@@ -1,0 +1,302 @@
+{
+  "_meta": {
+    "description": "Amharic experiencer (psych) verbs. They do not inflect like regular verbs: the active normally carries an object clitic (ደነቀው 'it amazed him'), the ተ- passive carries the same experiencer meaning without one (ተደነቀ 'he was amazed'), and the imperative strongly prefers the ተ- form (ተቸገር, rarely ቸግረው). So an ACTIVE form with an object clitic is a perfective, not an imperative.",
+    "key": "consonantal skeleton of the citation root: phonology.consonantal_skeleton(root). Vowel order is ignored, so ቸገር / ቸገረ / ቸግር all key to ቸገረ. The KEY is the skeleton; the 'root' field always holds the real citation spelling.",
+    "invariant": "consonantal_skeleton(entry['root']) == the entry's key, for every entry.",
+    "bound": "true when the verb has no basic (unprefixed) form and only occurs with a voice prefix.",
+    "causatives": "direct_causative is the አ- derivation, indirect_causative the አስ- derivation. Each is a string (the form), false (confirmed absent), or null (unknown). 'causative_source' says where it came from: 'corpus' = attested as a Simple Perfect cell in data/10_column_verbs.tsv; 'user' = supplied 2026-10-08; 'derived' = አስ- prefixed by rule and NOT verified - treat as a hypothesis to check, not a fact; null = unknown. Causatives were matched by EXACT string only: skeleton matching produces false positives, e.g. አረደ (469) is 'slaughter' and አቋጠ (1419) is 'cut off', not causatives of ረዳ and ቆጣ.",
+    "source": "user-supplied lexical list (2026-10-08); corpus rows from data/10_column_verbs.tsv",
+    "usage": "morphology.AmharicMorphologyEngine.is_experiencer_root()",
+    "corpus_rows": "Indices into the data rows of data/10_column_verbs.tsv, i.e. the file line minus one. ተራበ is 196 on this scale.",
+    "passive": "Normally ተ- + root. Exception: ናደደ, whose attested passive ተናደደ (298) keeps the -a- vowel while the corpus active is ነደደ (425)."
+  },
+  "verbs": {
+    "ረበ": {
+      "root": "ራበ",
+      "passive": "ተራበ",
+      "bound": false,
+      "direct_causative": false,
+      "indirect_causative": "አስራበ",
+      "causative_source": {
+        "direct": "user",
+        "indirect": "user"
+      },
+      "corpus_rows_bare": [
+        1054
+      ],
+      "corpus_rows_passive": [
+        196
+      ],
+      "corpus_rows_direct_causative": [],
+      "corpus_rows_indirect_causative": [],
+      "note": "'be hungry'. Causatives supplied by user 2026-10-08; neither is in the corpus."
+    },
+    "ረደ": {
+      "root": "ረዳ",
+      "passive": "ተረዳ",
+      "bound": true,
+      "direct_causative": null,
+      "indirect_causative": "አስረዳ",
+      "causative_source": {
+        "direct": null,
+        "indirect": "corpus"
+      },
+      "corpus_rows_bare": [
+        59,
+        1043
+      ],
+      "corpus_rows_passive": [
+        843
+      ],
+      "corpus_rows_direct_causative": [],
+      "corpus_rows_indirect_causative": [
+        905
+      ],
+      "note": "ተረዳ 'understand'. አስረዳ (905) attested. NOT አረደ (469), which is 'slaughter' (VN ማረድ)."
+    },
+    "ቀየመ": {
+      "root": "ቀየመ",
+      "passive": "ተቀየመ",
+      "bound": true,
+      "direct_causative": null,
+      "indirect_causative": "አስቀየመ",
+      "causative_source": {
+        "direct": null,
+        "indirect": "derived"
+      },
+      "corpus_rows_bare": [],
+      "corpus_rows_passive": [
+        1241
+      ],
+      "corpus_rows_direct_causative": [],
+      "corpus_rows_indirect_causative": [],
+      "note": "ተቀየመ 'be disgusted' - no basic form"
+    },
+    "ቀጠ": {
+      "root": "ቆጣ",
+      "passive": "ተቆጣ",
+      "bound": true,
+      "direct_causative": null,
+      "indirect_causative": "አስቆጣ",
+      "causative_source": {
+        "direct": null,
+        "indirect": "corpus"
+      },
+      "corpus_rows_bare": [],
+      "corpus_rows_passive": [],
+      "corpus_rows_direct_causative": [],
+      "corpus_rows_indirect_causative": [
+        907
+      ],
+      "note": "ተቆጣ 'be angry'. አስቆጣ (907) attested. NOT አቋጠ (1419), which is 'cut off' (VN ማቋት)."
+    },
+    "በሰጨ": {
+      "root": "በሳጨ",
+      "passive": "ተበሳጨ",
+      "bound": true,
+      "direct_causative": null,
+      "indirect_causative": "አስበሳጨ",
+      "causative_source": {
+        "direct": null,
+        "indirect": "derived"
+      },
+      "corpus_rows_bare": [],
+      "corpus_rows_passive": [
+        1248
+      ],
+      "corpus_rows_direct_causative": [],
+      "corpus_rows_indirect_causative": [],
+      "note": "ተበሳጨ 'be upset' - no basic form"
+    },
+    "ቸገረ": {
+      "root": "ቸገረ",
+      "passive": "ተቸገረ",
+      "bound": false,
+      "direct_causative": null,
+      "indirect_causative": "አስቸገረ",
+      "causative_source": {
+        "direct": null,
+        "indirect": "corpus"
+      },
+      "corpus_rows_bare": [],
+      "corpus_rows_passive": [],
+      "corpus_rows_direct_causative": [],
+      "corpus_rows_indirect_causative": [
+        511
+      ],
+      "note": "'be in difficulty'. አስቸገረ (511) attested."
+    },
+    "ነደደ": {
+      "root": "ናደደ",
+      "passive": "ተናደደ",
+      "bound": true,
+      "direct_causative": "አነደደ",
+      "indirect_causative": null,
+      "causative_source": {
+        "direct": "corpus",
+        "indirect": null
+      },
+      "corpus_rows_bare": [],
+      "corpus_rows_passive": [
+        298
+      ],
+      "corpus_rows_direct_causative": [
+        587
+      ],
+      "corpus_rows_indirect_causative": [],
+      "note": "ተናደደ 'be angry' (298). The corpus spells the active ነደደ (425); አነደደ (587, VN ማንደድ) is its causative. ተናደደ keeps the -a- vowel, so passive != ተ+root is expected here."
+    },
+    "ደሰተ": {
+      "root": "ደሰተ",
+      "passive": "ተደሰተ",
+      "bound": true,
+      "direct_causative": null,
+      "indirect_causative": "አስደሰተ",
+      "causative_source": {
+        "direct": null,
+        "indirect": "derived"
+      },
+      "corpus_rows_bare": [],
+      "corpus_rows_passive": [
+        1314
+      ],
+      "corpus_rows_direct_causative": [],
+      "corpus_rows_indirect_causative": [],
+      "note": "ተደሰተ 'be happy' - no basic form"
+    },
+    "ደነቀ": {
+      "root": "ደነቀ",
+      "passive": "ተደነቀ",
+      "bound": false,
+      "direct_causative": null,
+      "indirect_causative": "አስደነቀ",
+      "causative_source": {
+        "direct": null,
+        "indirect": "derived"
+      },
+      "corpus_rows_bare": [
+        1603
+      ],
+      "corpus_rows_passive": [],
+      "corpus_rows_direct_causative": [],
+      "corpus_rows_indirect_causative": [],
+      "note": "to amaze; ተደነቀ 'be amazed' (no ተ- row in the corpus)"
+    },
+    "ደነገጠ": {
+      "root": "ደነገጠ",
+      "passive": "ተደነገጠ",
+      "bound": false,
+      "direct_causative": null,
+      "indirect_causative": "አስደነገጠ",
+      "causative_source": {
+        "direct": null,
+        "indirect": "corpus"
+      },
+      "corpus_rows_bare": [
+        721
+      ],
+      "corpus_rows_passive": [],
+      "corpus_rows_direct_causative": [],
+      "corpus_rows_indirect_causative": [
+        916
+      ],
+      "note": "'be shocked'. Corpus citation is ደነገጠ (721); the supplied list spelled it ደነገጥ. Same skeleton, so the key is unchanged."
+    },
+    "ገረመ": {
+      "root": "ገረመ",
+      "passive": "ተገረመ",
+      "bound": false,
+      "direct_causative": null,
+      "indirect_causative": "አስገረመ",
+      "causative_source": {
+        "direct": null,
+        "indirect": "derived"
+      },
+      "corpus_rows_bare": [
+        736
+      ],
+      "corpus_rows_passive": [
+        356
+      ],
+      "corpus_rows_direct_causative": [],
+      "corpus_rows_indirect_causative": [],
+      "note": "to fine, punish"
+    },
+    "ገነዘበ": {
+      "root": "ገነዘበ",
+      "passive": "ተገነዘበ",
+      "bound": true,
+      "direct_causative": null,
+      "indirect_causative": "አስገነዘበ",
+      "causative_source": {
+        "direct": null,
+        "indirect": "derived"
+      },
+      "corpus_rows_bare": [],
+      "corpus_rows_passive": [
+        1318
+      ],
+      "corpus_rows_direct_causative": [],
+      "corpus_rows_indirect_causative": [],
+      "note": "ተገነዘበ 'realize' - no basic form"
+    },
+    "ጠመ": {
+      "root": "ጠማ",
+      "passive": "ተጠማ",
+      "bound": false,
+      "direct_causative": null,
+      "indirect_causative": "አስጠማ",
+      "causative_source": {
+        "direct": null,
+        "indirect": "derived"
+      },
+      "corpus_rows_bare": [
+        1705
+      ],
+      "corpus_rows_passive": [],
+      "corpus_rows_direct_causative": [],
+      "corpus_rows_indirect_causative": [],
+      "note": "'be thirsty'"
+    },
+    "ጨነቀ": {
+      "root": "ጨነቀ",
+      "passive": "ተጨነቀ",
+      "bound": false,
+      "direct_causative": null,
+      "indirect_causative": "አስጨነቀ",
+      "causative_source": {
+        "direct": null,
+        "indirect": "derived"
+      },
+      "corpus_rows_bare": [
+        1732
+      ],
+      "corpus_rows_passive": [
+        889
+      ],
+      "corpus_rows_direct_causative": [],
+      "corpus_rows_indirect_causative": [],
+      "note": "to worry; ተጨነቀ 'be worried'"
+    },
+    "ፈረ": {
+      "root": "ፈራ",
+      "passive": "ተፈራ",
+      "bound": false,
+      "direct_causative": null,
+      "indirect_causative": "አስፈራ",
+      "causative_source": {
+        "direct": null,
+        "indirect": "corpus"
+      },
+      "corpus_rows_bare": [
+        800
+      ],
+      "corpus_rows_passive": [],
+      "corpus_rows_direct_causative": [],
+      "corpus_rows_indirect_causative": [
+        533
+      ],
+      "note": "'fear'. አፈራ (1484) and አስፈራ (533) both attested. NOT አፈረ (651), which is a different verb (VN ማፈር)."
+    }
+  }
+}
