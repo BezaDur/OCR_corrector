@@ -248,6 +248,16 @@ def configure_from_cli():
     # gain the anchor barrier's protection and skip the pairwise-reversal
     # search. Measured on real corpus data that is 56% of OOV tokens -- so this
     # flag is the single most important ablation in the system.
+    # Lexicon size caps. SymSpell costs ~1.03 KB per dictionary type
+    # (measured), so an uncapped multi-million-type lexicon will OOM.
+    # Measured on real corpus data: the top 300k types cover 92.4% of running
+    # tokens, the top 500k cover 96.9%, and 65% of types occur exactly once --
+    # those singletons are mostly OCR noise, so capping tends to help
+    # precision as well as memory.
+    parser.add_argument("--max-lexicon-types", type=int, default=None,
+                        help="Keep only the N most frequent dictionary types")
+    parser.add_argument("--dict-min-freq", type=int, default=None,
+                        help="Drop dictionary types seen fewer than N times")
     parser.add_argument(
         "--no-morphology", dest="use_morphology", action="store_false", default=None,
         help="Disable the morphological analyzer (A/B against the default)")
@@ -274,7 +284,9 @@ def configure_from_cli():
                              max_optical_cost=args.max_optical_cost,
                              score_eos=not args.no_eos,
                              require_morphemes_json=args.require_morphemes_json,
-                             use_morphology=args.use_morphology)
+                             use_morphology=args.use_morphology,
+                             max_lexicon_types=args.max_lexicon_types,
+                             dict_min_freq=args.dict_min_freq)
 
 
 if __name__ == "__main__":

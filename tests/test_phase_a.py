@@ -26,8 +26,10 @@ def setUpModule():
 import unittest
 
 try:
-    # test_page1_fixes constructs a real corrector (with real KenLM and lexicon
-    # paths) at *import* time, which is why this suite was never portable.
+    # test_page1_fixes now builds its corrector inside main(), so importing it
+    # no longer loads KenLM or the multi-GB lexicon. It still exports none of
+    # the TARGETS / check_targets / run_benchmark helpers this suite expects --
+    # those belong to a deleted revision of the script -- so this suite skips.
     from test_page1_fixes import TARGETS, check_targets, run_benchmark
 except Exception as exc:  # noqa: BLE001 - import-time environment failure
     raise unittest.SkipTest(f"test_page1_fixes unavailable: {exc}")

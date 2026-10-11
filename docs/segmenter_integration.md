@@ -375,7 +375,93 @@ concatenation at all. Leave it alone unless a measured recall win appears.
 
 ---
 
-## 7. Risks and caveats
+## 7. Memory: why `test_page1_fixes.py` gets OOM-killed
+
+That script passes `main_i7.txt` (103 MB on disk) as `dict_vocab_path`. That is
+a multi-million-type lexicon, and SymSpell is the problem.
+
+### 7.1 Measured cost per structure
+
+Built from real corpus text, 314,755 types:
+
+| Stage | Cumulative RSS | Delta |
+| --- | --- | --- |
+| baseline | 32 MB | — |
+| `vocab` + `surface_form` dicts | 76 MB | +44 MB |
+| **+ SymSpell index** | **430 MB** | **+399 MB** |
+| + segmenter | 430 MB | +0 MB (lazy) |
+
+**SymSpell costs ~1.03 KB per dictionary type** — roughly 4.5× the two plain
+dicts combined, and ~91 % of the total. The segmenter is free (it resolves
+`MAIN_DICTIONARY_PATH` lazily).
+
+Extrapolating linearly, an uncapped lexicon costs ~1.27 KB per type overall:
+
+| Lexicon types | Uncapped | Capped at 500k | Capped at 300k |
+| --- | --- | --- | --- |
+| 1 M | ~1.3 GB | ~0.6 GB | ~0.4 GB |
+| 3 M | ~3.8 GB | ~0.6 GB | ~0.4 GB |
+| 5 M | ~6.4 GB | ~0.6 GB | ~0.4 GB |
+
+Plus KenLM's 5-gram binary on top. That is the OOM.
+
+### 7.2 Capping is also an accuracy improvement
+
+Measured over 4.42 M running tokens of real corpus text (638,126 types):
+
+| Top-N types | Token coverage | Est. SymSpell |
+| --- | --- | --- |
+| 50,000 | 78.16 % | 50 MB |
+| 100,000 | 84.11 % | 101 MB |
+| 200,000 | 89.57 % | 201 MB |
+| **300,000** | **92.35 %** | **302 MB** |
+| 500,000 | 96.88 % | 503 MB |
+
+And the distribution is extremely long-tailed:
+
+```
+types seen exactly once : 415,414  (65.1 % of types)
+types seen <= 2 times   : 499,428  (78.3 % of types, 13.2 % of tokens)
+```
+
+**65 % of types are hapax.** In a lexicon mined from OCR output, most of those
+singletons *are* OCR errors. They cost ~65 % of the memory and let SymSpell
+"correct" one misspelling into another. Capping is not a memory/accuracy
+trade-off so much as a win on both.
+
+### 7.3 What was added
+
+`max_lexicon_types` and `dict_min_freq` on the constructor, and
+`--max-lexicon-types` / `--dict-min-freq` on `04_evaluate_full_corrector.py`.
+
+The loader was restructured into two passes. Previously SymSpell was built
+*during* the file read, so a cap would have discarded an index we had already
+paid to build. Now: read → cap → `gc.collect()` → build SymSpell from the
+surviving set. Measured effect:
+
+```
+no cap                  types=314,755   +399 MB
+max_lexicon_types=200k  types=200,000   +207 MB
+max_lexicon_types=100k  types=100,000    +79 MB
+dict_min_freq=3         types= 59,189    +15 MB
+```
+
+Also fixed: `_affix_seq_memo` (added earlier this session) was an unbounded
+dict keyed on word substrings, so it grew for the life of a long-running
+process. It now uses the existing bounded cache.
+
+**Suggested starting point:** `--dict-min-freq 3`, or `--max-lexicon-types
+500000`. Measure before and after — do not assume a specific value is right for
+`main_i7.txt`, whose type count I could not measure here (the file is 103 MB
+and was not vendored).
+
+### 7.4 Still to do
+
+Review item 7.9 — merge `vocab` + `surface_form` into one dict — would remove
+another full copy. Dropping SymSpell entirely in favour of the weighted
+reversal generator (review §6.4) would remove the dominant structure outright.
+
+## 8. Risks and caveats
 
 * **The vendored snapshot will drift** from the live suite. It is a *frozen*
   copy; treat any refresh as a behaviour change worth measuring.
@@ -396,7 +482,7 @@ concatenation at all. Leave it alone unless a measured recall win appears.
 
 ---
 
-## 8. Quick reference
+## 9. Quick reference
 
 | Question | Answer |
 | --- | --- |
@@ -408,4 +494,5 @@ concatenation at all. Leave it alone unless a measured recall win appears.
 | Is the peel guard analyzer-driven? | **No** — static `morphemes.json` + compiled-in constants |
 | How do I turn it off? | `use_morphology=False` / `--no-morphology` |
 | How do I see the cost? | `morphology_stats()` |
+| How do I bound memory? | `max_lexicon_types=` / `dict_min_freq=` (§7) |
 | Biggest single lever? | §6.1 ablation, then §6.2 decoupling |

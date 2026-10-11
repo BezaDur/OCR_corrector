@@ -51,6 +51,8 @@ import logging
 import collections
 import argparse
 import time
+import gc
+import heapq
 # kenlm / symspellpy are imported lazily (see _load_kenlm / _load_symspell) so that the
 # module can be imported, unit-tested and introspected on machines that do not
 # have them installed. Production behaviour is unchanged: the constructor still
@@ -285,6 +287,12 @@ class AmharicOCRCorrector:
         confusion_matrix_path: str,
         dict_vocab_path: str,
         morphemes_json_path: str = None,
+        # --- lexicon size caps (memory) -------------------------------------
+        # SymSpell costs ~1.03 KB per dictionary type (measured), so a
+        # multi-million-type lexicon OOMs. These bound it. Both are off by
+        # default; see docs/segmenter_integration.md §7.
+        max_lexicon_types: int = None,
+        dict_min_freq: int = None,
         beam_width: int = 4,
         max_optical_cost: float = 3.6,
         max_optical_cost_pairwise: float = None,
@@ -316,6 +324,7 @@ class AmharicOCRCorrector:
         score_eos: bool = True,
         indel_cost_cap: float = 2.4,
         morphology_cache_size: int = 65536,
+        affix_memo_size: int = 65536,
         require_morphemes_json: bool = False,
         verbose: bool = True,
     ):
@@ -518,9 +527,10 @@ class AmharicOCRCorrector:
         # on every recursive call inside _is_valid_affix_sequence.
         self._suffixes_sorted = sorted(self.protected_suffixes, key=len, reverse=True)
         self._prefixes_sorted = sorted(self.protected_prefixes, key=len, reverse=True)
-        # Memo for the affix-sequence recursion (bounded: the inventory is
-        # fixed for the life of the instance, so entries never go stale).
-        self._affix_seq_memo = {}
+        # Memo for the affix-sequence recursion. Bounded: keys are substrings
+        # of analysed words, so an unbounded dict grows for the life of the
+        # process on a long corpus.
+        self._affix_seq_memo = _BoundedCache(affix_memo_size)
         # First-character index over the inventories. The affix-sequence walk
         # below is the guard's hot path (once per candidate per token), and
         # with ~120 affixes a linear scan dominates. Indexing by the leading
@@ -536,8 +546,13 @@ class AmharicOCRCorrector:
         # norm_w -> best-known surface spelling (preserves surface form on output)
         self.surface_form = {}
         _SymSpell, _ = _load_symspell()
-        self.symspell = _SymSpell(max_dictionary_edit_distance=1, prefix_length=7)
 
+        # --- Pass 1: read the file into the two plain dicts -----------------
+        # Deliberately NOT building SymSpell during the read. SymSpell costs
+        # ~1.03 KB per type (measured), roughly 4.5x the two plain dicts
+        # combined, and it is the structure that OOMs on a multi-million-type
+        # lexicon. Building it after the cap is applied means the cap actually
+        # saves memory instead of just discarding an index we already paid for.
         with open(dict_vocab_path, "r", encoding="utf-8", errors="ignore") as f:
             for idx, line in enumerate(f, 1):
                 parts = line.strip().split()
@@ -552,10 +567,42 @@ class AmharicOCRCorrector:
                     # Keep the most frequent surface spelling for this normalized form
                     self.surface_form[norm_w] = w
                 self.vocab[norm_w] = max(prev_freq, freq)
-                self.symspell.create_dictionary_entry(norm_w, freq)
 
                 if self.verbose and idx % 1000000 == 0:
-                    print(f"  ... loaded {idx:,} dictionary words", flush=True)
+                    print(f"  ... read {idx:,} dictionary lines", flush=True)
+
+        raw_types = len(self.vocab)
+
+        # --- Pass 1b: apply the cap ----------------------------------------
+        # Most of a raw OCR-derived lexicon is noise: measured on real corpus
+        # data, 65% of types occur exactly once and 78% occur at most twice,
+        # together accounting for ~13% of running tokens. Those singletons are
+        # frequently OCR errors themselves, so they both cost memory and let
+        # SymSpell "correct" one misspelling into another.
+        if dict_min_freq and dict_min_freq > 1:
+            keep = [w for w, f in self.vocab.items() if f >= dict_min_freq]
+            if len(keep) < len(self.vocab):
+                self.vocab = {w: self.vocab[w] for w in keep}
+                self.surface_form = {w: self.surface_form[w]
+                                     for w in keep if w in self.surface_form}
+                del keep
+        if max_lexicon_types and len(self.vocab) > max_lexicon_types:
+            keep = heapq.nlargest(max_lexicon_types, self.vocab,
+                                  key=self.vocab.__getitem__)
+            self.vocab = {w: self.vocab[w] for w in keep}
+            self.surface_form = {w: self.surface_form[w]
+                                 for w in keep if w in self.surface_form}
+            del keep
+        if len(self.vocab) < raw_types:
+            gc.collect()
+            if self.verbose:
+                print(f"  lexicon capped: {raw_types:,} -> {len(self.vocab):,} types "
+                      f"({100.0*len(self.vocab)/max(raw_types,1):.1f}% kept)", flush=True)
+
+        # --- Pass 2: build SymSpell from the (possibly capped) set ----------
+        self.symspell = _SymSpell(max_dictionary_edit_distance=1, prefix_length=7)
+        for norm_w, freq in self.vocab.items():
+            self.symspell.create_dictionary_entry(norm_w, freq)
 
         # Precompute reverse optical substitutions. Gated by max_reverse_sub_cost
         # (the TIGHT component-level cutoff), NOT by max_optical_cost_pairwise.

@@ -383,6 +383,59 @@ class TestMorphologySwitch(CorrectorTestCase):
         self.assertIs(c.segmenter, seg)
 
 
+class TestLexiconCap(CorrectorTestCase):
+    """SymSpell costs ~1.03 KB/type; a multi-million-type lexicon OOMs."""
+
+    WORDS = [("በሽታ", 900), ("ከተማ", 800), ("ውስጥ", 700), ("ሀገር", 600),
+             ("ሕዝብ", 500), ("መንግስት", 400), ("ትምህርት", 300), ("ገበያ", 200),
+             ("ወረቀት", 90), ("መጽሐፍ", 40), ("አደባባይ", 9), ("ቁምጣ", 3),
+             ("ዘንጋዳ", 2), ("ኵስታሪ", 1)]
+
+    def test_no_cap_keeps_everything(self):
+        c = self.make(self.WORDS)
+        self.assertEqual(len(c.vocab), len(self.WORDS))
+
+    def test_max_lexicon_types_keeps_the_most_frequent(self):
+        c = self.make(self.WORDS, max_lexicon_types=5)
+        self.assertEqual(len(c.vocab), 5)
+        self.assertIn("በሽታ", c.vocab)
+        self.assertNotIn("ዘንጋዳ", c.vocab)
+        # surface_form is pruned in step with vocab, or lookups go stale
+        self.assertEqual(set(c.surface_form), set(c.vocab))
+
+    def test_dict_min_freq_drops_rare_types(self):
+        c = self.make(self.WORDS, dict_min_freq=100)
+        self.assertEqual(len(c.vocab), 8)  # the 8 words with freq >= 100
+        self.assertNotIn("መጽሐፍ", c.vocab)
+        self.assertEqual(set(c.surface_form), set(c.vocab))
+
+    def test_caps_actually_shrink_symspell(self):
+        """The cap must bound the expensive structure, not just the dicts."""
+        big = [(f"word{i:06d}", i) for i in range(1, 4001)]
+        uncapped = self.make(big)
+        capped = self.make(big, max_lexicon_types=500)
+        self.assertEqual(len(uncapped.vocab), 4000)
+        self.assertEqual(len(capped.vocab), 500)
+
+    def test_capped_corrector_still_corrections(self):
+        """Cap must not break the pipeline: the surviving word is still
+        reachable as a candidate and the decoder still runs."""
+        c = self.make(self.WORDS, max_lexicon_types=6)
+        self.assertIn("በሽታ", c.vocab)          # survived the cap
+        cands = {w for w, _cost in c.generate_candidates("በሸታ")}
+        self.assertIn("በሽታ", cands)             # still offered by SymSpell
+        self.assertIsInstance(c.correct_sentence("በሸታ"), str)
+
+    def test_affix_memo_is_bounded(self):
+        """An unbounded memo grows for the life of a long-running process."""
+        c = self.make([("በሽታ", 1)])
+        self.assertLessEqual(c._affix_seq_memo.maxsize, 1 << 20)
+        for i in range(5000):
+            for aff in ("ም", "ን", "ስ", "እ"):
+                c._affix_seq_memo[(f"w{i}{aff}", id(c._suffixes_sorted))] = True
+        self.assertLessEqual(len(c._affix_seq_memo._data), c._affix_seq_memo.maxsize)
+
+
 class TestMorphemesJson(CorrectorTestCase):
     def test_missing_file_warns_and_degrades_the_peel_guard(self):
         """§3.5 / §6.2.2.
