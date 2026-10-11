@@ -876,3 +876,92 @@ class TestEvaluatorContract(CorrectorTestCase):
         c.validate_morphology("የማይታወቅ")
         payload = json.dumps(c.morphology_stats(), sort_keys=True)
         self.assertIn("segmenter_calls", payload)
+
+
+class TestStage1Detection(unittest.TestCase):
+    """Stage 1 must exist, gate tokens, and be reported."""
+
+    def setUp(self):
+        import importlib
+        m = importlib.import_module("amharic_ocr_corrector")
+        self.mod = m
+
+        class NullLM:
+            class S:
+                def __init__(s): s.v = 0
+            def BeginSentenceWrite(s, st): pass
+            def BaseScore(s, a, w, b): return -1.0
+            def _state_factory(s): return NullLM.S()
+
+        self.NullLM = NullLM
+        self.tmp = tempfile.mkdtemp()
+        self.lex = os.path.join(self.tmp, "lex.txt")
+        words = ["ሰላም", "ጸሐይ", "አዲስ", "ቤት", "ነገር", "ትምህርት", "ወርቅ"]
+        with open(self.lex, "w", encoding="utf-8") as f:
+            for _ in range(20):
+                for w in words:
+                    f.write(w + "\n")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _mk(self, **kw):
+        return self.mod.AmharicOCRCorrector(
+            kenlm_path="", confusion_matrix_path="confusion_matrix.json",
+            dict_vocab_path=self.lex, lm=self.NullLM(),
+            max_lexicon_types=200, segmenter=None, **kw)
+
+    def test_stage1_off_by_default(self):
+        c = self._mk()
+        self.assertIsNone(c.suspicion)
+        self.assertFalse(c.stage1_detection)
+
+    def test_stage1_passes_clean_words(self):
+        c = self._mk(stage1_detection=True)
+        for tok in ["ሰላም", "ቤት", "ነገር", "ትምህርት", "ወርቅ"]:
+            v = c.suspicion.verdict(tok, [])
+            self.assertEqual(v.label, "pass",
+                             f"clean token {tok!r} should pass, got {v.label} "
+                             f"(s={v.suspicion:.3f})")
+
+    def test_one_flip_is_deterministic(self):
+        c = self._mk(stage1_detection=True)
+        a = c.suspicion.verdict("ኘገር", []).signals.one_flip_words
+        b = c.suspicion.verdict("ኘገር", []).signals.one_flip_words
+        self.assertEqual(a, b)
+
+    def test_no_op_flips_are_not_evidence(self):
+        """The normalizer collapses ሠ->ሰ, ፀ->ጸ, ዐ->አ. A flip that
+        normalizes back to the same key is a no-op and must not be
+        counted, or nearly every clean word looks suspicious."""
+        c = self._mk(stage1_detection=True)
+        for tok in ["ሰላም", "ጸሐይ", "አዲስ"]:
+            sig = c.suspicion.signals(tok, [])
+            self.assertEqual(sig.one_flip_words, [],
+                             f"{tok!r} produced self-flips {sig.one_flip_words}")
+
+    def test_stage1_counts_are_reported(self):
+        """A counter that is never reported is indistinguishable from a
+        dead code path."""
+        c = self._mk(stage1_detection=True)
+        c.correct_sentence("ሰላም ቤት ነገር")
+        st = c.morphology_stats()
+        self.assertIn("stage1", st)
+        self.assertEqual(set(st["stage1"]), {"pass", "gray", "flag"})
+        self.assertGreater(st["stage1"]["pass"], 0)
+
+    def test_canonicalize_surface_restores_lexicon_spelling(self):
+        """_norm collapses homoglyphs, so 'ሠላም' is recognised as 'ሰላም'
+        but would be emitted unchanged, leaving CER to count an error."""
+        off = self._mk(stage1_detection=True, canonicalize_surface=False)
+        on = self._mk(stage1_detection=True, canonicalize_surface=True)
+        src = "ሠላም ፀሐይ ዐዲስ ቤት"
+        self.assertEqual(off.correct_sentence(src), src)
+        out = on.correct_sentence(src)
+        self.assertEqual(out, "ሰላም ጸሐይ አዲስ ቤት")
+        self.assertEqual(on.morphology_stats()["surface_fixes"], 3)
+
+    def test_surface_fix_reported(self):
+        c = self._mk(stage1_detection=True, canonicalize_surface=True)
+        c.correct_sentence("ሠላም ቤት")
+        self.assertIn("surface_fixes", c.morphology_stats())

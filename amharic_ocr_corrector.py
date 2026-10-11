@@ -53,6 +53,7 @@ import argparse
 import time
 import gc
 import heapq
+from typing import Optional, Dict
 # kenlm / symspellpy are imported lazily (see _load_kenlm / _load_symspell) so that the
 # module can be imported, unit-tested and introspected on machines that do not
 # have them installed. Production behaviour is unchanged: the constructor still
@@ -311,6 +312,13 @@ class AmharicOCRCorrector:
         lambda_lm: float = 1.8,
         lambda_morph: float = 1.5,
         anchor_margin: float = 3.5,
+        stage1_detection: bool = False,
+        gray_margin: float = 3.0,
+        suspicion_weights: Optional[Dict[str, float]] = None,
+        suspicion_pass_below: float = 0.30,
+        suspicion_flag_above: float = 0.70,
+        char_lm=None,
+        canonicalize_surface: bool = False,
         known_word_cache_size: int = 131072,
         candidate_cache_size: int = 32768,
         # --- dependency injection / testability -----------------------------
@@ -372,6 +380,14 @@ class AmharicOCRCorrector:
         self.lambda_lm = lambda_lm
         self.lambda_morph = lambda_morph
         self.anchor_margin = anchor_margin
+        self.stage1_detection = bool(stage1_detection)
+        self.gray_margin = float(gray_margin)
+        self.canonicalize_surface = bool(canonicalize_surface)
+        self._surface_fixes = 0
+        self.suspicion = None
+        self._stage1 = {"pass": 0, "gray": 0, "flag": 0}
+        self._suspicion_cfg = (suspicion_weights, suspicion_pass_below,
+                               suspicion_flag_above, char_lm)
 
         # --- Language model (injectable) ------------------------------------
         if lm is not None:
@@ -448,6 +464,17 @@ class AmharicOCRCorrector:
             )
         else:
             self.segmenter = AmharicMorphologicalSegmenter() if HAS_MORPH else None
+
+        # Stage 1 is built here, not in the argument block above, because it
+        # must see the resolved segmenter: morphology is an expensive signal
+        # and is only enabled when an analyzer actually loaded.
+        if self.stage1_detection:
+            from suspicion import SuspicionScorer
+            (sw, spb, sfa, clm) = self._suspicion_cfg
+            self.suspicion = SuspicionScorer(
+                self, weights=sw, pass_below=spb, flag_above=sfa,
+                use_morphology=self.segmenter is not None, char_lm=clm,
+            )
         if self.segmenter and self.verbose:
             print("Morphological Segmenter ready.", flush=True)
 
@@ -823,6 +850,11 @@ class AmharicOCRCorrector:
             "segmenter_failures": self._morph_stats["segmenter_failures"],
             "segmenter_seconds": round(self._morph_stats["segmenter_seconds"], 6),
             "trusted_bypasses": self._morph_stats["trusted_bypasses"],
+            # Stage 1 verdict mix. Without this you cannot tell whether the
+            # detector is doing anything, and a pass rate of ~0 is the single
+            # clearest sign the thresholds are wrong.
+            "stage1": dict(self._stage1),
+            "surface_fixes": self._surface_fixes,
             # Was the peel guard firing at all? Without this the single
             # biggest accuracy change in the system is invisible: a guard
             # that never fires and one that fires correctly look identical.
@@ -1296,10 +1328,42 @@ class AmharicOCRCorrector:
         self.lm.BeginSentenceWrite(start_state)
         beam = [(0.0, start_state, [])]
 
-        for leading, word, trailing in token_tuples:
+        for idx, (leading, word, trailing) in enumerate(token_tuples):
             if not word:
                 beam = [(score, state, path + [(leading + trailing, "", "")]) for score, state, path in beam]
                 continue
+
+            # ---- Stage 1: error detection -------------------------------
+            # At an 8% word error rate most tokens are already right. Building
+            # candidates and scoring them with the LM is wasted work on those,
+            # and -- more importantly -- it is the ONLY way this system can
+            # damage them. A PASS verdict emits the original untouched: no
+            # candidates, no LM, no morphology, no risk.
+            extra_margin = 0.0
+            if self.suspicion is not None:
+                ctx = [t[1] for t in token_tuples[max(0, idx - 2):idx] if t[1]]
+                verdict = self.suspicion.verdict(word, ctx)
+                self._stage1[verdict.label] += 1
+                if verdict.label == "pass":
+                    # The word is recognised, but its SPELLING may still be
+                    # wrong. _norm() collapses the Amharic homoglyph families
+                    # (ሠ->ሰ, ፀ->ጸ, ዐ->አ, ሐ->ኀ->ሀ), so "ሠላም" is correctly
+                    # identified as "ሰላም" -- yet we would emit "ሠላም" and CER
+                    # would still count an error. Restore the lexicon's own
+                    # surface form. This is not a guess between candidates:
+                    # the token is already known, we are only normalising its
+                    # spelling to the dictionary's.
+                    if self.canonicalize_surface:
+                        canon = self.surface_form.get(self._norm(word))
+                        if canon and canon != word:
+                            self._surface_fixes += 1
+                            word = canon
+                    beam = [(score, state, path + [(leading, word, trailing)])
+                            for score, state, path in beam]
+                    continue
+                if verdict.label == "gray":
+                    # Uncertain: only accept a change with clear evidence.
+                    extra_margin = self.gray_margin
 
             candidates = self.generate_candidates(word)
             new_beam = []
@@ -1311,7 +1375,7 @@ class AmharicOCRCorrector:
                 morph_score = self._morphology_score(word, cand_word, is_orig_verified)
 
                 # Protective Anchor Barrier on verified original words
-                anchor_bonus = self.anchor_margin if (cand_word == word and is_orig_verified) else 0.0
+                anchor_bonus = (self.anchor_margin + extra_margin) if (cand_word == word and is_orig_verified) else 0.0
 
                 norm_cand = self._norm(cand_word)
 

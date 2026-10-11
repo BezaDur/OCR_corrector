@@ -14,6 +14,14 @@ import difflib
 # ----------------- Configuration -----------------
 DATASET_DIR = "/media/des/Tess/Tesseract2/synthetic_eval"
 GT_DIR = os.path.join(DATASET_DIR, "ground_truth")
+# Defaults to ocr_new_model for historical reasons, but that directory holds
+# the output of amh_epoch1_fast -- measured at 26.65% CER against the stock
+# engine's 2.05% on the same pages. A confusion matrix learned there encodes
+# that model's errors (3.75 wrong chars per bad word), not your engine's
+# (1.06). Rebuild from the engine you actually run:
+#
+#   python 03_build_confusion_matrix.py --ocr-dir .../ocr_pred \
+#          --out /media/des/Tess/Tesseract2/confusion_matrix_pred.json
 OCR_DIR = os.path.join(DATASET_DIR, "ocr_new_model")
 
 OUTPUT_MATRIX_JSON = "/media/des/Tess/Tesseract2/confusion_matrix.json"
@@ -93,6 +101,18 @@ def align_page_lines(gt_lines, ocr_lines):
 
 
 def main():
+    import argparse
+    global GT_DIR, OCR_DIR, OUTPUT_MATRIX_JSON
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--gt-dir", default=GT_DIR)
+    ap.add_argument("--ocr-dir", default=OCR_DIR)
+    ap.add_argument("--out", default=OUTPUT_MATRIX_JSON)
+    a = ap.parse_args()
+    GT_DIR, OCR_DIR, OUTPUT_MATRIX_JSON = a.gt_dir, a.ocr_dir, a.out
+    print(f"GT  : {GT_DIR}")
+    print(f"OCR : {OCR_DIR}")
+    print(f"OUT : {OUTPUT_MATRIX_JSON}")
+
     gt_files = sorted(glob.glob(os.path.join(GT_DIR, "*.gt.txt")))
     if not gt_files:
         print(f"Error: No GT files found in {GT_DIR}")
