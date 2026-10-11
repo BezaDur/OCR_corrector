@@ -1,6 +1,36 @@
+"""QUARANTINED — targets a corrector revision that is no longer in the tree.
+
+This file exercises `AmharicOCRCorrector` options that do not exist at HEAD:
+`candidate_backend`, `trie_search`, `symspell_max_edit_distance`,
+`indel_cost_cap`, `trusted_long_word_frequency`,
+`trusted_short_word_frequency`, and the injectable `lm=` / `state_factory=` /
+`segmenter=` / `morphology_stats()` surface. HEAD hard-codes kenlm, imports the
+segmenter at module scope and exposes none of them, so every test here fails
+with TypeError or a semantic mismatch.
+
+See docs/architecture_review.md section 2. The live contract suite is
+tests/test_head_contract.py.
+
+If you restore the trie backend, delete the setUpModule guard below.
+"""
 import unittest
 
-from test_page1_fixes import TARGETS, check_targets, run_benchmark
+
+def setUpModule():
+    raise unittest.SkipTest(
+        "quarantined: targets a removed corrector revision; "
+        "see docs/architecture_review.md section 2"
+    )
+
+
+import unittest
+
+try:
+    # test_page1_fixes constructs a real corrector (with real KenLM and lexicon
+    # paths) at *import* time, which is why this suite was never portable.
+    from test_page1_fixes import TARGETS, check_targets, run_benchmark
+except Exception as exc:  # noqa: BLE001 - import-time environment failure
+    raise unittest.SkipTest(f"test_page1_fixes unavailable: {exc}")
 
 
 class FakeCorrector:

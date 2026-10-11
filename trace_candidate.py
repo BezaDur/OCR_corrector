@@ -60,7 +60,11 @@ def replay_candidate_sources(corrector, ocr_token: str):
     for i, obs_ch in enumerate(ocr_token):
         for true_ch, cost in corrector.reverse_sub_map.get(obs_ch, []):
             variant = ocr_token[:i] + true_ch + ocr_token[i + 1:]
-            if corrector.is_known_word(variant):
+            # Mirror _compute_candidates: these generators gate on the strict
+            # vocab test (_is_in_vocab), not on is_known_word (which also
+            # consults the segmenter).
+            if (corrector._is_in_vocab(variant) if hasattr(corrector, "_is_in_vocab")
+                    else corrector.is_known_word(variant)):
                 raw.append((variant, cost, "single_reversal"))
             single_reversals.append((i, true_ch, cost))
 
@@ -70,7 +74,8 @@ def replay_candidate_sources(corrector, ocr_token: str):
             for idx2, c2, cost2 in single_reversals:
                 if idx2 > idx1:
                     t2 = t1[:idx2] + c2 + t1[idx2 + 1:]
-                    if corrector.is_known_word(t2):
+                    if (corrector._is_in_vocab(t2) if hasattr(corrector, "_is_in_vocab")
+                            else corrector.is_known_word(t2)):
                         raw.append((t2, cost1 + cost2, "pairwise_reversal"))
 
     return raw, source_thresholds
