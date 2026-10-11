@@ -416,6 +416,8 @@ class AmharicOCRCorrector:
             "segmenter_seconds": 0.0,
             "trusted_bypasses": 0,
             "peel_guard_blocks": 0,
+            "tokens_seen": 0,
+            "tokens_changed": 0,
         }
         self._analysis_cache_hits = 0
 
@@ -814,11 +816,23 @@ class AmharicOCRCorrector:
         `segmenter_calls` against the number of tokens processed.
         """
         data = self._analysis_cache._data
+        changed = self._morph_stats["tokens_changed"]
+        total = self._morph_stats["tokens_seen"]
         return {
             "segmenter_calls": self._morph_stats["segmenter_calls"],
             "segmenter_failures": self._morph_stats["segmenter_failures"],
             "segmenter_seconds": round(self._morph_stats["segmenter_seconds"], 6),
             "trusted_bypasses": self._morph_stats["trusted_bypasses"],
+            # Was the peel guard firing at all? Without this the single
+            # biggest accuracy change in the system is invisible: a guard
+            # that never fires and one that fires correctly look identical.
+            "peel_guard_blocks": self._morph_stats["peel_guard_blocks"],
+            # How often the corrector actually alters a token. Paired with
+            # the evaluator's clean-token damage this separates repairs from
+            # damage: repairs ~= changed - damaged.
+            "tokens_seen": total,
+            "tokens_changed": changed,
+            "change_rate_pct": round(100.0 * changed / total, 4) if total else 0.0,
             "cache": {
                 "hits": self._analysis_cache_hits,
                 "size": len(data),
@@ -1331,11 +1345,19 @@ class AmharicOCRCorrector:
         best_path = finalized[0][1]
 
         reconstructed_tokens = []
-        for lead, word, trail in best_path:
+        for (lead, word, trail), orig in zip(best_path, token_tuples):
             if not word:
                 reconstructed_tokens.append(lead)
-            else:
-                reconstructed_tokens.append(f"{lead}{word}{trail}")
+                continue
+            reconstructed_tokens.append(f"{lead}{word}{trail}")
+            # Change accounting. Paired with the evaluator's clean-token
+            # damage this separates real repairs from damage:
+            #     repairs ~= tokens_changed - damaged.
+            # A corrector that changes many tokens and damages many is
+            # net-negative no matter what its CER looks like.
+            self._morph_stats["tokens_seen"] += 1
+            if word != orig[1]:
+                self._morph_stats["tokens_changed"] += 1
 
         return " ".join(reconstructed_tokens)
 

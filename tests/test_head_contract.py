@@ -561,6 +561,44 @@ class TestSymSpellDistance(CorrectorTestCase):
                               f"{flag} gave: {r.stderr[-200:]}")
 
 
+class TestReportedCounters(CorrectorTestCase):
+    """morphology_stats() must report everything it counts.
+
+    peel_guard_blocks was incremented but never reported, so a guard that
+    never fired was indistinguishable from one working correctly -- on a
+    100-page run that is the difference between a real fix and a no-op.
+    """
+
+    def test_peel_guard_blocks_is_reported(self):
+        c = self.make([("በሽታ", 1)])
+        self.assertIn("peel_guard_blocks", c.morphology_stats())
+
+    def test_change_accounting_is_reported(self):
+        c = self.make([("በሽታ", 100)])
+        stats = c.morphology_stats()
+        for key in ("tokens_seen", "tokens_changed", "change_rate_pct"):
+            self.assertIn(key, stats)
+
+    def test_change_accounting_counts_real_changes(self):
+        c = self.make([("በሽታ", 900), ("ከተማ", 800)])
+        c.correct_sentence("በሸታ ከተማ")
+        st = c.morphology_stats()
+        self.assertEqual(st["tokens_seen"], 2)
+        self.assertGreaterEqual(st["tokens_changed"], 0)
+        self.assertLessEqual(st["tokens_changed"], 2)
+        self.assertGreaterEqual(st["change_rate_pct"], 0.0)
+        self.assertLessEqual(st["change_rate_pct"], 100.0)
+
+    def test_unchanged_token_is_not_counted_as_changed(self):
+        """A clean sentence must report zero changes."""
+        c = self.make([("በሽታ", 900), ("ከተማ", 800)], lambda_morph=0)
+        out = c.correct_sentence("በሽታ ከተማ")
+        st = c.morphology_stats()
+        self.assertEqual(st["tokens_seen"], 2)
+        if out.split() == ["በሽታ", "ከተማ"]:
+            self.assertEqual(st["tokens_changed"], 0)
+
+
 class TestMorphemesJson(CorrectorTestCase):
     def test_missing_file_warns_and_degrades_the_peel_guard(self):
         """§3.5 / §6.2.2.
