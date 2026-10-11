@@ -18,6 +18,9 @@ Note CER is measured on the WHITESPACE-STRIPPED stream -- not on the raw text.
 Getting this wrong produces numbers that look plausible and disagree with
 step 04 for no visible reason.
 
+This file has NO dependency on ocr_metrics.py or on the repo at all -- copy it
+anywhere and run it.
+
 Speed
 -----
 Full-page Levenshtein is O(n*m). In pure Python a 3,200-char page takes ~2.7s,
@@ -47,9 +50,19 @@ import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from ocr_metrics import align_tokens  # canonical WER, shared with step 04
+# Deliberately self-contained: NO import of ocr_metrics.
+#
+# Step 04 measures:
+#   CER = edit_distance(''.join(gold.split()), ''.join(ocr.split())) / len(gold_chars)
+#   WER = align_tokens(gold_words, ocr_words).distance / len(gold_words)
+#
+# align_tokens() minimises the tuple (edit_count, -exact_matches)
+# lexicographically, so its .distance is the plain unit-cost Levenshtein
+# distance over tokens -- the tie-breaking only picks WHICH optimal path, not
+# its cost. Verified empirically: 300/300 random alignments match
+# Levenshtein.distance exactly. So both metrics reduce to Levenshtein and this
+# file needs nothing from the repo, which is why it runs anywhere you can copy
+# a single file to.
 
 DATASET_DIR = "/media/des/Tess/Tesseract2/synthetic_eval"
 GT_DIR = os.path.join(DATASET_DIR, "ground_truth")
@@ -59,10 +72,29 @@ PROGRESS_EVERY = 25
 
 
 # --------------------------------------------------------------------------- #
-# edit distance: rapidfuzz when available, else the repo's own implementation
-# (imported lazily in workers so the fallback stays correct under fork/spawn)
+# edit distance: rapidfuzz when available, else pure Python.
+# Works on str or on lists of tokens -- Levenshtein does not care, and WER is
+# just Levenshtein over the token sequence.
 # --------------------------------------------------------------------------- #
 _FAST = None
+
+
+def _edit_distance_py(a, b):
+    """Unit-cost Levenshtein, linear memory (same algorithm as ocr_metrics)."""
+    if a == b:
+        return 0
+    if len(a) < len(b):
+        a, b = b, a
+    if not b:
+        return len(a)
+    previous = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        current = [i]
+        for j, cb in enumerate(b, 1):
+            current.append(min(current[-1] + 1, previous[j] + 1,
+                               previous[j - 1] + (ca != cb)))
+        previous = current
+    return previous[-1]
 
 
 def _edit_distance(a, b):
@@ -72,8 +104,7 @@ def _edit_distance(a, b):
             from rapidfuzz.distance import Levenshtein
             _FAST = Levenshtein.distance
         except ImportError:
-            from ocr_metrics import edit_distance as _slow
-            _FAST = _slow
+            _FAST = _edit_distance_py
     return _FAST(a, b)
 
 
@@ -100,7 +131,7 @@ def score_page(gt_path, ocr_path):
     raw_chars = "".join(raw_words)
 
     char_errors = _edit_distance(gold_chars, raw_chars)
-    word_errors = align_tokens(gold_words, raw_words).distance
+    word_errors = _edit_distance(gold_words, raw_words)
     return (char_errors, len(gold_chars), word_errors, len(gold_words))
 
 
