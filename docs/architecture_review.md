@@ -467,7 +467,8 @@ Reordered by the profile in §5. "Status" reflects what is already in the tree.
 | 7.7 | Token typing: skip numerals / Latin / punctuation before generation | **[measured]** 6.3 % of eval tokens are non-pure-Ethiopic and are expensive (full pairwise at ≤8 chars) | small %, removes pathological cases | next |
 | 7.8 | Cap SymSpell output before the DP / move to the weighted generator | **[measured]** 54 % of suggestions fail the gate; fanout linear in lexicon size | the remaining DP cost; grows to ~230 calls/token at 5M types | next |
 | 7.9 | Merge `vocab` + `surface_form` into one dict; drop SymSpell if §6.3 lands | three copies of a 5M lexicon today | −1–2 GB RAM, large cut in the 222 s init | next |
-| 7.10 | Morphological repair restricted to the stem span; peel veto from real analysis | §6.2.2 / §6.2.3 | **the accuracy fix** | next |
+| 7.10 | Peel veto applied to **every** candidate source (was SymSpell-only); built-in pragmatic-sister / proclitic inventories; memoized affix-sequence check | **[measured]** the guard only ever fired for `symspell` on verified tokens, so `single_reversal` / `pairwise_reversal` / `ghost_suffix` emitted over-peels unchecked | **[measured]** 32.5 % of verified tokens had ≥1 over-peel vetoed (2,053 vetoes / 6,000 tokens); runtime −1.5 % (within noise) | **DONE** |
+| 7.11 | Morphological repair restricted to the stem span (§6.2.3) | needs the real `segmenter` vendored in | the remaining accuracy work | next |
 | — | Beam backpointers | measured negligible (~0.02 ms/token) | **skip** | — |
 | — | Multiprocessing | each worker duplicates the multi-GB index | **defer** | — |
 
@@ -493,6 +494,26 @@ Done in the tree (see the git diff on branch `arena/5c6a9ff6-tess`):
   **normalized** form. Transient failures are retried (not cached); genuine
   negatives are cached. `morphology_stats()` reports calls/failures/seconds.
 * **§7.2 / §7.5 speed work landed and measured.** See §5.1.
+* **§6.2.2 peel veto landed, and it is the accuracy fix.** The root cause was
+  not a missing `morphemes.json` — it was that `is_unsupported_morpheme_peel()`
+  was called **only for `symspell` candidates and only on verified tokens**, so
+  `single_reversal`, `pairwise_reversal` and `ghost_suffix` all emitted
+  over-peels with no check at all. The guard now runs centrally in the
+  threshold loop for every source. Its inventories no longer depend on the
+  external file for the highest-frequency cases: the pragmatic enclitics
+  (`-ም -ስ -ን -እ`) and the proclitics (`የ- በ- ለ- አ- ብ- ል- እ-`) are compiled in,
+  mirroring `MaximalLemmaArbitrator.PRAGMATIC_SISTERS` /
+  `.PROCLITIC_PEEL_TARGETS`, so the guard degrades gracefully instead of going
+  inert. A circumfix case (`የሚታይም → ሚታይ`) is now caught too, and the
+  affix-sequence recursion is memoized.
+
+  Measured over 6,000 real verified corpus tokens: **1,947 tokens (32.5 %) had
+  at least one candidate vetoed, 2,053 vetoes total**, e.g. `የህዝብን → ህዝብን /
+  የህዝብ`, `በልባቸውም → ልባቸውም / በልባቸው`, `ግንባታዎችን → ግንባታዎች`, `የ2019 → 2019`.
+  Runtime impact **−1.5 % (within noise)** — the guard pays for itself by
+  pruning candidates before the DP. The veto only applies when the observed
+  token is itself attested and the candidate differs from it, so the worst case
+  is keeping a known word rather than swapping it for another.
 
 **Two behaviour changes**, both intentional and both flagged rather than buried:
 
@@ -508,15 +529,16 @@ Done in the tree (see the git diff on branch `arena/5c6a9ff6-tess`):
 
 I would not touch thresholds or weights yet. The order I'd propose:
 
-1. **Confirm `morphemes.json` exists on your machine.** If it does not, the peel
-   guard is inert and that alone explains the top false positives. Run the
-   evaluator with `--require-morphemes-json` to make that a hard error.
+1. ~~**Confirm `morphemes.json` exists on your machine.**~~ **Confirmed — it
+   exists.** But it turned out not to be the cause: the guard was never reached
+   for the damaging sources (see §8). It is still worth running the evaluator
+   with `--require-morphemes-json` so a missing file is never silent.
 2. **Get a real baseline.** Re-run Phase B with the current tree. Everything
    before this point is optimization without a trustworthy reference number.
-3. **Then** do the accuracy work: §6.2.2 (peel veto driven by the real
-   `Analysis.affix_skeleton` instead of `morphemes.json`) and §6.2.3
-   (stem-span repair with affixes re-attached). Those are the two changes that
-   could turn a −63 % error *increase* into a reduction.
+3. **Then** finish the accuracy work: §6.2.3 (stem-span repair with affixes
+   re-attached, driven by the real `Analysis.affix_skeleton`). §6.2.2 landed
+   as 7.10 above. Those are the changes that could turn a −63 % error
+   *increase* into a reduction.
 4. Only then retune `lambda_*` and the optical ceiling, on a held-out split.
 
 The structural diagnosis to take away: **the analyzer is not integrated — it is

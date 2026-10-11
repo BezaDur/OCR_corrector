@@ -149,6 +149,56 @@ class _BoundedCache:
         return key in self._data
 
 
+# --------------------------------------------------------------------------- #
+# Morpheme inventories                                                        #
+#                                                                             #
+# Mirrored from the external morphological segmenter suite                    #
+# (maximal_lemma_arbitrator.MaximalLemmaArbitrator) so the peel guard stays    #
+# correct when that suite is not importable. These are the exact clitics and   #
+# proclitics that dominate the observed false positives:                      #
+#   ተከትሎም -> ተከትሎ      (-ም)   የሚታይም -> የሚታይ   (-ም)                              #
+#   እርምጃን -> እርምጃ      (-ን)   ለአለማቀፉ -> አለማቀፉ (ለ-)                              #
+#   የጥቅምት -> ጥቅምት      (የ-)                                                   #
+# --------------------------------------------------------------------------- #
+PRAGMATIC_SISTERS: tuple = ("ም", "ስ", "ን", "እ")
+PROCLITIC_PEEL_TARGETS: tuple = ("የ", "በ", "ለ", "አ", "ብ", "ል", "እ")
+
+
+def _parse_morpheme_key(key: str):
+    """
+    Decode a morphemes.json key into (side, family, polarity).
+
+    The file's own schema comment states that every affix key terminates in
+    `_exclusive` (unambiguous category evidence) or `_ambiguous` (polysemous
+    across categories). Older revisions of the corrector matched on the bare
+    substrings "suffix"/"prefix" and flattened everything into one set, which
+    discarded the exclusive/ambiguous distinction and the nominal/verb
+    distinction -- i.e. precisely the evidence needed to decide whether a peel
+    is licensed.
+    """
+    if not isinstance(key, str) or key.startswith("_"):
+        return None
+    if key.startswith("suffix"):
+        side = "suffix"
+    elif key.startswith("prefix"):
+        side = "prefix"
+    else:
+        return None
+    lowered = key.lower()
+    if lowered.endswith("_exclusive"):
+        polarity = "exclusive"
+    elif lowered.endswith("_ambiguous"):
+        polarity = "ambiguous"
+    else:
+        return None
+    family = "other"
+    for candidate in ("nominal", "verb", "universal", "relative"):
+        if candidate in lowered:
+            family = candidate
+            break
+    return side, family, polarity
+
+
 class _CacheInfoView:
     """
     Minimal stand-in for functools.lru_cache's cache_info(), backed by a
@@ -287,6 +337,12 @@ class AmharicOCRCorrector:
 
         if state_factory is not None:
             self._state_factory = state_factory
+        elif lm is not None and getattr(lm, "State", None) is not None:
+            # Injecting a language model must not also require kenlm to be
+            # installed: use the injected model's own State type when it has
+            # one. This keeps the constructor usable for analyzer-only /
+            # candidate-only deployments and for unit tests.
+            self._state_factory = lm.State
         else:
             self._state_factory = _load_kenlm().State
 
@@ -312,6 +368,7 @@ class AmharicOCRCorrector:
             "segmenter_failures": 0,
             "segmenter_seconds": 0.0,
             "trusted_bypasses": 0,
+            "peel_guard_blocks": 0,
         }
         self._analysis_cache_hits = 0
 
@@ -331,6 +388,14 @@ class AmharicOCRCorrector:
         # 3. Load Exhaustive Declarative Morphemes from morphemes.json
         self.protected_suffixes = set()
         self.protected_prefixes = set()
+        # Structured view of the same file: side x polarity x family.
+        self.suffix_exclusive = set()
+        self.suffix_ambiguous = set()
+        self.prefix_exclusive = set()
+        self.prefix_ambiguous = set()
+        self.morpheme_families = {}          # affix string -> family tag
+        self.pragmatic_sisters = set(PRAGMATIC_SISTERS)
+        self.proclitic_peel_targets = set(PROCLITIC_PEEL_TARGETS)
         morphemes_json_path = morphemes_json_path or os.environ.get(
             "AMHARIC_MORPHEMES_JSON", _DEFAULT_MORPHEMES_JSON
         )
@@ -340,11 +405,37 @@ class AmharicOCRCorrector:
         if os.path.exists(morphemes_json_path):
             with open(morphemes_json_path, "r", encoding="utf-8") as mj:
                 m_data = json.load(mj)
+                skipped = 0
                 for k, v in m_data.items():
-                    if "suffix" in k and isinstance(v, (list, set, tuple)):
-                        self.protected_suffixes.update(v)
-                    elif "prefix" in k and isinstance(v, (list, set, tuple)):
-                        self.protected_prefixes.update(v)
+                    if not isinstance(v, (list, set, tuple)):
+                        continue
+                    parsed = _parse_morpheme_key(k)
+                    if parsed is None:
+                        # Legacy flat keys such as "suffixes"/"prefixes" still
+                        # feed the backwards-compatible protected_* sets.
+                        if "suffix" in str(k):
+                            self.protected_suffixes.update(v)
+                        elif "prefix" in str(k):
+                            self.protected_prefixes.update(v)
+                        skipped += 1
+                        continue
+                    side, family, polarity = parsed
+                    bucket = {
+                        ("suffix", "exclusive"): self.suffix_exclusive,
+                        ("suffix", "ambiguous"): self.suffix_ambiguous,
+                        ("prefix", "exclusive"): self.prefix_exclusive,
+                        ("prefix", "ambiguous"): self.prefix_ambiguous,
+                    }[(side, polarity)]
+                    for affix in v:
+                        if not affix:
+                            continue
+                        bucket.add(affix)
+                        self.morpheme_families.setdefault(affix, family)
+                    (self.protected_suffixes if side == "suffix"
+                     else self.protected_prefixes).update(v)
+                if skipped and self.verbose:
+                    print(f"  ({skipped} non-schema morpheme keys folded into "
+                          f"the legacy sets)", flush=True)
             if self.verbose:
                 print(
                     f"Loaded {len(self.protected_suffixes)} declarative suffixes and "
@@ -368,6 +459,9 @@ class AmharicOCRCorrector:
         # on every recursive call inside _is_valid_affix_sequence.
         self._suffixes_sorted = sorted(self.protected_suffixes, key=len, reverse=True)
         self._prefixes_sorted = sorted(self.protected_prefixes, key=len, reverse=True)
+        # Memo for the affix-sequence recursion (bounded: the inventory is
+        # fixed for the life of the instance, so entries never go stale).
+        self._affix_seq_memo = {}
 
         # 4. Vocabulary & SymSpell
         if self.verbose:
@@ -683,36 +777,85 @@ class AmharicOCRCorrector:
         return dp[m][n]
 
     def _is_valid_affix_sequence(self, chunk: str, sorted_inventory) -> bool:
-        """Recursively validates if a stripped chunk is a valid layered affix sequence.
+        """
+        Validate that a stripped chunk is a valid layered affix sequence.
         `sorted_inventory` must already be sorted longest-first.
+
+        Memoized: the original recursion re-explored the same suffixes on every
+        call, which is exponential in the worst case, and this runs once per
+        candidate per token.
         """
         if not chunk:
             return True
+        memo = self._affix_seq_memo
+        key = (chunk, id(sorted_inventory))
+        hit = memo.get(key)
+        if hit is not None:
+            return hit
+        result = False
         for aff in sorted_inventory:
             if aff and chunk.startswith(aff):
                 if self._is_valid_affix_sequence(chunk[len(aff):], sorted_inventory):
-                    return True
-        return False
+                    result = True
+                    break
+        memo[key] = result
+        return result
 
     def is_unsupported_morpheme_peel(self, orig_word: str, cand_word: str) -> bool:
         """
-        Universally proscribes candidates formed by stripping authentic prefixes
-        or suffixes from an already authenticated Amharic word.
+        Universal proscription of candidates formed by stripping authentic
+        prefixes or suffixes from an already attested Amharic word.
+
+        This is the single largest class of observed false positives:
+
+            ተከትሎም -> ተከትሎ        (-ም pragmatic enclitic)
+            የሚታይም -> የሚታይ       (-ም pragmatic enclitic)
+            እርምጃን -> እርምጃ       (-ን pragmatic enclitic)
+            ለአለማቀፉ -> አለማቀፉ     (ለ- proclitic)
+            የጥቅምት -> ጥቅምት       (የ- proclitic)
+
+        The single-character pragmatic enclitics and the proclitics are checked
+        by direct membership first (they account for the overwhelming majority
+        of real damage and are O(1)); anything longer falls through to the
+        layered affix-sequence check against morphemes.json.
         """
-        if len(cand_word) >= len(orig_word):
+        if not cand_word or len(cand_word) >= len(orig_word):
             return False
 
-        # Guard against suffix stripping (e.g. እርምጃን -> እርምጃ, ተከትሎም -> ተከትሎ)
+        # --- suffix peel:  orig = cand + <suffix> -------------------------
         if orig_word.startswith(cand_word):
-            stripped_suffix = orig_word[len(cand_word):]
-            if self._is_valid_affix_sequence(stripped_suffix, self._suffixes_sorted):
+            stripped = orig_word[len(cand_word):]
+            if stripped in self.pragmatic_sisters:
+                return True
+            if self._is_valid_affix_sequence(stripped, self._suffixes_sorted):
                 return True
 
-        # Guard against prefix stripping (e.g. ለአለማቀፉ -> አለማቀፉ, የጥቅምት -> ጥቅምት)
+        # --- prefix peel:  orig = <prefix> + cand -------------------------
         if orig_word.endswith(cand_word):
-            stripped_prefix = orig_word[:-len(cand_word)]
-            if self._is_valid_affix_sequence(stripped_prefix, self._prefixes_sorted):
+            stripped = orig_word[:len(orig_word) - len(cand_word)]
+            if stripped in self.proclitic_peel_targets:
                 return True
+            if self._is_valid_affix_sequence(stripped, self._prefixes_sorted):
+                return True
+
+        # --- circumfix peel: orig = <prefix> + cand + <suffix> ------------
+        # (e.g. የሚታይም -> ሚታይ). Only worth trying when the candidate is a
+        # genuine infix, and bounded so it cannot blow up on long tokens.
+        if len(cand_word) >= 2:
+            for start in range(1, min(len(orig_word) - len(cand_word), 4)):
+                if orig_word[start:start + len(cand_word)] != cand_word:
+                    continue
+                head, tail = orig_word[:start], orig_word[start + len(cand_word):]
+                if not head and not tail:
+                    continue
+                head_ok = (not head
+                           or head in self.proclitic_peel_targets
+                           or self._is_valid_affix_sequence(head, self._prefixes_sorted))
+                tail_ok = (not tail
+                           or tail in self.pragmatic_sisters
+                           or self._is_valid_affix_sequence(tail, self._suffixes_sorted))
+                if head_ok and tail_ok:
+                    return True
 
         return False
 
@@ -762,12 +905,14 @@ class AmharicOCRCorrector:
         # fail the acceptance gate after paying for a full O(m*n) DP. Pass the
         # gate as a `cutoff` so the DP abandons the moment it can prove the
         # alignment cannot qualify (exact, not heuristic -- see the docstring).
+        # The morpheme-peel guard is applied once, centrally, in the threshold
+        # loop below -- NOT per source. It used to guard only SymSpell
+        # candidates, so single_reversal / pairwise_reversal / ghost_suffix
+        # could all emit over-peels such as ተከትሎም -> ተከትሎ unchecked.
         suggestions = self.symspell.lookup(norm_token, Verbosity.ALL, max_edit_distance=1)
         sym_cutoff = max(self.max_optical_cost, self.max_optical_cost_pairwise)
         for s in suggestions:
             cand = self._to_surface(s.term)
-            if is_verified and self.is_unsupported_morpheme_peel(ocr_token, cand):
-                continue
             opt_cost = self.compute_optical_cost(ocr_token, cand, cutoff=sym_cutoff)
             if opt_cost == float("inf"):
                 continue
@@ -807,10 +952,19 @@ class AmharicOCRCorrector:
         best_source = {}
         for cand, cost, source in raw_candidates:
             threshold = source_thresholds.get(source, self.max_optical_cost)
-            if cost <= threshold:
-                if cand not in best_cost or cost < best_cost[cand]:
-                    best_cost[cand] = cost
-                    best_source[cand] = source
+            if cost > threshold:
+                continue
+            # Morpheme-peel guard, applied uniformly to every source. When the
+            # observed token is already attested, replacing it by the same token
+            # minus a real affix is over-segmentation, not repair
+            # (ተከትሎም -> ተከትሎ, የሚታይም -> የሚታይ, ለአለማቀፉ -> አለማቀፉ, ...).
+            if is_verified and source != "identity" and cand != ocr_token:
+                if self.is_unsupported_morpheme_peel(ocr_token, cand):
+                    self._morph_stats["peel_guard_blocks"] += 1
+                    continue
+            if cand not in best_cost or cost < best_cost[cand]:
+                best_cost[cand] = cost
+                best_source[cand] = source
 
         # Reserve dedicated slots for pairwise-sourced candidates instead of a
         # single global cost-rank truncation. A flat top-12-by-cost slice

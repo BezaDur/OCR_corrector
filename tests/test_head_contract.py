@@ -300,11 +300,43 @@ class TestDecoderMorphologyCall(CorrectorTestCase):
 
 
 class TestMorphemesJson(CorrectorTestCase):
-    def test_missing_file_warns_and_disables_the_peel_guard(self):
+    def test_missing_file_warns_and_degrades_the_peel_guard(self):
+        """§3.5 / §6.2.2.
+
+        The guard no longer goes fully inert when morphemes.json is absent:
+        the pragmatic enclitics (-ም -ስ -ን -እ) and the proclitics
+        (የ- በ- ለ- ...) are compiled in, mirroring MaximalLemmaArbitrator's own
+        PRAGMATIC_SISTERS / PROCLITIC_PEEL_TARGETS constants, because those
+        four enclitics account for the overwhelming majority of real damage.
+        What is lost without the file is the file-derived layered affixes.
+        """
         c = self.make([("በሽታ", 1)], morphemes_json_path="/nonexistent/morphemes.json")
         self.assertEqual(c.protected_suffixes, set())
         self.assertEqual(c.protected_prefixes, set())
-        self.assertFalse(c.is_unsupported_morpheme_peel("ተከትሎም", "ተከትሎ"))
+        # File-derived layered affixes are unavailable -> guard falls through.
+        self.assertFalse(c.is_unsupported_morpheme_peel("መጽሐፍቱ", "መጽሐፍ"))
+        # Built-in inventories still guard the high-frequency damage.
+        self.assertTrue(c.is_unsupported_morpheme_peel("ተከትሎም", "ተከትሎ"))
+
+    def test_guard_blocks_every_observed_peel_false_positive(self):
+        """§6.2.2: the top-5 observed over-peels, all now vetoed."""
+        c = self.make([("በሽታ", 1)], morphemes_json_path="/nonexistent/morphemes.json")
+        for orig, cand in [("ተከትሎም", "ተከትሎ"),
+                           ("የሚታይም", "የሚታይ"),
+                           ("እርምጃን", "እርምጃ"),
+                           ("ለአለማቀፉ", "አለማቀፉ"),
+                           ("የጥቅምት", "ጥቅምት")]:
+            with self.subTest(orig=orig, cand=cand):
+                self.assertTrue(c.is_unsupported_morpheme_peel(orig, cand))
+
+    def test_guard_does_not_block_genuine_repairs(self):
+        """Vetoing a peel must not veto a real repair."""
+        c = self.make([("በሽታ", 1)], morphemes_json_path="/nonexistent/morphemes.json")
+        for orig, cand in [("ተከትሎም", "ተከትሎጽ"),
+                           ("እርምጃን", "እርምጃን"),
+                           ("ገበያ", "ገብያ")]:
+            with self.subTest(orig=orig, cand=cand):
+                self.assertFalse(c.is_unsupported_morpheme_peel(orig, cand))
 
     def test_missing_file_can_be_made_fatal(self):
         """§3.5: an empty affix inventory silently disables the peel guard,
