@@ -15,6 +15,8 @@ MIN_FREQ="${MIN_FREQ:-2}"
 CHAR_LM="${CHAR_LM:-}"
 CHAR_ARGS=()
 [ -n "$CHAR_LM" ] && CHAR_ARGS=(--char-lm "$CHAR_LM")
+TSV_DIR="${TSV_DIR:-}"
+[ -n "$TSV_DIR" ] && CHAR_ARGS+=(--tsv-dir "$TSV_DIR")
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
 

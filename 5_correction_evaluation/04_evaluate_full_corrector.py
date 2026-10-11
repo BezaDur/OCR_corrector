@@ -16,6 +16,7 @@ from ocr_metrics import COUNT_FIELDS, edit_distance, score_texts, percentages
 from amharic_canonical_normalizer import normalize_for_metric
 
 from amharic_ocr_corrector import AmharicOCRCorrector
+from tsv_confidence import align_confidences
 
 MORPHEMES_JSON = None
 DATASET_DIR = "/media/des/Tess/Tesseract2/synthetic_eval"
@@ -43,6 +44,7 @@ CORRECTOR_OPTIONS = dict(beam_width=5, max_optical_cost=4.8, lambda_optical=0.9,
                          lambda_lm=2.0, lambda_morph=1.5, max_candidates=25)
 MORPHEMES_JSON = None
 CANONICAL_METRICS = False
+TSV_DIR = None  # folder of Tesseract .tsv files; enables per-word confidences
 JSON_REPORT = None
 EXPECTED_PAGES = None
 MAX_DAMAGE_RATE = None
@@ -59,10 +61,10 @@ def build_corrector():
 
 def init_worker(config=None):
     global _corrector, KENLM_BIN, CONFUSION_JSON, DICT_FILE, MORPHEMES_JSON
-    global RAW_OCR_DIR, CORRECTED_OUT_DIR, CORRECTOR_OPTIONS, CANONICAL_METRICS
+    global RAW_OCR_DIR, CORRECTED_OUT_DIR, CORRECTOR_OPTIONS, CANONICAL_METRICS, TSV_DIR
     if config is not None:
         (KENLM_BIN, CONFUSION_JSON, DICT_FILE, MORPHEMES_JSON, RAW_OCR_DIR,
-         CORRECTED_OUT_DIR, CORRECTOR_OPTIONS, CANONICAL_METRICS) = config
+         CORRECTED_OUT_DIR, CORRECTOR_OPTIONS, CANONICAL_METRICS, TSV_DIR) = config
     _corrector = build_corrector()
 
 
@@ -82,8 +84,20 @@ def process_single_page(gt_path):
     with open(raw_ocr_path, "r", encoding="utf-8") as f:
         raw_ocr_text = f.read().strip()
 
+    line_confs, conf_stats = None, None
+    if TSV_DIR:
+        tsv_path = os.path.join(TSV_DIR, f"{base_name}.tsv")
+        if os.path.exists(tsv_path):
+            line_confs, conf_stats = align_confidences(tsv_path, raw_ocr_text.splitlines())
+            print(f"     confidences {base_name}: {conf_stats}", flush=True)
+        else:
+            print(f"     no TSV for {base_name}; running without confidences", flush=True)
+    dropped_before = getattr(_corrector, "_conf_dropped", 0)
     correction_start = time.perf_counter()
-    corrected_text = _corrector.correct_text_block(raw_ocr_text)
+    if line_confs is None:
+        corrected_text = _corrector.correct_text_block(raw_ocr_text)
+    else:
+        corrected_text = _corrector.correct_text_block(raw_ocr_text, line_confidences=line_confs)
     correction_seconds = time.perf_counter() - correction_start
     token_count = len(raw_ocr_text.split())
 
@@ -97,8 +111,12 @@ def process_single_page(gt_path):
     canonical = strict.copy() if normalized == texts else score_texts(*normalized)
     dt = time.time() - t0
     print(f"     done {base_name} in {dt:.2f}s (correction {correction_seconds:.3f}s)", flush=True)
+    if conf_stats is not None:
+        print(f"     confidences dropped in correction: "
+              f"{getattr(_corrector, '_conf_dropped', 0) - dropped_before}", flush=True)
     return dict(page=base_name, strict=strict, canonical=canonical,
-                correction_seconds=correction_seconds, input_tokens=token_count)
+                correction_seconds=correction_seconds, input_tokens=token_count,
+                confidence_alignment=conf_stats)
 
 
 def main():
@@ -150,7 +168,7 @@ def main():
         print(f"Multi-core: {total_pages} pages, {NUM_WORKERS} workers", flush=True)
         worker_config = (KENLM_BIN, CONFUSION_JSON, DICT_FILE, MORPHEMES_JSON,
                          RAW_OCR_DIR, CORRECTED_OUT_DIR, CORRECTOR_OPTIONS,
-                         CANONICAL_METRICS)
+                         CANONICAL_METRICS, TSV_DIR)
         with ProcessPoolExecutor(max_workers=NUM_WORKERS, initializer=init_worker,
                                  initargs=(worker_config,)) as ex:
             for res in ex.map(process_single_page, gt_files, chunksize=1):
@@ -226,7 +244,7 @@ def summarize(totals, pages, elapsed_time, initialization_seconds):
 def configure_from_cli():
     global GT_DIR, RAW_OCR_DIR, CORRECTED_OUT_DIR, KENLM_BIN, CONFUSION_JSON, DICT_FILE
     global USE_MP, NUM_WORKERS, CANONICAL_METRICS, JSON_REPORT, EXPECTED_PAGES, MAX_DAMAGE_RATE
-    global MORPHEMES_JSON, LIMIT_PAGES
+    global MORPHEMES_JSON, LIMIT_PAGES, TSV_DIR
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gt-dir", default=GT_DIR)
     parser.add_argument("--raw-dir", default=RAW_OCR_DIR)
@@ -254,6 +272,8 @@ def configure_from_cli():
     parser.add_argument("--max-candidates", type=int, default=25)
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--canonical-metrics", action="store_true")
+    parser.add_argument("--tsv-dir", default=None,
+                        help="Folder of Tesseract <page>.tsv files; adds per-word confidences to Stage 1")
     parser.add_argument("--no-eos", action="store_true")
     parser.add_argument("--json-report")
     parser.add_argument("--expected-pages", type=int)
@@ -351,6 +371,7 @@ def configure_from_cli():
     KENLM_BIN, CONFUSION_JSON, DICT_FILE = args.kenlm, args.confusion, args.dictionary
     NUM_WORKERS, USE_MP = args.workers, args.workers > 1
     CANONICAL_METRICS = args.canonical_metrics
+    TSV_DIR = args.tsv_dir
     CORRECTOR_OPTIONS.update(beam_width=args.beam_width,
                              lambda_optical=args.lambda_optical,
                              lambda_lm=args.lambda_lm, lambda_morph=args.lambda_morph,

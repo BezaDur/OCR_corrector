@@ -59,3 +59,49 @@ class TestTsvConfidence(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCorrectTextBlockConfidences(unittest.TestCase):
+    """correct_text_block passes each line's confidences to correct_sentence."""
+
+    def setUp(self):
+        import contextlib
+        import io
+        from test_head_contract import CONFUSION, FakeLM, State
+        from amharic_ocr_corrector import AmharicOCRCorrector
+        fd, self.lex = tempfile.mkstemp(suffix=".txt")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write("ሰላም 900\nቤት 800\n")
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.c = AmharicOCRCorrector(
+                kenlm_path="unused", confusion_matrix_path=CONFUSION,
+                dict_vocab_path=self.lex, lm=FakeLM(), state_factory=State,
+                segmenter=None, verbose=False, stage1_detection=True)
+
+    def tearDown(self):
+        os.remove(self.lex)
+
+    def test_each_line_gets_its_own_confidences(self):
+        seen = []
+        original = self.c.correct_sentence
+
+        def spy(sentence, confidences=None):
+            seen.append((sentence, confidences))
+            return original(sentence, confidences=confidences)
+
+        self.c.correct_sentence = spy
+        self.c.correct_text_block("ሰላም ቤት\nቤት", line_confidences=[[90.0, 40.0], None])
+        self.assertEqual(seen[0], ("ሰላም ቤት", [90.0, 40.0]))
+        self.assertEqual(seen[1], ("ቤት", None))
+
+    def test_no_confidences_is_unchanged_behaviour(self):
+        seen = []
+        original = self.c.correct_sentence
+
+        def spy(sentence, confidences=None):
+            seen.append(confidences)
+            return original(sentence, confidences=confidences)
+
+        self.c.correct_sentence = spy
+        self.c.correct_text_block("ሰላም\nቤት")
+        self.assertEqual(seen, [None, None])

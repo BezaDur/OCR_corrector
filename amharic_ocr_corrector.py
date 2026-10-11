@@ -1569,9 +1569,17 @@ class AmharicOCRCorrector:
 
         return " ".join(reconstructed_tokens)
 
-    def correct_text_block(self, text: str) -> str:
+    def correct_text_block(self, text: str, line_confidences=None) -> str:
+        """Correct a multi-line block.
+
+        `line_confidences` (optional): one entry per line, each a list of word
+        confidences (0-100) or None. Entries are passed to correct_sentence.
+        """
         lines = text.splitlines()
-        res = [self.correct_sentence(l) if l.strip() else "" for l in lines]
+        if line_confidences is None:
+            line_confidences = [None] * len(lines)
+        res = [self.correct_sentence(l, confidences=c) if l.strip() else ""
+               for l, c in zip(lines, line_confidences)]
         return "\n".join(res)
 
 
