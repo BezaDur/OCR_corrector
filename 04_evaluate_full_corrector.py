@@ -42,6 +42,7 @@ CANONICAL_METRICS = False
 JSON_REPORT = None
 EXPECTED_PAGES = None
 MAX_DAMAGE_RATE = None
+LIMIT_PAGES = None
 
 
 def build_corrector():
@@ -107,6 +108,12 @@ def main():
 
     if EXPECTED_PAGES is not None and total_pages != EXPECTED_PAGES:
         raise ValueError(f"Expected {EXPECTED_PAGES} pages, found {total_pages}")
+    if LIMIT_PAGES is not None:
+        # Smoke runs: take the first N pages in sorted order. Checked against the
+        # full directory above, so --expected-pages still guards the dataset.
+        gt_files = gt_files[:LIMIT_PAGES]
+        total_pages = len(gt_files)
+        print(f"Limiting run to the first {total_pages} page(s) (--limit-pages)", flush=True)
     missing = [path for path in gt_files if not os.path.exists(os.path.join(
         RAW_OCR_DIR, os.path.basename(path).replace(".gt.txt", ".ocr.txt")))]
     if missing:
@@ -171,6 +178,7 @@ def summarize(totals, pages, elapsed_time, initialization_seconds):
     report = dict(
         metrics={mode: dict(counts=counts, rates=percentages(counts)) for mode, counts in totals.items()},
         pages=pages, completed_pages=len(pages), expected_pages=EXPECTED_PAGES,
+        limit_pages=LIMIT_PAGES,
         correction_worker_seconds=correction_seconds, evaluation_wall_seconds=elapsed_time,
         initialization_seconds=initialization_seconds,
         correction_tokens_per_worker_second=token_count / correction_seconds if correction_seconds else None,
@@ -214,7 +222,7 @@ def summarize(totals, pages, elapsed_time, initialization_seconds):
 def configure_from_cli():
     global GT_DIR, RAW_OCR_DIR, CORRECTED_OUT_DIR, KENLM_BIN, CONFUSION_JSON, DICT_FILE
     global USE_MP, NUM_WORKERS, CANONICAL_METRICS, JSON_REPORT, EXPECTED_PAGES, MAX_DAMAGE_RATE
-    global MORPHEMES_JSON
+    global MORPHEMES_JSON, LIMIT_PAGES
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gt-dir", default=GT_DIR)
     parser.add_argument("--raw-dir", default=RAW_OCR_DIR)
@@ -243,6 +251,8 @@ def configure_from_cli():
     parser.add_argument("--no-eos", action="store_true")
     parser.add_argument("--json-report")
     parser.add_argument("--expected-pages", type=int)
+    parser.add_argument("--limit-pages", type=int, default=None,
+                        help="Run only the first N pages (sorted by name) for a quick smoke test")
     parser.add_argument("--max-clean-damage-rate", type=float,
                         help="Optional upper damage-rate gate in percent; headline metric mode applies")
     parser.add_argument("--beam-width", type=int, default=5)
@@ -323,9 +333,12 @@ def configure_from_cli():
         parser.error("--workers must be positive")
     if args.expected_pages is not None and args.expected_pages < 1:
         parser.error("--expected-pages must be positive")
+    if args.limit_pages is not None and args.limit_pages < 1:
+        parser.error("--limit-pages must be positive")
     if args.max_clean_damage_rate is not None and not 0 <= args.max_clean_damage_rate <= 100:
         parser.error("--max-clean-damage-rate must be between 0 and 100")
     JSON_REPORT, EXPECTED_PAGES = args.json_report, args.expected_pages
+    LIMIT_PAGES = args.limit_pages
     MORPHEMES_JSON = args.morphemes_json
     MAX_DAMAGE_RATE = args.max_clean_damage_rate
     GT_DIR, RAW_OCR_DIR, CORRECTED_OUT_DIR = args.gt_dir, args.raw_dir, args.output_dir
