@@ -7,6 +7,10 @@ Usage:
   python trace_candidate.py <observed_ocr_token> <expected_word> [optional_context_sentence]
 """
 
+# Make the repo-root shared modules importable from this subfolder.
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
 import sys
 import kenlm
 

@@ -536,7 +536,7 @@ class TestSymSpellDistance(CorrectorTestCase):
         import subprocess
         import sys
         here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        script = os.path.join(here, "04_evaluate_full_corrector.py")
+        script = os.path.join(here, "5_correction_evaluation", "04_evaluate_full_corrector.py")
         r = subprocess.run(
             [sys.executable, script, "--symspell-distance", "1", "--help"],
             capture_output=True, text=True, timeout=120)
@@ -547,7 +547,7 @@ class TestSymSpellDistance(CorrectorTestCase):
         import subprocess
         import sys
         here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        script = os.path.join(here, "04_evaluate_full_corrector.py")
+        script = os.path.join(here, "5_correction_evaluation", "04_evaluate_full_corrector.py")
         for flag, value in (("--trie-search", None),
                             ("--trusted-long-word-frequency", "5"),
                             ("--trusted-short-word-frequency", "5")):
@@ -857,7 +857,7 @@ class TestEvaluatorContract(CorrectorTestCase):
         has since been restored as a real constructor parameter, so the
         evaluator passing it is now correct.
         """
-        src = (ROOT / "04_evaluate_full_corrector.py").read_text(encoding="utf-8")
+        src = (ROOT / "5_correction_evaluation" / "04_evaluate_full_corrector.py").read_text(encoding="utf-8")
         for dead in ("candidate_backend", "trie_search",
                      "trusted_long_word_frequency", "trusted_short_word_frequency"):
             self.assertNotIn(f"{dead}=", src,

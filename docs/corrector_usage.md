@@ -75,7 +75,7 @@ SymSpell can retrieve generic one-edit neighbors that are absent from the confus
 The evaluator now accepts paths and backend settings from the command line, uses identical options in sequential and spawned worker processes, reports correction-only worker time separately from I/O/metric computation, and uses linear-memory edit distance. Missing raw pages fail the run.
 
 ```bash
-python 04_evaluate_full_corrector.py \
+python 5_correction_evaluation/04_evaluate_full_corrector.py \
   --kenlm /path/to/amharic_5gram.binary \
   --dictionary /path/to/main_i7.txt \
   --confusion confusion_matrix.json \

@@ -13,6 +13,10 @@ usually helps precision as well as memory.
 
 Override with --max-lexicon-types / --dict-min-freq. Pass 0 to disable a cap.
 """
+# Make the repo-root shared modules importable from this subfolder.
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
 import argparse
 import os
 import sys

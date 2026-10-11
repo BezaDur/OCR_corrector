@@ -13,6 +13,7 @@ CONF="${CONF:-/media/des/Tess/Tesseract2/confusion_matrix.json}"
 DICT="${DICT:-/mnt/mintdata/Users/Des/Mint/4_Dataset_wo/Projects/p16_morpheme_analysis/data/main_i7.txt}"
 MIN_FREQ="${MIN_FREQ:-2}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
+REPO="$(cd "$HERE/.." && pwd)"
 
 rm -rf "$SUB" && mkdir -p "$SUB/gt" "$SUB/raw"
 count=0
@@ -27,8 +28,8 @@ for gt in $(ls "$DATA/ground_truth/"*.gt.txt | sort | head -n "$N"); do
 done
 echo "Subset: $count pages in $SUB"
 
-cd "$HERE"
-nohup nice -n 19 python3 04_evaluate_full_corrector.py \
+cd "$REPO"
+nohup nice -n 19 python3 "$HERE/04_evaluate_full_corrector.py" \
   --gt-dir "$SUB/gt" --raw-dir "$SUB/raw" --output-dir "$SUB/out" \
   --kenlm "$KENLM" --confusion "$CONF" --dictionary "$DICT" \
   --dict-min-freq "$MIN_FREQ" \

@@ -9,6 +9,10 @@ Categorizes every post-processing decision into:
 Exports full side-by-side TSV and prints top failure patterns.
 """
 
+# Make the repo-root shared modules importable from this subfolder.
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
 import os
 import glob
 import difflib

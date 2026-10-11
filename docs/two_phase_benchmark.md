@@ -13,10 +13,10 @@ python -m pip install -r requirements-symspell.txt
 Run from the repository root. `test_page1_fixes.py` retains the original machine's KenLM/dictionary defaults, uses the repository confusion matrix, and now defaults to SymSpell distance 1. Override paths with `--kenlm`, `--dictionary`, and `--confusion` when needed.
 
 ```bash
-python test_page1_fixes.py --backend trie --repeats 5 \
+python 4_ocr_correction/test_page1_fixes.py --backend trie --repeats 5 \
   --json-report benchmark_results/phase_a_trie.json
 
-python test_page1_fixes.py --backend symspell --symspell-distance 1 --repeats 5 \
+python 4_ocr_correction/test_page1_fixes.py --backend symspell --symspell-distance 1 --repeats 5 \
   --json-report benchmark_results/phase_a_symspell.json
 ```
 
@@ -38,7 +38,7 @@ Do not proceed to Phase B until the target checks pass and any other changed wor
 Use the *same* raw OCR directory for both backends and distinct corrected-output directories. This command explicitly matches Phase A weights instead of silently using the evaluator's older defaults:
 
 ```bash
-python 04_evaluate_full_corrector.py \
+python 5_correction_evaluation/04_evaluate_full_corrector.py \
   --kenlm /path/to/amharic_5gram.binary \
   --dictionary /path/to/main_i7.txt \
   --confusion confusion_matrix.json \

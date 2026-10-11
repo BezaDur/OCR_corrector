@@ -2,6 +2,10 @@
 """
 Step 6: End-to-end evaluation benchmark.
 """
+# Make the repo-root shared modules importable from this subfolder.
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
 import os
 import glob
 import time
