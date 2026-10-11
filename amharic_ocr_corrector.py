@@ -330,6 +330,9 @@ class AmharicOCRCorrector:
         suspicion_weights: Optional[Dict[str, float]] = None,
         suspicion_pass_below: float = 0.30,
         suspicion_flag_above: float = 0.70,
+        # Character-level KenLM (.klm/.binary). Scores spaced characters for
+        # Stage 1. Loaded from this path unless a model is injected via char_lm=.
+        char_lm_path: Optional[str] = None,
         char_lm=None,
         canonicalize_surface: bool = False,
         known_word_cache_size: int = 131072,
@@ -404,6 +407,14 @@ class AmharicOCRCorrector:
         self._surface_fixes = 0
         self.suspicion = None
         self._stage1 = {"pass": 0, "gray": 0, "flag": 0}
+        # Fail loudly if the path is given but the model cannot be loaded;
+        # silently running without it would change Stage 1 without warning.
+        if char_lm is None and char_lm_path:
+            _kenlm = _load_kenlm()
+            if self.verbose:
+                print(f"Loading character LM: {char_lm_path}...", flush=True)
+            char_lm = _kenlm.Model(char_lm_path)
+        self.char_lm = char_lm
         self._suspicion_cfg = (suspicion_weights, suspicion_pass_below,
                                suspicion_flag_above, char_lm)
 

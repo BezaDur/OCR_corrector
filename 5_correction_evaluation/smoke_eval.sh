@@ -12,6 +12,9 @@ KENLM="${KENLM:-/mnt/mintdata/Users/Des/Mint/Models/KenLM/word_model/amharic_5gr
 CONF="${CONF:-/media/des/Tess/Tesseract2/confusion_matrix.json}"
 DICT="${DICT:-/mnt/mintdata/Users/Des/Mint/4_Dataset_wo/Projects/p16_morpheme_analysis/data/main_i7.txt}"
 MIN_FREQ="${MIN_FREQ:-2}"
+CHAR_LM="${CHAR_LM:-}"
+CHAR_ARGS=()
+[ -n "$CHAR_LM" ] && CHAR_ARGS=(--char-lm "$CHAR_LM")
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
 
@@ -32,7 +35,7 @@ cd "$REPO"
 nohup nice -n 19 python3 "$HERE/04_evaluate_full_corrector.py" \
   --gt-dir "$SUB/gt" --raw-dir "$SUB/raw" --output-dir "$SUB/out" \
   --kenlm "$KENLM" --confusion "$CONF" --dictionary "$DICT" \
-  --dict-min-freq "$MIN_FREQ" \
+  --dict-min-freq "$MIN_FREQ" "${CHAR_ARGS[@]}" \
   --json-report "$SUB/report.json" > "$SUB/run.log" 2>&1 &
 echo "Running in background, PID $!. Log: $SUB/run.log"
 echo "Watch progress with: tail -f $SUB/run.log"

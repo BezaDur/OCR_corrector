@@ -322,8 +322,11 @@ class SuspicionScorer:
     def _char_lm_score(self, tok: str, sig: TokenSignals) -> None:
         if not self.use_char_lm or not tok:
             return
+        # KenLM scores space-separated symbols. Scoring the raw token would
+        # treat the whole word as one symbol, so the characters are spaced first.
+        spaced = " ".join(tok)
         try:
-            s = self.char_lm.score(tok, bos=True, eos=True)
+            s = self.char_lm.score(spaced, bos=True, eos=True)
             sig.char_lm = s / max(len(tok), 1)
         except Exception:
             sig.char_lm = None

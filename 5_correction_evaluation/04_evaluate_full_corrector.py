@@ -239,6 +239,8 @@ def configure_from_cli():
         help="Kept for compatibility. The trie backend from an earlier revision "
              "is not present at HEAD; only 'symspell' is available.",
     )
+    parser.add_argument("--char-lm", default=None,
+                        help="Path to the character-level KenLM model (Stage 1 signal)")
     parser.add_argument("--morphemes-json", default=None,
                         help="Path to morphemes.json for the morpheme-peel guard")
     parser.add_argument("--max-optical-cost", type=float, default=4.8)
@@ -360,6 +362,7 @@ def configure_from_cli():
                              dict_min_freq=args.dict_min_freq,
                              symspell_max_edit_distance=args.symspell_distance,
                              anchor_margin=args.anchor_margin,
+                             char_lm_path=args.char_lm,
                              max_candidates=args.max_candidates)
 
 
