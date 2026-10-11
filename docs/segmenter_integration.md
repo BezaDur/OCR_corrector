@@ -391,17 +391,28 @@ Built from real corpus text, 314,755 types:
 | **+ SymSpell index** | **430 MB** | **+399 MB** |
 | + segmenter | 430 MB | +0 MB (lazy) |
 
-**SymSpell costs ~1.03 KB per dictionary type** — roughly 4.5× the two plain
-dicts combined, and ~91 % of the total. The segmenter is free (it resolves
-`MAIN_DICTIONARY_PATH` lazily).
+**SymSpell costs ~1.6 KB per dictionary type, all-in** — roughly 4.5× the two
+plain dicts combined, and ~91 % of the total. The segmenter is free (it
+resolves `MAIN_DICTIONARY_PATH` lazily).
+
+> Measurement caveat worth knowing: SymSpell indexes by the first
+> `prefix_length` (7) characters, so words sharing a prefix are grouped and
+> the index is much smaller. A synthetic lexicon of `word00000001`-style names
+> collapsed into a handful of prefixes and measured 0.36 KB/type — **3.5× too
+> optimistic**. Use only figures measured on realistic, diverse word forms.
 
 Extrapolating linearly, an uncapped lexicon costs ~1.27 KB per type overall:
 
+At ~1.6 KB/type:
+
 | Lexicon types | Uncapped | Capped at 500k | Capped at 300k |
 | --- | --- | --- | --- |
-| 1 M | ~1.3 GB | ~0.6 GB | ~0.4 GB |
-| 3 M | ~3.8 GB | ~0.6 GB | ~0.4 GB |
-| 5 M | ~6.4 GB | ~0.6 GB | ~0.4 GB |
+| 1 M | ~1.6 GB | ~0.4 GB | ~0.25 GB |
+| 3 M | ~4.8 GB | ~0.4 GB | ~0.25 GB |
+| 5 M | ~8.0 GB | ~0.4 GB | ~0.25 GB |
+
+Measured directly on 1.5 M realistic types: **2,387 MB uncapped → 355 MB at a
+300k cap → 237 MB at a 100k cap.**
 
 Plus KenLM's 5-gram binary on top. That is the OOM.
 
@@ -439,12 +450,32 @@ The loader was restructured into two passes. Previously SymSpell was built
 paid to build. Now: read → cap → `gc.collect()` → build SymSpell from the
 surviving set. Measured effect:
 
+Second, when `max_lexicon_types` is set the read itself is **chunked**, so the
+cap bounds memory *during* the read rather than only after it. Each chunk's
+top-N is merged into a running set that is pruned back to N, keeping resident
+memory at O(N + chunk) regardless of file size.
+
+This selection is **exact, not approximate**: if a word is in the global
+top-N, fewer than N words beat it globally, so fewer than N beat it inside its
+own chunk, so it survives its chunk's top-N. That holds at any chunk size —
+chunking trades memory against per-chunk overhead only. (Caveat: for a file
+that repeats a word across chunk boundaries, the kept frequency is the one
+from the chunk where it ranks highest. Dictionary files have one entry per
+word, so this does not arise in practice.)
+
 ```
 no cap                  types=314,755   +399 MB
 max_lexicon_types=200k  types=200,000   +207 MB
 max_lexicon_types=100k  types=100,000    +79 MB
 dict_min_freq=3         types= 59,189    +15 MB
 ```
+
+Third, **every long loop now reports progress.** Splitting the loader had
+silently removed the progress output from the SymSpell build, so after
+"read 4,000,000 dictionary lines" the process printed nothing at all for the
+several minutes it spends building the index — indistinguishable from a hang.
+The read, the cap, and the index build all report counts, and the build
+prints a running percentage with estimated time remaining.
 
 Also fixed: `_affix_seq_memo` (added earlier this session) was an unbounded
 dict keyed on word substrings, so it grew for the life of a long-running

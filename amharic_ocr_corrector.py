@@ -137,6 +137,9 @@ except ImportError as e:
     HAS_MORPH = False
 # -----------------------------------------------------------------------------
 
+# Progress-report interval for long loops (dictionary load, index build).
+REPORT_EVERY = 500_000
+
 # Sentinel values that mean "the analyzer could not identify this word".
 # Compared against the *string form* of the returned POS, because the analyzer
 # may return either a plain string or an enum member (str(POS.UNKNOWN) ==
@@ -554,29 +557,93 @@ class AmharicOCRCorrector:
         self.surface_form = {}
         _SymSpell, _ = _load_symspell()
 
-        # --- Pass 1: read the file into the two plain dicts -----------------
+        # --- Pass 1: read the file ------------------------------------------
         # Deliberately NOT building SymSpell during the read. SymSpell costs
         # ~1.03 KB per type (measured), roughly 4.5x the two plain dicts
         # combined, and it is the structure that OOMs on a multi-million-type
         # lexicon. Building it after the cap is applied means the cap actually
         # saves memory instead of just discarding an index we already paid for.
-        with open(dict_vocab_path, "r", encoding="utf-8", errors="ignore") as f:
-            for idx, line in enumerate(f, 1):
-                parts = line.strip().split()
-                if not parts:
-                    continue
-                w = parts[0]
-                freq = int(parts[-1]) if len(parts) > 1 and parts[-1].isdigit() else 1
-                norm_w = self._norm(w)
+        #
+        # With max_lexicon_types the read is CHUNKED so the cap bounds memory
+        # *during* the read too: we keep the top-N of each chunk and merge.
+        # This is exact, not approximate -- if a word is in the global top-N
+        # then fewer than N words beat it globally, so fewer than N beat it
+        # inside its own chunk, so it survives its chunk's top-N.
+        if max_lexicon_types and max_lexicon_types > 0:
+            # Chunk size trades memory against per-chunk overhead only; the
+            # selection stays exact at any chunk size, because a word in the
+            # global top-N is beaten by fewer than N words globally and
+            # therefore by fewer than N words inside its own chunk.
+            chunk_size = max(50_000, min(max_lexicon_types, 250_000))
+            lines_read = 0
+            with open(dict_vocab_path, "r", encoding="utf-8", errors="ignore") as f:
+                while True:
+                    chunk_freq, chunk_surf = {}, {}
+                    n = 0
+                    for line in f:
+                        n += 1
+                        parts = line.strip().split()
+                        if not parts:
+                            continue
+                        w = parts[0]
+                        freq = (int(parts[-1]) if len(parts) > 1
+                                and parts[-1].isdigit() else 1)
+                        norm_w = self._norm(w)
+                        prev = chunk_freq.get(norm_w)
+                        if prev is None or freq >= prev:
+                            chunk_freq[norm_w] = freq
+                            chunk_surf[norm_w] = w
+                        if n >= chunk_size:
+                            break
+                    lines_read += n
+                    if not chunk_freq:
+                        break
+                    # Top-N of this chunk, merged into the running best.
+                    top = heapq.nlargest(max_lexicon_types, chunk_freq,
+                                         key=chunk_freq.__getitem__)
+                    for nw in top:
+                        fr = chunk_freq[nw]
+                        if fr > self.vocab.get(nw, 0):
+                            self.vocab[nw] = fr
+                            self.surface_form[nw] = chunk_surf[nw]
+                    del chunk_freq, chunk_surf, top
+                    # Bound the running set, otherwise it accumulates every
+                    # chunk's top-N and grows with the file. Exact for a file
+                    # with one entry per word (i.e. a dictionary); a word
+                    # repeated across chunk boundaries keeps the frequency
+                    # from the chunk where it ranks highest.
+                    if len(self.vocab) > max_lexicon_types:
+                        survivors = heapq.nlargest(
+                            max_lexicon_types, self.vocab,
+                            key=self.vocab.__getitem__)
+                        surv_surf = {w: self.surface_form[w] for w in survivors}
+                        self.vocab = {w: self.vocab[w] for w in survivors}
+                        self.surface_form = surv_surf
+                        del survivors, surv_surf
+                    if self.verbose:
+                        print(f"  ... read {lines_read:,} lines, "
+                              f"tracking {len(self.vocab):,} types", flush=True)
+                    if n < chunk_size:
+                        break
+        else:
+            with open(dict_vocab_path, "r", encoding="utf-8", errors="ignore") as f:
+                for idx, line in enumerate(f, 1):
+                    parts = line.strip().split()
+                    if not parts:
+                        continue
+                    w = parts[0]
+                    freq = int(parts[-1]) if len(parts) > 1 and parts[-1].isdigit() else 1
+                    norm_w = self._norm(w)
 
-                prev_freq = self.vocab.get(norm_w, 0)
-                if freq >= prev_freq:
-                    # Keep the most frequent surface spelling for this normalized form
-                    self.surface_form[norm_w] = w
-                self.vocab[norm_w] = max(prev_freq, freq)
+                    prev_freq = self.vocab.get(norm_w, 0)
+                    if freq >= prev_freq:
+                        # Keep the most frequent surface spelling for this
+                        # normalized form
+                        self.surface_form[norm_w] = w
+                    self.vocab[norm_w] = max(prev_freq, freq)
 
-                if self.verbose and idx % 1000000 == 0:
-                    print(f"  ... read {idx:,} dictionary lines", flush=True)
+                    if self.verbose and idx % 1000000 == 0:
+                        print(f"  ... read {idx:,} dictionary lines", flush=True)
 
         raw_types = len(self.vocab)
 
@@ -607,16 +674,28 @@ class AmharicOCRCorrector:
                       f"({100.0*len(self.vocab)/max(raw_types,1):.1f}% kept)", flush=True)
 
         # --- Pass 2: build SymSpell from the (possibly capped) set ----------
-        if self.symspell_max_edit_distance > 1 and self.verbose:
-            print(f"[WARN] symspell_max_edit_distance="
-                  f"{self.symspell_max_edit_distance}: the SymSpell index grows "
-                  f"steeply with edit distance (~1.03 KB/type at distance 1). "
-                  f"On a multi-million-type lexicon this will OOM.", flush=True)
+        # Progress here is essential: this loop dominates startup and, with no
+        # output, looks exactly like a hang.
+        n_types = len(self.vocab)
+        if self.verbose:
+            est = n_types * 1.03 / 1024.0
+            print(f"  building SymSpell index for {n_types:,} types "
+                  f"(~{est:,.0f} MB)...", flush=True)
         self.symspell = _SymSpell(
             max_dictionary_edit_distance=self.symspell_max_edit_distance,
             prefix_length=7)
-        for norm_w, freq in self.vocab.items():
+        t_build = time.perf_counter()
+        for i, (norm_w, freq) in enumerate(self.vocab.items(), 1):
             self.symspell.create_dictionary_entry(norm_w, freq)
+            if self.verbose and i % REPORT_EVERY == 0:
+                el = time.perf_counter() - t_build
+                rate = i / el if el > 0 else 0.0
+                remaining = (n_types - i) / rate if rate > 0 else 0.0
+                print(f"    {i:,}/{n_types:,} ({100.0*i/n_types:.0f}%) "
+                      f"~{remaining:.0f}s left", flush=True)
+        if self.verbose:
+            print(f"  SymSpell index built in "
+                  f"{time.perf_counter()-t_build:.1f}s", flush=True)
 
         # Precompute reverse optical substitutions. Gated by max_reverse_sub_cost
         # (the TIGHT component-level cutoff), NOT by max_optical_cost_pairwise.

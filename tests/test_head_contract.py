@@ -21,6 +21,7 @@ import enum
 import logging
 import io
 import os
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -84,6 +85,20 @@ class CorrectorTestCase(unittest.TestCase):
         # The missing-morphemes.json warning is expected here (that path is
         # tested explicitly); don't drown the runner in it.
         logging.getLogger("amharic_ocr_corrector").setLevel(logging.ERROR)
+
+    def make_from_path(self, path, **kwargs):
+        options = dict(
+            kenlm_path="unused-because-lm-is-injected",
+            confusion_matrix_path=CONFUSION,
+            dict_vocab_path=path,
+            lm=FakeLM(),
+            state_factory=State,
+            segmenter=None,
+            verbose=False,
+        )
+        options.update(kwargs)
+        with contextlib.redirect_stdout(io.StringIO()):
+            return AmharicOCRCorrector(**options)
 
     def make(self, words=(), **kwargs):
         folder = tempfile.TemporaryDirectory()
@@ -434,6 +449,64 @@ class TestLexiconCap(CorrectorTestCase):
             for aff in ("ም", "ን", "ስ", "እ"):
                 c._affix_seq_memo[(f"w{i}{aff}", id(c._suffixes_sorted))] = True
         self.assertLessEqual(len(c._affix_seq_memo._data), c._affix_seq_memo.maxsize)
+
+
+class TestChunkedLexiconCap(CorrectorTestCase):
+    """With a cap, the read is chunked so memory is bounded during it.
+
+    The selection is exact, not approximate: if a word is in the global top-N
+    then fewer than N words beat it globally, hence fewer than N beat it in
+    its own chunk, hence it survives its chunk's top-N.
+    """
+
+    PAIRS = [("በሽታ", 900), ("ከተማ", 800), ("ውስጥ", 700), ("ሀገር", 600),
+             ("ሕዝብ", 500), ("መንግስት", 400), ("ትምህርት", 300), ("ገበያ", 200),
+             ("ወረቀት", 90), ("መጽሐፍ", 40), ("አደባባይ", 9), ("ቁምጣ", 3),
+             ("ዘንጋዳ", 2), ("ኵስታሪ", 1)]
+
+    def _write(self, pairs):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        p = os.path.join(d, "lex.tsv")
+        with open(p, "w", encoding="utf-8") as f:
+            for w, c in pairs:
+                f.write(f"{w}\t{c}\n")
+        return p
+
+    def test_chunked_selection_matches_materialise_then_cap(self):
+        """Chunked top-N must equal top-N of the fully materialised dict."""
+        import random
+        rnd = random.Random(3)
+        pairs = []
+        for i in range(600):
+            pairs.append((f"w{i:05d}", rnd.randint(1, 1000)))
+            if rnd.random() < 0.3:      # duplicates: exercises the merge
+                pairs.append((f"w{i:05d}", rnd.randint(1, 1000)))
+        rnd.shuffle(pairs)
+        path = self._write(pairs)
+
+        full = self.make_from_path(path)
+        for n in (5, 17, 50, 200):
+            with self.subTest(n=n):
+                expected = set(sorted(full.vocab, key=full.vocab.__getitem__,
+                                      reverse=True)[:n])
+                got = self.make_from_path(path, max_lexicon_types=n)
+                self.assertEqual(set(got.vocab), expected)
+                self.assertTrue(all(got.vocab[k] == full.vocab[k]
+                                    for k in got.vocab),
+                                "frequencies must survive the merge")
+
+    def test_chunked_cap_keeps_surface_form_in_step(self):
+        path = self._write(self.PAIRS)
+        c = self.make_from_path(path, max_lexicon_types=6)
+        self.assertEqual(set(c.surface_form), set(c.vocab))
+        self.assertEqual(len(c.vocab), 6)
+
+    def test_chunked_cap_still_leaves_a_working_corrector(self):
+        path = self._write(self.PAIRS)
+        c = self.make_from_path(path, max_lexicon_types=14)
+        cands = {w for w, _cost in c.generate_candidates("በሸታ")}
+        self.assertIn("በሽታ", cands)
 
 
 class TestSymSpellDistance(CorrectorTestCase):
