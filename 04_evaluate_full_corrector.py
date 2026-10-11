@@ -230,6 +230,14 @@ def configure_from_cli():
     parser.add_argument("--morphemes-json", default=None,
                         help="Path to morphemes.json for the morpheme-peel guard")
     parser.add_argument("--max-optical-cost", type=float, default=4.8)
+    # The anchor barrier is the ONLY "do no harm" mechanism in the system, and
+    # it was not tunable from the CLI. It is the direct knob on clean-token
+    # damage: raising it protects more verified tokens, lowering it lets the
+    # LM rewrite them. Essential for the Stage 4 gate experiment.
+    parser.add_argument("--anchor-margin", type=float, default=3.5,
+                        help="Score bonus for keeping a verified token "
+                             "(default 3.5). Raise to reduce clean-token damage.")
+    parser.add_argument("--max-candidates", type=int, default=25)
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--canonical-metrics", action="store_true")
     parser.add_argument("--no-eos", action="store_true")
@@ -333,7 +341,9 @@ def configure_from_cli():
                              use_morphology=args.use_morphology,
                              max_lexicon_types=args.max_lexicon_types,
                              dict_min_freq=args.dict_min_freq,
-                             symspell_max_edit_distance=args.symspell_distance)
+                             symspell_max_edit_distance=args.symspell_distance,
+                             anchor_margin=args.anchor_margin,
+                             max_candidates=args.max_candidates)
 
 
 if __name__ == "__main__":
