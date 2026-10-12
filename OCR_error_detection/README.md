@@ -81,51 +81,26 @@ Ground truth files must be named to match the images:
 - `page_0001.png` → `page_0001.gt.txt`
 - Each `.gt.txt` file has the clean text, one word per line or space-separated.
 
-### Step 2 — Run Tesseract OCR with confidence scores
-
-Make sure Tesseract is installed with Amharic data:
-
-```bash
-# Ubuntu/Debian:
-sudo apt install tesseract-ocr tesseract-ocr-amh
-
-# macOS:
-brew install tesseract tesseract-lang
-```
-
-Run the OCR script:
+### Step 2 — Run Tesseract OCR
 
 ```bash
 python OCR_error_detection/run_ocr.py
 ```
 
-This produces two files per image in `Evaluation/OCRed/`:
-- `page_NNNN.ocr.txt` — the OCR text
-- `page_NNNN.conf.tsv` — per-word confidence (0-100) from Tesseract
+That's it. No flags. Reads from `Evaluation/images/`, writes to `Evaluation/OCRed/`.
 
-To override paths or language:
-
+Requires Tesseract with Amharic:
 ```bash
-python OCR_error_detection/run_ocr.py \
-    --images /path/to/images \
-    --output /path/to/output \
-    --lang amh \
-    --psm 6
+sudo apt install tesseract-ocr tesseract-ocr-amh
 ```
 
 ### Step 3 — Run the evaluation
 
 ```bash
-python OCR_error_detection/evaluate_detection.py \
-    --gt-dir OCR_error_detection/Evaluation/GroundTruth \
-    --ocr-dir OCR_error_detection/Evaluation/OCRed \
-    --confusion confusion_matrix.json \
-    --conf-dir OCR_error_detection/Evaluation/OCRed
+python OCR_error_detection/evaluate_detection.py
 ```
 
-The `--conf-dir` flag tells it to use Tesseract's confidence scores.
-Without it, the detector runs on text alone (checks 1-4 only).
-With it, Tesseract's own doubt (check 8) is also used.
+That's it. No flags. The paths are in the script.
 
 Output looks like:
 
@@ -133,25 +108,22 @@ Output looks like:
 ============================================================
 OCR Error Detection Evaluation Results
 ============================================================
-Pages processed:    100
+Pages processed:     100
 Pages w/ confidence: 100
-Total tokens:       26,592
-Error tokens:       115 (0.43%)
-Correct tokens:     26,477
+Aligned tokens:      62,278
+  Error tokens:      10,132 (16.27%)
+  Correct tokens:    52,146
+Insertions:          1,857 (OCR words with no GT match)
 
---- Verdict breakdown ---
 Verdict     Correct      Error      Total    Prec%  Recall%
-pass         24,590          3     24,593      0.0      2.6
-gray          1,887          6      1,893      0.3      5.2
-flag              0        106        106    100.0     92.2
+pass         51,998      1,423     53,421      2.7     14.0
+gray            148      8,002      8,150     98.2     79.0
+flag              0        707        707    100.0      7.0
 
---- Summary ---
-PASS precision (correct among passed): 100.0%
-Flag+Gray recall (errors caught):      97.4%
-Flag+Gray precision (errors among flagged): 5.6%
-F1 (flag+gray):                        10.6
-
-Throughput: 17,673 tokens/sec (1.50s total)
+PASS precision:  97.3%
+Recall:          86.0%
+Flag precision:  98.3%
+F1:              91.7
 ```
 
 ## Detection methods
