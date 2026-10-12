@@ -18,15 +18,17 @@ import sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
 IMAGES_DIR = os.path.join(_HERE, "Evaluation", "images")
 OUTPUT_DIR = os.path.join(_HERE, "Evaluation", "OCRed")
-LANG = "amh"
-PSM = "6"
+LANG = "amh_epoch2_fast"
+TESSDATA_DIR = "/media/des/Tess/Tesseract2/training/models"
+PSM = "3"
 
 
 def run_tesseract(image_path, output_base):
     """Run Tesseract on one image. Returns (text, word_confidences)."""
     # plain text
     r = subprocess.run(
-        ["tesseract", image_path, output_base, "-l", LANG, "--psm", PSM],
+        ["tesseract", image_path, output_base,
+         "-l", LANG, "--tessdata-dir", TESSDATA_DIR, "--psm", PSM],
         capture_output=True, text=True,
     )
     if r.returncode != 0:
@@ -42,7 +44,7 @@ def run_tesseract(image_path, output_base):
     # TSV with confidence
     r = subprocess.run(
         ["tesseract", image_path, output_base + "_tsv",
-         "-l", LANG, "--psm", PSM, "tsv"],
+         "-l", LANG, "--tessdata-dir", TESSDATA_DIR, "--psm", PSM, "tsv"],
         capture_output=True, text=True,
     )
     word_confs = []
