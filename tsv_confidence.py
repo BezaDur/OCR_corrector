@@ -2,6 +2,7 @@
 
 Tesseract TSV rows: level 5 = word rows (carry text and conf 0-100);
 levels 1-4 = page/block/paragraph/line containers (conf -1, ignored).
+Any row with conf -1 is ignored, even at level 5.
 
 Confidences are kept on Tesseract's 0-100 scale; the corrector's
 SuspicionScorer divides by 100 itself.
@@ -34,13 +35,17 @@ def read_tsv_lines(tsv_path: str) -> List[List[TsvWord]]:
         for row in csv.DictReader(fh, delimiter="\t", quoting=csv.QUOTE_NONE):
             if row.get("level") != "5":
                 continue
+            # Tesseract writes -1 for rows that are not words. A -1 must never
+            # become a confidence of 0, so these rows are dropped.
+            if float(row["conf"]) < 0:
+                continue
             text = (row.get("text") or "").strip()
             if not text:
                 continue
             key = (row["block_num"], row["par_num"], row["line_num"])
             word = TsvWord(
                 text=text,
-                conf=max(0.0, float(row["conf"])),
+                conf=float(row["conf"]),
                 left=int(row["left"]), top=int(row["top"]),
                 width=int(row["width"]), height=int(row["height"]),
             )

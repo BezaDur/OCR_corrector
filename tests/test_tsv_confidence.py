@@ -105,3 +105,22 @@ class TestCorrectTextBlockConfidences(unittest.TestCase):
         self.c.correct_sentence = spy
         self.c.correct_text_block("ሰላም\nቤት")
         self.assertEqual(seen, [None, None])
+
+
+class TestMinusOneRowsAreNotWords(unittest.TestCase):
+    def test_minus_one_word_row_is_dropped_not_zeroed(self):
+        rows = [
+            HEADER.rstrip("\n"),
+            "5\t1\t1\t1\t1\t1\t0\t0\t10\t10\t-1\tጉዳይ",
+            "5\t1\t1\t1\t1\t2\t0\t0\t10\t10\t0.000000\tሰላም",
+        ]
+        fd, path = tempfile.mkstemp(suffix=".tsv")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(rows) + "\n")
+        try:
+            groups = read_tsv_lines(path)
+        finally:
+            os.remove(path)
+        words = [w for g in groups for w in g]
+        self.assertEqual([w.text for w in words], ["ሰላም"])
+        self.assertEqual(words[0].conf, 0.0)  # a real zero stays zero
