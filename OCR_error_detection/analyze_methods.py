@@ -1,22 +1,8 @@
 #!/usr/bin/env python3
 """
-Analyze detection results and write a comprehensive TSV.
+Analyze detection results. Writes a TSV and prints Tesseract accuracy.
 
 Outputs: OCR_error_detection/Evaluation/analysis.tsv
-
-Columns:
-  page          — page name
-  ocr_idx       — word position in OCR output
-  gt_idx        — aligned position in ground truth (empty if insertion)
-  ocr_word      — what Tesseract output
-  gt_word       — what it should be
-  is_error      — 1 if OCR != GT, 0 if correct
-  verdict       — pass / gray / flag
-  suspicion     — detector score (0-1)
-  tesseract_conf — Tesseract confidence (0-100, empty if no conf file)
-  in_lexicon    — 1 if OCR word is in dictionary
-  one_flip      — number of one-flip dictionary hits
-  reason        — why the detector gave this verdict
 
 Usage:
     python OCR_error_detection/analyze_methods.py
@@ -93,8 +79,24 @@ def align_words(gt_tokens, ocr_tokens):
     return results
 
 
+def edit_distance(a, b):
+    """Levenshtein distance."""
+    if a == b:
+        return 0
+    la, lb = len(a), len(b)
+    if la < lb:
+        a, b = b, a
+        la, lb = lb, la
+    prev = list(range(lb + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(cur[-1] + 1, prev[j] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[lb]
+
+
 def build_reason(sig, in_lex, label):
-    """Short text explaining why the detector gave this verdict."""
     parts = []
     if not in_lex:
         parts.append("OOV")
@@ -137,7 +139,16 @@ def main():
 
     # Collect rows
     rows = []
-    stats = {"total": 0, "errors": 0, "caught": 0}
+    stats = {
+        "total": 0, "errors": 0, "caught": 0,
+        "insertions": 0,
+        # For WER/CER
+        "gt_chars": 0, "char_errors": 0,
+        "gt_words": 0, "word_errors": 0, "word_substitutions": 0,
+        "word_insertions": 0, "word_deletions": 0,
+        # Per-page
+        "pages": 0,
+    }
 
     for page_name, gt_text, ocr_text, conf_map in pages:
         gt_tokens = gt_text.split()
@@ -147,9 +158,12 @@ def main():
 
         alignment = align_words(gt_tokens, ocr_tokens)
         has_conf = conf_map is not None
+        stats["pages"] += 1
 
-        # Also handle insertions (OCR words with no GT) — run detection on them
-        aligned_ocr_idxs = {ocr_idx for ocr_idx, _, _ in alignment}
+        # Page-level WER: substitutions + insertions + deletions
+        page_subs = 0
+        page_ins = 0
+        page_dels = 0
 
         for ocr_idx, gt_idx, is_error in alignment:
             ocr_tok = ocr_tokens[ocr_idx]
@@ -159,14 +173,26 @@ def main():
 
             verdict = detector.verdict(ocr_tok, ctx, ocr_conf=ocr_conf)
             in_lex = detector._norm(ocr_tok) in detector.vocab
-
             reason = build_reason(verdict.signals, in_lex, verdict.label)
 
-            stats["total"] += 1
-            if gt_idx is not None and is_error:
+            if gt_idx is None:
+                # Insertion
+                stats["insertions"] += 1
+                stats["word_insertions"] += 1
+                is_error_val = 2
+            elif is_error:
                 stats["errors"] += 1
+                stats["word_substitutions"] += 1
+                stats["char_errors"] += edit_distance(gt_tok, ocr_tok)
+                stats["gt_chars"] += len(gt_tok)
+                stats["gt_words"] += 1
                 if verdict.label in ("flag", "gray"):
                     stats["caught"] += 1
+                is_error_val = 1
+            else:
+                stats["gt_chars"] += len(gt_tok)
+                stats["gt_words"] += 1
+                is_error_val = 0
 
             rows.append({
                 "page": page_name,
@@ -174,7 +200,7 @@ def main():
                 "gt_idx": gt_idx if gt_idx is not None else "",
                 "ocr_word": ocr_tok,
                 "gt_word": gt_tok,
-                "is_error": 1 if (gt_idx is not None and is_error) else (2 if gt_idx is None else 0),
+                "is_error": is_error_val,
                 "verdict": verdict.label,
                 "suspicion": f"{verdict.suspicion:.3f}",
                 "tesseract_conf": f"{ocr_conf:.0f}" if ocr_conf is not None else "",
@@ -182,6 +208,12 @@ def main():
                 "one_flip": len(verdict.signals.one_flip_words),
                 "reason": reason,
             })
+
+        # Count deletions from the alignment
+        for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(
+                None, gt_tokens, ocr_tokens, autojunk=False).get_opcodes():
+            if tag == "delete":
+                stats["word_deletions"] += (i2 - i1)
 
     # Write TSV
     fieldnames = [
@@ -195,24 +227,45 @@ def main():
         writer.writerows(rows)
 
     print(f"Wrote {len(rows):,} rows to {OUTPUT_TSV}")
-    print(f"\nColumns:")
-    print(f"  page          — page name")
-    print(f"  ocr_idx       — word position in OCR")
-    print(f"  gt_idx        — aligned GT position (empty = insertion)")
-    print(f"  ocr_word      — what Tesseract output")
-    print(f"  gt_word       — what it should be")
-    print(f"  is_error      — 0=correct, 1=error, 2=insertion (no GT match)")
-    print(f"  verdict       — pass / gray / flag")
-    print(f"  suspicion     — detector score (0-1)")
-    print(f"  tesseract_conf — Tesseract confidence (0-100)")
-    print(f"  in_lexicon    — 1 if OCR word is in dictionary")
-    print(f"  one_flip      — number of one-flip dictionary hits")
-    print(f"  reason        — why the detector gave this verdict")
 
-    # Quick summary
+    # ── Tesseract accuracy ──────────────────────────────────────────
+    total_words = stats["gt_words"] + stats["word_insertions"]
+    wer = 100.0 * (stats["word_substitutions"] + stats["word_insertions"] + stats["word_deletions"]) / max(stats["gt_words"], 1)
+    cer = 100.0 * stats["char_errors"] / max(stats["gt_chars"], 1)
+
+    print(f"\n{'='*60}")
+    print(f"Tesseract Accuracy")
+    print(f"{'='*60}")
+    print(f"Pages:                    {stats['pages']}")
+    print(f"GT words:                 {stats['gt_words']:,}")
+    print(f"Substitutions:            {stats['word_substitutions']:,}")
+    print(f"Insertions:               {stats['word_insertions']:,}")
+    print(f"Deletions:                {stats['word_deletions']:,}")
+    print(f"WER (word error rate):    {wer:.2f}%")
+    print(f"CER (char error rate):    {cer:.2f}%")
+    print(f"Word accuracy:            {100 - wer:.2f}%")
+    print(f"Char accuracy:            {100 - cer:.2f}%")
+
+    # ── Detection accuracy ──────────────────────────────────────────
     if stats["errors"] > 0:
-        print(f"\nErrors: {stats['errors']:,} / {stats['total']:,} ({100*stats['errors']/stats['total']:.1f}%)")
-        print(f"Caught: {stats['caught']:,} ({100*stats['caught']/stats['errors']:.1f}%)")
+        print(f"\n{'='*60}")
+    print(f"Detection Performance")
+    print(f"{'='*60}")
+    print(f"Error tokens:             {stats['errors']:,}")
+    print(f"Caught (flag+gray):       {stats['caught']:,} ({100*stats['caught']/max(stats['errors'],1):.1f}%)")
+    print(f"Missed (passed):          {stats['errors'] - stats['caught']:,}")
+
+    # Confidence stats
+    confs = [float(r["tesseract_conf"]) for r in rows
+             if r["tesseract_conf"] and r["is_error"] != "2"]
+    correct_confs = [float(r["tesseract_conf"]) for r in rows
+                     if r["tesseract_conf"] and r["is_error"] == "0"]
+    error_confs = [float(r["tesseract_conf"]) for r in rows
+                   if r["tesseract_conf"] and r["is_error"] == "1"]
+    if correct_confs:
+        print(f"\nAvg Tesseract confidence (correct words): {sum(correct_confs)/len(correct_confs):.1f}%")
+    if error_confs:
+        print(f"Avg Tesseract confidence (error words):   {sum(error_confs)/len(error_confs):.1f}%")
 
 
 if __name__ == "__main__":
