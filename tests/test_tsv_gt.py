@@ -20,6 +20,15 @@ class TestTsvGt(unittest.TestCase):
         self.assertEqual(out[0]["gt_status"], "")
         self.assertEqual(out[3]["gt_status"], "")
 
+    def test_wrong_word_at_a_clean_word_position_is_error(self):
+        # OCR "X B" against gold "A B C": X matches nothing, B matches gold B.
+        rows = [word("XXX", 40, 1), word("ቤት", 95, 2)]
+        out = annotate_rows(rows, "ሰላም ቤት ሰላም")
+        self.assertEqual(out[0]["gt_status"], "error")
+        # The wrong word is paired with the gold word it replaced (ሰላም) in one traceback.
+        self.assertEqual(out[0]["gt_word"], "ሰላም")
+        self.assertEqual((out[1]["gt_word"], out[1]["gt_status"]), ("ቤት", "clean"))
+
 
 if __name__ == "__main__":
     unittest.main()

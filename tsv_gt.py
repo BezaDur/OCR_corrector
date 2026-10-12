@@ -4,8 +4,10 @@
   gt_word    the ground-truth word it matched in the alignment ("" if none)
   gt_status  clean | error | ambiguous, as in stage1_labels
 
-gt_word comes from one optimal alignment (the traceback). gt_status comes from
-all optimal alignments, so a token can be ambiguous even when gt_word is set.
+gt_word comes from one optimal alignment (the traceback): the gold word a token
+was matched or substituted for. It is blank when the token was an insertion.
+gt_status comes from all optimal alignments, so a token can be ambiguous even
+when gt_word is set.
 Non-word rows and words with no core keep blank values.
 """
 import csv
@@ -48,11 +50,13 @@ def annotate_rows(rows: List[Dict], gold_text: str) -> List[Dict]:
         word_idx.append(i)
         cores.append(c)
 
-    alignment = align_tokens(gold, cores, include_details=True)
+    # The OCR words are the reference here, so certain/possible indices and
+    # the traceback steps (ocr index, gold index) all refer to the OCR words.
+    alignment = align_tokens(cores, gold, include_details=True)
     matched_gold: Dict[int, Optional[int]] = {}
-    for g, h in alignment.details.steps:
-        if h is not None:
-            matched_gold[h] = g
+    for o, g in alignment.details.steps:
+        if o is not None and g is not None:
+            matched_gold[o] = g
     for j, i in enumerate(word_idx):
         g = matched_gold.get(j)
         rows[i]["gt_word"] = gold[g] if g is not None else ""
