@@ -2,7 +2,7 @@
 import math
 from typing import Dict, Optional
 
-from .signals import TokenSignals
+from OCR_error_detection.signals import TokenSignals
 
 
 # Default weights -- replaced by training once labels exist.

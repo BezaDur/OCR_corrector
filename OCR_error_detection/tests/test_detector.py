@@ -19,9 +19,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-# Resolve the repo root
+# Resolve the repo root — works from any directory
 ROOT = Path(__file__).resolve().parents[2]
 CONFUSION = str(ROOT / "confusion_matrix.json")
+import sys
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
 def _make_detector(words=(), **kwargs):

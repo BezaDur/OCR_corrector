@@ -12,13 +12,13 @@ from __future__ import annotations
 import math
 from typing import Optional, Sequence
 
-from .signals import TokenSignals, Verdict
-from .signals import (
+from OCR_error_detection.signals import TokenSignals, Verdict
+from OCR_error_detection.signals import (
     compute_surface_signals, compute_lexical_signals,
     compute_one_flip_signals, compute_char_lm_score,
     compute_lm_fit, compute_morphology,
 )
-from .scoring import combine_signals, DEFAULT_WEIGHTS
+from OCR_error_detection.scoring import combine_signals, DEFAULT_WEIGHTS
 
 
 class CorrectorDetectionAdapter:

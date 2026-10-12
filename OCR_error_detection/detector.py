@@ -28,16 +28,16 @@ def _load_symspell():
     return SymSpell, Verbosity
 
 
-from .normalizer import AmharicNormalizer
-from .confusion import ConfusionMatrix
-from .signals import (
+from OCR_error_detection.normalizer import AmharicNormalizer
+from OCR_error_detection.confusion import ConfusionMatrix
+from OCR_error_detection.signals import (
     TokenSignals, Verdict,
     compute_surface_signals, compute_lexical_signals,
     compute_one_flip_signals, compute_char_lm_score,
     compute_lm_fit, compute_morphology,
     MEAN_TOKEN_LEN,
 )
-from .scoring import combine_signals, DEFAULT_WEIGHTS
+from OCR_error_detection.scoring import combine_signals, DEFAULT_WEIGHTS
 
 
 logger = logging.getLogger("ocr_error_detection")

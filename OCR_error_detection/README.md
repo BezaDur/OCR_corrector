@@ -62,13 +62,23 @@ That's it. No KenLM needed. No segmenter needed.
 
 ## Run the tests
 
+From the repo root:
+
 ```bash
 python -m unittest OCR_error_detection.tests.test_detector -v
+```
+
+Or from anywhere:
+
+```bash
+python OCR_error_detection/tests/test_detector.py
 ```
 
 40 tests. No external files needed. Runs in under 0.1 seconds.
 
 ## Run the evaluation
+
+From the repo root:
 
 ```bash
 python OCR_error_detection/evaluate_detection.py \

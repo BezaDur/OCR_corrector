@@ -13,13 +13,13 @@
 #     print(result.label, result.suspicion)
 #
 
-from .detector import DetectionEngine
-from .adapter import CorrectorDetectionAdapter
-from .signals import TokenSignals, Verdict
-from .scoring import combine_signals, DEFAULT_WEIGHTS
-from .confusion import ConfusionMatrix
-from .normalizer import AmharicNormalizer
-from .utils import (
+from OCR_error_detection.detector import DetectionEngine
+from OCR_error_detection.adapter import CorrectorDetectionAdapter
+from OCR_error_detection.signals import TokenSignals, Verdict
+from OCR_error_detection.scoring import combine_signals, DEFAULT_WEIGHTS
+from OCR_error_detection.confusion import ConfusionMatrix
+from OCR_error_detection.normalizer import AmharicNormalizer
+from OCR_error_detection.utils import (
     ETHIOPIC, ETHIOPIC_EXT, RARE_GLYPH_CLASSES,
     CONFUSION_CLASSES, ETHIOPIC_PUNCT,
     _is_ethiopic, _confusion_alts,
