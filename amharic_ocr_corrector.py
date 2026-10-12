@@ -1490,7 +1490,8 @@ class AmharicOCRCorrector:
                 if self.verdict_log is not None:
                     self.verdict_log.append({"word": word, "label": verdict.label,
                                              "suspicion": verdict.suspicion,
-                                             "ocr_conf": conf})
+                                             "ocr_conf": conf,
+                                             "features": verdict.signals.as_vector()})
                 if verdict.label == "pass":
                     # Recognised, so the token is kept. Its spelling may still differ
                     # from the lexicon's surface form (homoglyph collapse), so restore
