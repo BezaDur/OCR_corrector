@@ -25,14 +25,11 @@ PSM = "3"
 
 def run_tesseract(image_path, output_base):
     """Run Tesseract on one image. Returns (text, word_confidences)."""
-    # plain text
-    r = subprocess.run(
-        ["tesseract", image_path, output_base,
-         "-l", LANG, "--tessdata-dir", TESSDATA_DIR, "--psm", PSM],
-        capture_output=True, text=True,
-    )
+    cmd = ["tesseract", image_path, output_base,
+           "-l", LANG, "--tessdata-dir", TESSDATA_DIR, "--psm", PSM]
+    r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
-        print(f"  [ERROR] {r.stderr.strip()}")
+        print(f"    [ERROR] {r.stderr.strip()}")
         return "", []
 
     text = ""
@@ -41,12 +38,12 @@ def run_tesseract(image_path, output_base):
         text = open(txt_path, encoding="utf-8").read().strip()
         os.remove(txt_path)
 
-    # TSV with confidence
-    r = subprocess.run(
-        ["tesseract", image_path, output_base + "_tsv",
-         "-l", LANG, "--tessdata-dir", TESSDATA_DIR, "--psm", PSM, "tsv"],
-        capture_output=True, text=True,
-    )
+    cmd_tsv = ["tesseract", image_path, output_base + "_tsv",
+               "-l", LANG, "--tessdata-dir", TESSDATA_DIR, "--psm", PSM, "tsv"]
+    r = subprocess.run(cmd_tsv, capture_output=True, text=True)
+    if r.returncode != 0:
+        print(f"    [WARN] tsv failed: {r.stderr.strip()}")
+
     word_confs = []
     tsv_path = output_base + "_tsv.tsv"
     if os.path.exists(tsv_path):
@@ -80,11 +77,29 @@ def main():
     try:
         subprocess.run(["tesseract", "--version"], capture_output=True, check=True)
     except FileNotFoundError:
-        print("Tesseract not found. Install: sudo apt install tesseract-ocr tesseract-ocr-amh")
+        print("Tesseract not found.")
+        sys.exit(1)
+
+    # Check model exists
+    model_path = os.path.join(TESSDATA_DIR, LANG + ".traineddata")
+    if not os.path.exists(model_path):
+        print(f"ERROR: Model not found: {model_path}")
+        if os.path.isdir(TESSDATA_DIR):
+            available = [f for f in os.listdir(TESSDATA_DIR) if f.endswith(".traineddata")]
+            if available:
+                print(f"Available in {TESSDATA_DIR}:")
+                for f in sorted(available):
+                    print(f"  {f}")
+            else:
+                print(f"No .traineddata files in {TESSDATA_DIR}")
         sys.exit(1)
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    print(f"Found {len(images)} images. Output: {OUTPUT_DIR}\n")
+    print(f"Found {len(images)} images")
+    print(f"Model: {model_path}")
+    print(f"PSM: {PSM}")
+    print(f"Output: {OUTPUT_DIR}")
+    print()
 
     for i, img_path in enumerate(images, 1):
         base = os.path.splitext(os.path.basename(img_path))[0]
@@ -92,11 +107,9 @@ def main():
 
         text, word_confs = run_tesseract(img_path, out_base)
 
-        # save OCR text
         with open(out_base + ".ocr.txt", "w", encoding="utf-8") as f:
             f.write(text + "\n")
 
-        # save confidence
         with open(out_base + ".conf.tsv", "w", encoding="utf-8") as f:
             f.write("word\tconfidence\n")
             for word, conf in word_confs:
@@ -105,6 +118,9 @@ def main():
         n = len(word_confs)
         avg = (sum(c for _, c in word_confs) / n) if n else 0
         print(f"  [{i}/{len(images)}] {base}: {n} words, avg conf {avg:.1f}%")
+        if n == 0 and text:
+            print(f"    [DEBUG] text={len(text)} chars but 0 word confs")
+            print(f"    [DEBUG] {text[:100]!r}")
 
     print(f"\nDone. OCR in {OUTPUT_DIR}")
 
