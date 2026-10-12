@@ -19,7 +19,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 GT_DIR = os.path.join(_HERE, "Evaluation", "GroundTruth")
 OCR_DIR = os.path.join(_HERE, "Evaluation", "OCRed")
 CONF_DIR = OCR_DIR
-CONFUSION = os.path.join(_HERE, "..", "confusion_matrix.json")
+CONFUSION = os.path.join(_HERE, "confusion_matrix.json")
 
 
 def load_pages():

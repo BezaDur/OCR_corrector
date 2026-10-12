@@ -5,10 +5,7 @@
 #
 # Quick start:
 #     from OCR_error_detection import DetectionEngine
-#     detector = DetectionEngine(
-#         dict_vocab_path="lexicon.txt",
-#         confusion_matrix_path="confusion_matrix.json",
-#     )
+#     detector = DetectionEngine(dict_vocab_path="lexicon.txt")
 #     result = detector.verdict("በሸታ")
 #     print(result.label, result.suspicion)
 #

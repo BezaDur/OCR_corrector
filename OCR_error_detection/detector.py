@@ -4,16 +4,15 @@
 # Does NOT need the corrector, KenLM, or the beam decoder.
 #
 # Usage:
-#     detector = DetectionEngine(
-#         dict_vocab_path="lexicon.txt",
-#         confusion_matrix_path="confusion_matrix.json",
-#     )
+#     detector = DetectionEngine(dict_vocab_path="lexicon.txt")
+#     # confusion_matrix.json is optional — has a sensible default
 #     result = detector.verdict("በሸታ")
 #     print(result.label)  # "pass" | "gray" | "flag"
 # --------------------------------------------------------------------------- #
 from __future__ import annotations
 
 import logging
+import os
 from typing import Callable, Dict, Optional, Sequence
 
 # Lazy imports for heavy deps
@@ -84,7 +83,7 @@ class DetectionEngine:
     def __init__(
         self,
         dict_vocab_path: str,
-        confusion_matrix_path: str,
+        confusion_matrix_path: str = None,
         weights: Optional[Dict[str, float]] = None,
         pass_below: float = 0.30,
         flag_above: float = 0.70,
@@ -111,6 +110,9 @@ class DetectionEngine:
         self.segmenter = segmenter
 
         # -- Load confusion matrix --
+        if confusion_matrix_path is None:
+            confusion_matrix_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "confusion_matrix.json")
         if self.verbose:
             print(f"Loading optical confusion matrix: {confusion_matrix_path}", flush=True)
         self._confusion = ConfusionMatrix(confusion_matrix_path)
