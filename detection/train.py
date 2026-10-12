@@ -1,76 +1,93 @@
-"""Train the detector from labelled verdict files and report honest numbers.
+"""Train a detector from examples, with leave-one-document-out checks.
 
-Input: a folder of <page>.verdicts.jsonl files (from 04_evaluate_full_corrector.py
---verdict-dir). Rows need status clean/error and a `features` dict.
+Steps:
+ 1. Leave-one-document-out: each document is scored by a model that never saw it.
+    This is the honest estimate; the report uses only these scores.
+ 2. The threshold is the lowest one whose out-of-sample precision reaches --target.
+ 3. The final model is fitted on all labelled examples and saved with that threshold.
 
-Reports leave-one-page-out AUC and precision/recall at each threshold, then
-writes the model trained on all pages.
-
-Usage: python3 -m detection.train VERDICT_DIR --out detection/model.json [--target 0.85]
+Usage:
+  python3 -m detection.train EXAMPLES.jsonl --out detection/model.json [--target 0.85] [--l2 1.0] [--report report.json]
+  Add --no-ocr-conf to train without the engine confidence (for engines that give none).
 """
 import argparse
-import glob
 import json
-import os
+from typing import Dict, List
 
-from stage1_fit import auc, feature_names, leave_one_page_out
 from detection.detector import ErrorDetector
+from detection.evaluate import DEFAULT_THRESHOLDS, first_at_target, print_report, sweep
+from detection.examples import read_examples, scored
+from stage1_fit import auc
 
 
-def load_rows(verdict_dir: str):
-    rows = []
-    for path in sorted(glob.glob(os.path.join(verdict_dir, "*.verdicts.jsonl"))):
-        with open(path, encoding="utf-8") as fh:
-            rows.extend(json.loads(line) for line in fh if line.strip())
-    return [r for r in rows if r["status"] in ("clean", "error") and "features" in r]
+def feature_names(examples: List[Dict], drop: List[str] = ()) -> List[str]:
+    """Features present in every scored example, minus any dropped."""
+    names = None
+    for e in examples:
+        keys = set(e["features"])
+        names = keys if names is None else names & keys
+    return sorted(k for k in (names or []) if k not in drop)
 
 
-def sweep(scores, rows, thresholds):
-    out = []
-    total_err = sum(1 for r in rows if r["status"] == "error")
-    for t in thresholds:
-        flagged = [r for r, s in zip(rows, scores) if s >= t]
-        err = sum(1 for r in flagged if r["status"] == "error")
-        cln = len(flagged) - err
-        out.append(dict(threshold=t, flagged=len(flagged), precision=(err / len(flagged)) if flagged else None,
-                        recall=(err / total_err) if total_err else None, clean_flagged=cln))
-    return out
+def leave_one_doc_out(examples: List[Dict], names: List[str], l2: float) -> List[float]:
+    docs = sorted({e["doc"] for e in examples})
+    scores = [None] * len(examples)
+    for held in docs:
+        train = [e for e in examples if e["doc"] != held]
+        det = ErrorDetector.fit([e["features"] for e in train],
+                                [1 if e["label"] == "error" else 0 for e in train], names, l2=l2)
+        idx = [i for i, e in enumerate(examples) if e["doc"] == held]
+        for i, s in zip(idx, det.score([examples[i]["features"] for i in idx])):
+            scores[i] = s
+    return scores
+
+
+def train(examples: List[Dict], target: float = 0.85, l2: float = 1.0, drop: List[str] = ()):
+    rows = scored(examples)
+    if not rows:
+        raise ValueError("no labelled clean/error examples")
+    names = feature_names(rows, drop=list(drop))
+    if not names:
+        raise ValueError("no features shared by all labelled examples")
+    labels = [1 if r["label"] == "error" else 0 for r in rows]
+
+    oof = leave_one_doc_out(rows, names, l2)
+    table = sweep(oof, labels, DEFAULT_THRESHOLDS)
+    chosen = first_at_target(table, target)
+    threshold = chosen["threshold"] if chosen else 0.5
+
+    det = ErrorDetector.fit([r["features"] for r in rows], labels, names, l2=l2, threshold=threshold)
+    # Report the out-of-sample numbers, not the in-sample ones.
+    report = dict(
+        words=len(rows), errors=sum(labels), base_error_rate=sum(labels) / len(rows),
+        auc=auc(oof, labels), threshold=threshold, at_threshold=chosen,
+        target=target, first_threshold_at_target=chosen, sweep=table,
+        per_doc={}, features=names, note="out-of-sample (leave-one-document-out)",
+        target_reached=chosen is not None,
+    )
+    return det, report
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("verdict_dir")
+    ap.add_argument("examples")
     ap.add_argument("--out", default="detection/model.json")
     ap.add_argument("--target", type=float, default=0.85)
     ap.add_argument("--l2", type=float, default=1.0)
+    ap.add_argument("--no-ocr-conf", action="store_true", help="do not use the engine confidence feature")
+    ap.add_argument("--report")
     a = ap.parse_args()
 
-    rows = load_rows(a.verdict_dir)
-    if not rows:
-        raise SystemExit("No labelled rows with features found.")
-    names = feature_names(rows)
-    labels = [1 if r["status"] == "error" else 0 for r in rows]
-    print(f"words: {len(rows)}  errors: {sum(labels)}  features: {', '.join(names)}")
-
-    oof = leave_one_page_out(rows, names, l2=a.l2)
-    print(f"leave-one-page-out AUC: {auc(oof, labels):.3f}")
-    print("\nthreshold  flagged  precision  recall  clean_flagged")
-    for s in sweep(oof, rows, [round(x / 20, 2) for x in range(1, 20)]):
-        p = "   -  " if s["precision"] is None else f"{s['precision']:.3f}"
-        print(f"{s['threshold']:>9.2f}  {s['flagged']:>7}  {p:>9}  {s['recall']:.3f}  {s['clean_flagged']:>13}")
-
-    feats = [r["features"] for r in rows]
-    det = ErrorDetector.fit(feats, labels, names, l2=a.l2)
-    hit = [s for s in sweep(oof, rows, [round(x / 100, 2) for x in range(1, 100)])
-           if s["precision"] is not None and s["precision"] >= a.target]
-    if hit:
-        det.threshold = hit[0]["threshold"]
-        print(f"\nthreshold set to {det.threshold} (lowest with precision >= {a.target} out-of-sample)")
-    else:
-        print(f"\nno threshold reaches precision {a.target}; threshold left at {det.threshold}")
-    os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
+    examples = read_examples(a.examples)
+    det, report = train(examples, target=a.target, l2=a.l2,
+                        drop=["ocr_conf"] if a.no_ocr_conf else [])
+    print_report(report)
     det.save(a.out)
-    print(f"model written to {a.out}")
+    print(f"\nmodel written to {a.out}")
+    if a.report:
+        with open(a.report, "w", encoding="utf-8") as fh:
+            json.dump(report, fh, indent=2, ensure_ascii=False, default=str)
+        print(f"report written to {a.report}")
 
 
 if __name__ == "__main__":
