@@ -24,62 +24,60 @@ PSM = "3"
 
 
 def run_tesseract(image_path, output_base):
-    """Run Tesseract on one image using TSV mode.
-    Returns (text, word_confidences)."""
-    # Single Tesseract call in TSV mode
+    """Run Tesseract on one image. Returns (text, word_confidences)."""
+    # --- Call 1: plain text output ---
     cmd = ["tesseract", image_path, output_base,
-           "-l", LANG, "--tessdata-dir", TESSDATA_DIR, "--psm", PSM, "tsv"]
+           "-l", LANG, "--tessdata-dir", TESSDATA_DIR, "--psm", PSM]
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
-        print(f"    [ERROR] {r.stderr.strip()}")
+        print(f"    [ERROR] text call failed (rc={r.returncode}): {r.stderr.strip()}")
         return "", []
 
-    tsv_path = output_base + ".tsv"
-    if not os.path.exists(tsv_path):
-        print(f"    [ERROR] TSV not created: {tsv_path}")
-        return "", []
+    text = ""
+    txt_path = output_base + ".txt"
+    if os.path.exists(txt_path):
+        text = open(txt_path, encoding="utf-8").read().strip()
+        os.remove(txt_path)
+    else:
+        print(f"    [WARN] no .txt at {txt_path}")
 
-    # Parse TSV: collect word-level text and confidences,
-    # and reconstruct full text by line
+    # --- Call 2: TSV output for word confidences ---
+    tsv_base = output_base + "_tsv"
+    cmd_tsv = ["tesseract", image_path, tsv_base,
+               "-l", LANG, "--tessdata-dir", TESSDATA_DIR, "--psm", PSM, "tsv"]
+    r2 = subprocess.run(cmd_tsv, capture_output=True, text=True)
+
     word_confs = []
-    lines = []
-    current_line_words = []
+    tsv_path = tsv_base + ".tsv"
+    if os.path.exists(tsv_path):
+        with open(tsv_path, encoding="utf-8") as f:
+            reader = csv.DictReader(f, delimiter="\t")
+            for row in reader:
+                word = row.get("text", "").strip()
+                level = row.get("level", "0")
+                if level == "5" and word:
+                    try:
+                        conf = float(row.get("conf", "-1"))
+                    except ValueError:
+                        conf = -1.0
+                    word_confs.append((word, conf))
+        os.remove(tsv_path)
+    else:
+        print(f"    [WARN] TSV not created: {tsv_path}")
+        print(f"    [WARN] tsv rc={r2.returncode}")
+        print(f"    [WARN] tsv stderr: {r2.stderr.strip()[:200]}")
+        # Try hocr as fallback
+        hocr_base = output_base + "_hocr"
+        cmd_hocr = ["tesseract", image_path, hocr_base,
+                    "-l", LANG, "--tessdata-dir", TESSDATA_DIR, "--psm", PSM, "hocr"]
+        r3 = subprocess.run(cmd_hocr, capture_output=True, text=True)
+        hocr_path = hocr_base + ".hocr"
+        if os.path.exists(hocr_path):
+            print(f"    [INFO] hocr output works — TSV not supported by this Tesseract")
+            os.remove(hocr_path)
+        else:
+            print(f"    [INFO] hocr also failed (rc={r3.returncode}): {r3.stderr.strip()[:200]}")
 
-    with open(tsv_path, encoding="utf-8") as f:
-        reader = csv.DictReader(f, delimiter="\t")
-        prev_block_num = None
-        prev_par_num = None
-        prev_line_num = None
-
-        for row in reader:
-            level = row.get("level", "0")
-            text = row.get("text", "").strip()
-            conf = row.get("conf", "-1")
-            block_num = row.get("block_num", "0")
-            par_num = row.get("par_num", "0")
-            line_num = row.get("line_num", "0")
-
-            # Level 5 = word
-            if level == "5" and text:
-                try:
-                    conf_val = float(conf)
-                except ValueError:
-                    conf_val = -1.0
-                word_confs.append((text, conf_val))
-                current_line_words.append(text)
-
-            # Level 4 = line — flush the line words
-            if level == "4":
-                if current_line_words:
-                    lines.append(" ".join(current_line_words))
-                    current_line_words = []
-
-        # Flush last line
-        if current_line_words:
-            lines.append(" ".join(current_line_words))
-
-    os.remove(tsv_path)
-    text = "\n".join(lines)
     return text, word_confs
 
 
@@ -94,8 +92,10 @@ def main():
         print(f"No images in {IMAGES_DIR}")
         sys.exit(1)
 
+    # Print Tesseract version
     try:
-        subprocess.run(["tesseract", "--version"], capture_output=True, check=True)
+        r = subprocess.run(["tesseract", "--version"], capture_output=True, text=True, check=True)
+        print(r.stdout.strip().split("\n")[0])
     except FileNotFoundError:
         print("Tesseract not found.")
         sys.exit(1)
