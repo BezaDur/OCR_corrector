@@ -22,7 +22,7 @@ the likely ones. Correction is a separate step; it takes these flags as input.
 
 ## Features
 The keys come from the corrector's `TokenSignals.as_vector()`. The model stores the
-names it was trained on and refuses nothing else; a missing key raises an error.
+names it was trained on. Extra keys are ignored; a missing key raises KeyError.
 
 ## Status
 - Trained on the 10-page evaluation set only. Out-of-sample numbers come from
