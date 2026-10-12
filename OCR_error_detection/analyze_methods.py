@@ -1,15 +1,31 @@
 #!/usr/bin/env python3
 """
-Break down which detection methods catch the errors.
+Analyze detection results and write a comprehensive TSV.
+
+Outputs: OCR_error_detection/Evaluation/analysis.tsv
+
+Columns:
+  page          — page name
+  ocr_idx       — word position in OCR output
+  gt_idx        — aligned position in ground truth (empty if insertion)
+  ocr_word      — what Tesseract output
+  gt_word       — what it should be
+  is_error      — 1 if OCR != GT, 0 if correct
+  verdict       — pass / gray / flag
+  suspicion     — detector score (0-1)
+  tesseract_conf — Tesseract confidence (0-100, empty if no conf file)
+  in_lexicon    — 1 if OCR word is in dictionary
+  one_flip      — number of one-flip dictionary hits
+  reason        — why the detector gave this verdict
 
 Usage:
     python OCR_error_detection/analyze_methods.py
 """
+import csv
 import difflib
 import os
 import sys
-import time
-from collections import Counter, defaultdict
+from collections import Counter
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -20,6 +36,7 @@ GT_DIR = os.path.join(_HERE, "Evaluation", "GroundTruth")
 OCR_DIR = os.path.join(_HERE, "Evaluation", "OCRed")
 CONF_DIR = OCR_DIR
 CONFUSION = os.path.join(_HERE, "confusion_matrix.json")
+OUTPUT_TSV = os.path.join(_HERE, "Evaluation", "analysis.tsv")
 
 
 def load_pages():
@@ -76,37 +93,22 @@ def align_words(gt_tokens, ocr_tokens):
     return results
 
 
-def classify_detection(sig, ocr_tok, vocab, norm_fn):
-    """Figure out WHY this token was flagged/grayed.
-
-    Returns a short reason string.
-    """
-    reasons = []
-
-    # Is the OCR word in the lexicon?
-    if not sig.in_lexicon:
-        reasons.append("OOV")
-
-    # Did one-flip find a real word?
+def build_reason(sig, in_lex, label):
+    """Short text explaining why the detector gave this verdict."""
+    parts = []
+    if not in_lex:
+        parts.append("OOV")
     if sig.one_flip_words:
-        reasons.append(f"one-flip({len(sig.one_flip_words)})")
-
-    # Is OCR confidence low?
+        parts.append(f"one-flip({len(sig.one_flip_words)})")
     if sig.ocr_conf is not None and sig.ocr_conf < 0.75:
-        reasons.append(f"low-conf({sig.ocr_conf*100:.0f}%)")
-
-    # Rare glyphs?
+        parts.append(f"low-conf({sig.ocr_conf*100:.0f}%)")
     if sig.rare_glyph_ratio > 0.3:
-        reasons.append("rare-glyphs")
-
-    # Mixed script?
+        parts.append("rare-glyphs")
     if sig.mixed_script:
-        reasons.append("mixed-script")
-
-    if not reasons:
-        reasons.append("score-only")
-
-    return ", ".join(reasons)
+        parts.append("mixed-script")
+    if not parts:
+        parts.append(label)
+    return ", ".join(parts)
 
 
 def main():
@@ -115,6 +117,7 @@ def main():
         print("No pages found!")
         return
 
+    # Build lexicon
     vocab = Counter()
     for _, gt_text, _, _ in pages:
         vocab.update(gt_text.split())
@@ -132,75 +135,84 @@ def main():
         verbose=False,
     )
 
-    # Track what catches errors
-    caught_reasons = Counter()      # reason -> count of errors caught
-    missed_examples = []            # (gt, ocr, conf) for missed errors
-    caught_examples = defaultdict(list)  # reason -> [(gt, ocr)]
-
-    total_errors = 0
-    caught_errors = 0
+    # Collect rows
+    rows = []
+    stats = {"total": 0, "errors": 0, "caught": 0}
 
     for page_name, gt_text, ocr_text, conf_map in pages:
         gt_tokens = gt_text.split()
         ocr_tokens = ocr_text.split()
         if not gt_tokens or not ocr_tokens:
             continue
+
         alignment = align_words(gt_tokens, ocr_tokens)
         has_conf = conf_map is not None
 
-        for ocr_idx, gt_idx, is_error in alignment:
-            if gt_idx is None or not is_error:
-                continue
-            total_errors += 1
+        # Also handle insertions (OCR words with no GT) — run detection on them
+        aligned_ocr_idxs = {ocr_idx for ocr_idx, _, _ in alignment}
 
+        for ocr_idx, gt_idx, is_error in alignment:
             ocr_tok = ocr_tokens[ocr_idx]
-            gt_tok = gt_tokens[gt_idx]
+            gt_tok = gt_tokens[gt_idx] if gt_idx is not None else ""
             ctx = [t for t in ocr_tokens[max(0, ocr_idx - 2):ocr_idx] if t]
             ocr_conf = conf_map.get(ocr_idx) if has_conf else None
 
             verdict = detector.verdict(ocr_tok, ctx, ocr_conf=ocr_conf)
+            in_lex = detector._norm(ocr_tok) in detector.vocab
 
-            if verdict.label in ("flag", "gray"):
-                caught_errors += 1
-                reason = classify_detection(
-                    verdict.signals, ocr_tok, vocab, detector._norm)
-                caught_reasons[reason] += 1
-                if len(caught_examples[reason]) < 3:
-                    caught_examples[reason].append((gt_tok, ocr_tok))
-            else:
-                if len(missed_examples) < 20:
-                    missed_examples.append((gt_tok, ocr_tok, ocr_conf))
+            reason = build_reason(verdict.signals, in_lex, verdict.label)
 
-    # Print results
-    print(f"{'='*60}")
-    print(f"Detection Method Analysis")
-    print(f"{'='*60}")
-    print(f"Total errors:  {total_errors:,}")
-    print(f"Caught:        {caught_errors:,} ({100*caught_errors/max(total_errors,1):.1f}%)")
-    print(f"Missed:        {total_errors - caught_errors:,} ({100*(total_errors-caught_errors)/max(total_errors,1):.1f}%)")
+            stats["total"] += 1
+            if gt_idx is not None and is_error:
+                stats["errors"] += 1
+                if verdict.label in ("flag", "gray"):
+                    stats["caught"] += 1
 
-    print(f"\n--- What caught the errors ---")
-    print(f"{'Method':<30} {'Count':>8} {'% of caught':>12} {'% of all':>10}")
-    print(f"{'-'*30} {'-'*8} {'-'*12} {'-'*10}")
-    for reason, count in caught_reasons.most_common():
-        pct_caught = 100 * count / max(caught_errors, 1)
-        pct_all = 100 * count / max(total_errors, 1)
-        print(f"{reason:<30} {count:>8,} {pct_caught:>11.1f}% {pct_all:>9.1f}%")
+            rows.append({
+                "page": page_name,
+                "ocr_idx": ocr_idx,
+                "gt_idx": gt_idx if gt_idx is not None else "",
+                "ocr_word": ocr_tok,
+                "gt_word": gt_tok,
+                "is_error": 1 if (gt_idx is not None and is_error) else (2 if gt_idx is None else 0),
+                "verdict": verdict.label,
+                "suspicion": f"{verdict.suspicion:.3f}",
+                "tesseract_conf": f"{ocr_conf:.0f}" if ocr_conf is not None else "",
+                "in_lexicon": 1 if in_lex else 0,
+                "one_flip": len(verdict.signals.one_flip_words),
+                "reason": reason,
+            })
 
-    # Show examples for each method
-    print(f"\n--- Examples per method ---")
-    for reason, examples in sorted(caught_examples.items(),
-                                     key=lambda x: -caught_reasons[x[0]]):
-        print(f"\n  {reason}:")
-        for gt, ocr in examples:
-            print(f"    GT={gt!r:25s} OCR={ocr!r}")
+    # Write TSV
+    fieldnames = [
+        "page", "ocr_idx", "gt_idx", "ocr_word", "gt_word",
+        "is_error", "verdict", "suspicion", "tesseract_conf",
+        "in_lexicon", "one_flip", "reason",
+    ]
+    with open(OUTPUT_TSV, "w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter="\t")
+        writer.writeheader()
+        writer.writerows(rows)
 
-    # Show missed errors
-    print(f"\n--- Missed errors (passed when wrong) ---")
-    for gt, ocr, conf in missed_examples:
-        in_lex = detector._norm(ocr) in detector.vocab
-        conf_str = f"conf={conf:.0f}%" if conf is not None else "no-conf"
-        print(f"  GT={gt!r:25s} OCR={ocr!r:25s} in_lex={in_lex} {conf_str}")
+    print(f"Wrote {len(rows):,} rows to {OUTPUT_TSV}")
+    print(f"\nColumns:")
+    print(f"  page          — page name")
+    print(f"  ocr_idx       — word position in OCR")
+    print(f"  gt_idx        — aligned GT position (empty = insertion)")
+    print(f"  ocr_word      — what Tesseract output")
+    print(f"  gt_word       — what it should be")
+    print(f"  is_error      — 0=correct, 1=error, 2=insertion (no GT match)")
+    print(f"  verdict       — pass / gray / flag")
+    print(f"  suspicion     — detector score (0-1)")
+    print(f"  tesseract_conf — Tesseract confidence (0-100)")
+    print(f"  in_lexicon    — 1 if OCR word is in dictionary")
+    print(f"  one_flip      — number of one-flip dictionary hits")
+    print(f"  reason        — why the detector gave this verdict")
+
+    # Quick summary
+    if stats["errors"] > 0:
+        print(f"\nErrors: {stats['errors']:,} / {stats['total']:,} ({100*stats['errors']/stats['total']:.1f}%)")
+        print(f"Caught: {stats['caught']:,} ({100*stats['caught']/stats['errors']:.1f}%)")
 
 
 if __name__ == "__main__":
