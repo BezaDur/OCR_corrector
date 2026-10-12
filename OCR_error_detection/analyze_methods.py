@@ -16,12 +16,16 @@ import re
 import sys
 from collections import Counter
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.dirname(_HERE)
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
 
 from alignment import align_tokens
-from detector import DetectionEngine
+from OCR_error_detection import DetectionEngine
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
 GT_DIR = os.path.join(_HERE, "Evaluation", "GroundTruth")
 OCR_DIR = os.path.join(_HERE, "Evaluation", "OCRed")
 CONF_DIR = OCR_DIR
