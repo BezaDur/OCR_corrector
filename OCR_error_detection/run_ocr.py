@@ -9,7 +9,6 @@ Produces two files per image in Evaluation/OCRed/:
 Usage:
     python OCR_error_detection/run_ocr.py
 """
-import csv
 import glob
 import os
 import subprocess
@@ -23,60 +22,43 @@ TESSDATA_DIR = "/media/des/Tess/Tesseract2/training/models"
 PSM = "3"
 
 
-def run_tesseract(image_path, output_base):
-    """Run Tesseract on one image. Returns (text, word_confidences)."""
-    # --- Call 1: plain text output ---
-    cmd = ["tesseract", image_path, output_base,
-           "-l", LANG, "--tessdata-dir", TESSDATA_DIR, "--psm", PSM]
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    if r.returncode != 0:
-        print(f"    [ERROR] text call failed (rc={r.returncode}): {r.stderr.strip()}")
-        return "", []
+def run_tesseract(image_path):
+    """Run Tesseract on one image via pytesseract.
+    Returns (text, word_confidences).
+    """
+    try:
+        import pytesseract
+    except ImportError:
+        print("pytesseract not installed. Run: pip install pytesseract")
+        sys.exit(1)
 
-    text = ""
-    txt_path = output_base + ".txt"
-    if os.path.exists(txt_path):
-        text = open(txt_path, encoding="utf-8").read().strip()
-        os.remove(txt_path)
-    else:
-        print(f"    [WARN] no .txt at {txt_path}")
+    from PIL import Image
 
-    # --- Call 2: TSV output for word confidences ---
-    tsv_base = output_base + "_tsv"
-    cmd_tsv = ["tesseract", image_path, tsv_base,
-               "-l", LANG, "--tessdata-dir", TESSDATA_DIR, "--psm", PSM, "tsv"]
-    r2 = subprocess.run(cmd_tsv, capture_output=True, text=True)
+    # Point pytesseract to the right tessdata
+    old_val = os.environ.get("TESSDATA_PREFIX", "")
+    os.environ["TESSDATA_PREFIX"] = TESSDATA_DIR
 
-    word_confs = []
-    tsv_path = tsv_base + ".tsv"
-    if os.path.exists(tsv_path):
-        with open(tsv_path, encoding="utf-8") as f:
-            reader = csv.DictReader(f, delimiter="\t")
-            for row in reader:
-                word = row.get("text", "").strip()
-                level = row.get("level", "0")
-                if level == "5" and word:
+    try:
+        img = Image.open(image_path)
+
+        # Get full TSV data (level 5 = word)
+        tsv = pytesseract.image_to_data(img, lang=LANG, config=f"--psm {PSM}",
+                                         output_type=pytesseract.Output.DICT)
+        text = pytesseract.image_to_string(img, lang=LANG, config=f"--psm {PSM}").strip()
+
+        word_confs = []
+        n = len(tsv["level"])
+        for i in range(n):
+            if str(tsv["level"][i]) == "5":
+                word = str(tsv["text"][i]).strip()
+                if word:
                     try:
-                        conf = float(row.get("conf", "-1"))
-                    except ValueError:
+                        conf = float(tsv["conf"][i])
+                    except (ValueError, TypeError):
                         conf = -1.0
                     word_confs.append((word, conf))
-        os.remove(tsv_path)
-    else:
-        print(f"    [WARN] TSV not created: {tsv_path}")
-        print(f"    [WARN] tsv rc={r2.returncode}")
-        print(f"    [WARN] tsv stderr: {r2.stderr.strip()[:200]}")
-        # Try hocr as fallback
-        hocr_base = output_base + "_hocr"
-        cmd_hocr = ["tesseract", image_path, hocr_base,
-                    "-l", LANG, "--tessdata-dir", TESSDATA_DIR, "--psm", PSM, "hocr"]
-        r3 = subprocess.run(cmd_hocr, capture_output=True, text=True)
-        hocr_path = hocr_base + ".hocr"
-        if os.path.exists(hocr_path):
-            print(f"    [INFO] hocr output works — TSV not supported by this Tesseract")
-            os.remove(hocr_path)
-        else:
-            print(f"    [INFO] hocr also failed (rc={r3.returncode}): {r3.stderr.strip()[:200]}")
+    finally:
+        os.environ["TESSDATA_PREFIX"] = old_val
 
     return text, word_confs
 
@@ -98,6 +80,14 @@ def main():
         print(r.stdout.strip().split("\n")[0])
     except FileNotFoundError:
         print("Tesseract not found.")
+        sys.exit(1)
+
+    # Check pytesseract
+    try:
+        import pytesseract
+        print(f"pytesseract {pytesseract.__version__} (get_tesseract_version={pytesseract.get_tesseract_version()})")
+    except ImportError:
+        print("ERROR: pytesseract not installed. Run: pip install pytesseract")
         sys.exit(1)
 
     # Check model exists
@@ -125,7 +115,7 @@ def main():
         base = os.path.splitext(os.path.basename(img_path))[0]
         out_base = os.path.join(OUTPUT_DIR, base)
 
-        text, word_confs = run_tesseract(img_path, out_base)
+        text, word_confs = run_tesseract(img_path)
 
         with open(out_base + ".ocr.txt", "w", encoding="utf-8") as f:
             f.write(text + "\n")
