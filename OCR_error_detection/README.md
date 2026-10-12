@@ -174,6 +174,7 @@ Checks 1-4 always run. Checks 5-8 are optional — the detector works without th
 | `adapter.py` | Lets the main corrector use this without loading things twice. |
 | `run_ocr.py` | Runs Tesseract on images, produces text + word confidences. |
 | `evaluate_detection.py` | Runs the detector on test data and prints results. |
+| `alignment.py` | DP-based word alignment engine with multi-optimal path tracking. |
 | `analyze_methods.py` | Generates per-word analysis TSV with detection reasons. |
 | `check_alignment.py` | Diagnostic: verifies OCR-GT word alignment. |
 | `tests/test_detector.py` | 40 tests. |
