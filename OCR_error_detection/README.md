@@ -81,47 +81,68 @@ Ground truth files must be named to match the images:
 ### Step 2 — Run Tesseract OCR
 
 ```bash
-python OCR_error_detection/run_ocr.py
+python run_ocr.py
 ```
 
 That's it. No flags. Reads from `Evaluation/images/`, writes to `Evaluation/OCRed/`.
 
-Requires Tesseract with Amharic:
+Requires Tesseract with Amharic and the model symlinked into system tessdata:
 ```bash
+# install tesseract
 sudo apt install tesseract-ocr tesseract-ocr-amh
+
+# symlink custom model so tsv/hocr configs work
+sudo ln -s /path/to/amh_fast.traineddata \
+           /usr/share/tesseract-ocr/5/tessdata/amh_fast.traineddata
 ```
 
 ### Step 3 — Run the evaluation
 
 ```bash
-python OCR_error_detection/evaluate_detection.py
+python evaluate_detection.py
 ```
 
 That's it. No flags. The paths are in the script.
 
-Output looks like:
+### Step 4 — Generate detailed analysis
 
+```bash
+python analyze_methods.py
 ```
-============================================================
-OCR Error Detection Evaluation Results
-============================================================
-Pages processed:     100
-Pages w/ confidence: 100
-Aligned tokens:      62,278
-  Error tokens:      10,132 (16.27%)
-  Correct tokens:    52,146
-Insertions:          1,857 (OCR words with no GT match)
 
-Verdict     Correct      Error      Total    Prec%  Recall%
-pass         51,998      1,423     53,421      2.7     14.0
-gray            148      8,002      8,150     98.2     79.0
-flag              0        707        707    100.0      7.0
+Writes `Evaluation/analysis.tsv` with per-word breakdown: OCR word, GT word, detector verdict, Tesseract confidence, detection reason, and more.
 
-PASS precision:  97.3%
-Recall:          86.0%
-Flag precision:  98.3%
-F1:              91.7
-```
+## Results
+
+### Tesseract accuracy (fine-tuned `amh_fast` model, PSM 3, 100 pages)
+
+| Metric | Value |
+|--------|-------|
+| Word accuracy | **93.00%** |
+| Char accuracy | **98.07%** |
+| WER | 7.00% |
+| CER | 1.93% |
+| Substitutions | 4,267 |
+| Insertions | 94 |
+| Deletions | 4 |
+
+### Comparison: stock vs fine-tuned model
+
+| Metric | Stock `amh` (PSM 6) | Fine-tuned `amh_fast` (PSM 3) |
+|--------|---------------------|-------------------------------|
+| Word accuracy | 82.42% | **93.00%** |
+| Char accuracy | 94.01% | **98.07%** |
+| Detection recall | 86.0% | **89.6%** |
+
+### Detection performance
+
+| Metric | Value |
+|--------|-------|
+| Error words | 4,267 |
+| Caught (flag+gray) | 3,825 (89.6%) |
+| Missed (passed) | 442 |
+| Avg confidence (correct) | 87.0% |
+| Avg confidence (errors) | 60.6% |
 
 ## Detection methods
 
@@ -151,6 +172,8 @@ Checks 1-4 always run. Checks 5-8 are optional — the detector works without th
 | `normalizer.py` | Fixes spelling differences (e.g. ሐ→ሀ). |
 | `utils.py` | Ethiopic character lists. |
 | `adapter.py` | Lets the main corrector use this without loading things twice. |
-| `run_ocr.py` | Runs Tesseract on images with confidence output. |
+| `run_ocr.py` | Runs Tesseract on images, produces text + word confidences. |
 | `evaluate_detection.py` | Runs the detector on test data and prints results. |
+| `analyze_methods.py` | Generates per-word analysis TSV with detection reasons. |
+| `check_alignment.py` | Diagnostic: verifies OCR-GT word alignment. |
 | `tests/test_detector.py` | 40 tests. |
