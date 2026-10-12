@@ -22,78 +22,42 @@ TESSDATA_DIR = "/media/des/Tess/Tesseract2/training/models"
 PSM = "3"
 
 
-def run_tesseract(image_path):
-    """Run Tesseract on one image via pytesseract.
-    Returns (text, word_confidences).
-    """
+def find_system_tessdata():
+    """Find the system tessdata directory by asking Tesseract."""
     try:
-        import pytesseract
-    except ImportError:
-        print("pytesseract not installed. Run: pip install pytesseract")
-        sys.exit(1)
+        r = subprocess.run(["tesseract", "--print-parameters"],
+                           capture_output=True, text=True)
+        # tessdata path is in `tessedit_char_whitelist` line? No.
+        # Better: check common locations or env var
+        pass
+    except Exception:
+        pass
 
-    from PIL import Image
+    candidates = [
+        "/usr/share/tesseract-ocr/5/tessdata",
+        "/usr/share/tesseract-ocr/4/tessdata",
+        "/usr/share/tesseract-ocr/tessdata",
+        "/usr/local/share/tessdata",
+    ]
+    for c in candidates:
+        if os.path.isdir(c):
+            return c
 
-    # Point pytesseract to the right tessdata
-    old_val = os.environ.get("TESSDATA_PREFIX", "")
-    os.environ["TESSDATA_PREFIX"] = TESSDATA_DIR
+    # Use env var
+    env = os.environ.get("TESSDATA_PREFIX", "")
+    if env and os.path.isdir(env):
+        return env
 
-    try:
-        img = Image.open(image_path)
-
-        # Get full TSV data (level 5 = word)
-        tsv = pytesseract.image_to_data(img, lang=LANG, config=f"--psm {PSM}",
-                                         output_type=pytesseract.Output.DICT)
-        text = pytesseract.image_to_string(img, lang=LANG, config=f"--psm {PSM}").strip()
-
-        word_confs = []
-        n = len(tsv["level"])
-        for i in range(n):
-            if str(tsv["level"][i]) == "5":
-                word = str(tsv["text"][i]).strip()
-                if word:
-                    try:
-                        conf = float(tsv["conf"][i])
-                    except (ValueError, TypeError):
-                        conf = -1.0
-                    word_confs.append((word, conf))
-    finally:
-        os.environ["TESSDATA_PREFIX"] = old_val
-
-    return text, word_confs
+    return None
 
 
-def main():
-    patterns = ["*.png", "*.jpg", "*.jpeg", "*.tif", "*.tiff", "*.bmp"]
-    images = []
-    for pat in patterns:
-        images.extend(glob.glob(os.path.join(IMAGES_DIR, pat)))
-    images.sort()
-
-    if not images:
-        print(f"No images in {IMAGES_DIR}")
-        sys.exit(1)
-
-    # Print Tesseract version
-    try:
-        r = subprocess.run(["tesseract", "--version"], capture_output=True, text=True, check=True)
-        print(r.stdout.strip().split("\n")[0])
-    except FileNotFoundError:
-        print("Tesseract not found.")
-        sys.exit(1)
-
-    # Check pytesseract
-    try:
-        import pytesseract
-        print(f"pytesseract {pytesseract.__version__} (get_tesseract_version={pytesseract.get_tesseract_version()})")
-    except ImportError:
-        print("ERROR: pytesseract not installed. Run: pip install pytesseract")
-        sys.exit(1)
-
-    # Check model exists
-    model_path = os.path.join(TESSDATA_DIR, LANG + ".traineddata")
-    if not os.path.exists(model_path):
-        print(f"ERROR: Model not found: {model_path}")
+def ensure_model_in_tessdata():
+    """Symlink the fine-tuned model into the system tessdata dir
+    so Tesseract can find it without --tessdata-dir
+    (which would break the tsv/hocr config file lookup)."""
+    model_src = os.path.join(TESSDATA_DIR, LANG + ".traineddata")
+    if not os.path.exists(model_src):
+        print(f"ERROR: Model not found: {model_src}")
         if os.path.isdir(TESSDATA_DIR):
             available = [f for f in os.listdir(TESSDATA_DIR) if f.endswith(".traineddata")]
             if available:
@@ -104,9 +68,92 @@ def main():
                 print(f"No .traineddata files in {TESSDATA_DIR}")
         sys.exit(1)
 
+    system_td = find_system_tessdata()
+    if not system_td:
+        print("ERROR: Cannot find system tessdata directory.")
+        print("Set TESSDATA_PREFIX env variable to your tessdata path.")
+        sys.exit(1)
+
+    model_dest = os.path.join(system_td, LANG + ".traineddata")
+
+    # Already there?
+    if os.path.exists(model_dest):
+        return
+
+    # Symlink
+    try:
+        os.symlink(model_src, model_dest)
+        print(f"Symlinked model: {model_dest} -> {model_src}")
+    except PermissionError:
+        print(f"ERROR: Cannot symlink to {system_td} (permission denied).")
+        print(f"Run manually: sudo ln -s {model_src} {model_dest}")
+        sys.exit(1)
+
+
+def run_tesseract(image_path):
+    """Run Tesseract on one image via pytesseract.
+    Returns (text, word_confidences).
+    """
+    import pytesseract
+    from PIL import Image
+
+    img = Image.open(image_path)
+
+    # Don't use --tessdata-dir (it breaks tsv/hocr config lookup).
+    # Model is accessible from the system tessdata dir via symlink.
+    config = f"--psm {PSM}"
+
+    tsv = pytesseract.image_to_data(img, lang=LANG, config=config,
+                                     output_type=pytesseract.Output.DICT)
+    text = pytesseract.image_to_string(img, lang=LANG, config=config).strip()
+
+    word_confs = []
+    n = len(tsv["level"])
+    for i in range(n):
+        if str(tsv["level"][i]) == "5":
+            word = str(tsv["text"][i]).strip()
+            if word:
+                try:
+                    conf = float(tsv["conf"][i])
+                except (ValueError, TypeError):
+                    conf = -1.0
+                word_confs.append((word, conf))
+
+    return text, word_confs
+
+
+def main():
+    print(f"Python: {sys.executable}")
+    try:
+        r = subprocess.run(["tesseract", "--version"], capture_output=True, text=True, check=True)
+        print(f"Tesseract: {r.stdout.strip().split(chr(10))[0]}")
+    except FileNotFoundError:
+        print("ERROR: Tesseract not found.")
+        sys.exit(1)
+
+    try:
+        import pytesseract
+        print(f"pytesseract {pytesseract.__version__}")
+    except ImportError:
+        print(f"\nERROR: pytesseract not importable by {sys.executable}")
+        print(f"Fix: {sys.executable} -m pip install pytesseract Pillow")
+        sys.exit(1)
+
+    patterns = ["*.png", "*.jpg", "*.jpeg", "*.tif", "*.tiff", "*.bmp"]
+    images = []
+    for pat in patterns:
+        images.extend(glob.glob(os.path.join(IMAGES_DIR, pat)))
+    images.sort()
+
+    if not images:
+        print(f"No images in {IMAGES_DIR}")
+        sys.exit(1)
+
+    ensure_model_in_tessdata()
+
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     print(f"Found {len(images)} images")
-    print(f"Model: {model_path}")
+    print(f"Model: {LANG}")
     print(f"PSM: {PSM}")
     print(f"Output: {OUTPUT_DIR}")
     print()
