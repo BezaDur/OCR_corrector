@@ -18,48 +18,68 @@ import sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
 IMAGES_DIR = os.path.join(_HERE, "Evaluation", "images")
 OUTPUT_DIR = os.path.join(_HERE, "Evaluation", "OCRed")
-LANG = "amh_epoch2_fast"
+LANG = "amh_fast"
 TESSDATA_DIR = "/media/des/Tess/Tesseract2/training/models"
 PSM = "3"
 
 
 def run_tesseract(image_path, output_base):
-    """Run Tesseract on one image. Returns (text, word_confidences)."""
+    """Run Tesseract on one image using TSV mode.
+    Returns (text, word_confidences)."""
+    # Single Tesseract call in TSV mode
     cmd = ["tesseract", image_path, output_base,
-           "-l", LANG, "--tessdata-dir", TESSDATA_DIR, "--psm", PSM]
+           "-l", LANG, "--tessdata-dir", TESSDATA_DIR, "--psm", PSM, "tsv"]
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
         print(f"    [ERROR] {r.stderr.strip()}")
         return "", []
 
-    text = ""
-    txt_path = output_base + ".txt"
-    if os.path.exists(txt_path):
-        text = open(txt_path, encoding="utf-8").read().strip()
-        os.remove(txt_path)
+    tsv_path = output_base + ".tsv"
+    if not os.path.exists(tsv_path):
+        print(f"    [ERROR] TSV not created: {tsv_path}")
+        return "", []
 
-    cmd_tsv = ["tesseract", image_path, output_base + "_tsv",
-               "-l", LANG, "--tessdata-dir", TESSDATA_DIR, "--psm", PSM, "tsv"]
-    r = subprocess.run(cmd_tsv, capture_output=True, text=True)
-    if r.returncode != 0:
-        print(f"    [WARN] tsv failed: {r.stderr.strip()}")
-
+    # Parse TSV: collect word-level text and confidences,
+    # and reconstruct full text by line
     word_confs = []
-    tsv_path = output_base + "_tsv.tsv"
-    if os.path.exists(tsv_path):
-        with open(tsv_path, encoding="utf-8") as f:
-            reader = csv.DictReader(f, delimiter="\t")
-            for row in reader:
-                word = row.get("text", "").strip()
-                level = row.get("level", "0")
-                if level == "5" and word:
-                    try:
-                        conf = float(row.get("conf", "-1"))
-                    except ValueError:
-                        conf = -1.0
-                    word_confs.append((word, conf))
-        os.remove(tsv_path)
+    lines = []
+    current_line_words = []
 
+    with open(tsv_path, encoding="utf-8") as f:
+        reader = csv.DictReader(f, delimiter="\t")
+        prev_block_num = None
+        prev_par_num = None
+        prev_line_num = None
+
+        for row in reader:
+            level = row.get("level", "0")
+            text = row.get("text", "").strip()
+            conf = row.get("conf", "-1")
+            block_num = row.get("block_num", "0")
+            par_num = row.get("par_num", "0")
+            line_num = row.get("line_num", "0")
+
+            # Level 5 = word
+            if level == "5" and text:
+                try:
+                    conf_val = float(conf)
+                except ValueError:
+                    conf_val = -1.0
+                word_confs.append((text, conf_val))
+                current_line_words.append(text)
+
+            # Level 4 = line — flush the line words
+            if level == "4":
+                if current_line_words:
+                    lines.append(" ".join(current_line_words))
+                    current_line_words = []
+
+        # Flush last line
+        if current_line_words:
+            lines.append(" ".join(current_line_words))
+
+    os.remove(tsv_path)
+    text = "\n".join(lines)
     return text, word_confs
 
 
@@ -118,9 +138,6 @@ def main():
         n = len(word_confs)
         avg = (sum(c for _, c in word_confs) / n) if n else 0
         print(f"  [{i}/{len(images)}] {base}: {n} words, avg conf {avg:.1f}%")
-        if n == 0 and text:
-            print(f"    [DEBUG] text={len(text)} chars but 0 word confs")
-            print(f"    [DEBUG] {text[:100]!r}")
 
     print(f"\nDone. OCR in {OUTPUT_DIR}")
 
