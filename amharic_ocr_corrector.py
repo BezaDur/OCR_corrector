@@ -499,13 +499,35 @@ class AmharicOCRCorrector:
         # Stage 1 is built here, not in the argument block above, because it
         # must see the resolved segmenter: morphology is an expensive signal
         # and is only enabled when an analyzer actually loaded.
+        # Per roadmap: LightGBM DetectionEngine is authoritative, SuspicionScorer is fallback
         if self.stage1_detection:
-            from suspicion import SuspicionScorer
-            (sw, spb, sfa, clm) = self._suspicion_cfg
-            self.suspicion = SuspicionScorer(
-                self, weights=sw, pass_below=spb, flag_above=sfa,
-                use_morphology=self.segmenter is not None, char_lm=clm,
-            )
+            # Try authoritative DetectionEngine via adapter first
+            try:
+                from OCR_error_detection.adapter import CorrectorDetectionAdapter
+                (sw, spb, sfa, clm) = self._suspicion_cfg
+                self.suspicion = CorrectorDetectionAdapter(
+                    self, weights=sw, pass_below=spb, flag_above=sfa,
+                    use_morphology=self.segmenter is not None, char_lm=clm,
+                )
+                if self.verbose:
+                    if self.suspicion.lgbm_model is not None:
+                        print(f"Stage 1: Authoritative DetectionEngine (LGBM) loaded", flush=True)
+                    else:
+                        print(f"Stage 1: DetectionEngine fallback (rule-based)", flush=True)
+            except Exception as e:
+                if self.verbose:
+                    print(f"[WARN] DetectionEngine failed ({e}), falling back to SuspicionScorer", flush=True)
+                try:
+                    from suspicion import SuspicionScorer
+                    (sw, spb, sfa, clm) = self._suspicion_cfg
+                    self.suspicion = SuspicionScorer(
+                        self, weights=sw, pass_below=spb, flag_above=sfa,
+                        use_morphology=self.segmenter is not None, char_lm=clm,
+                    )
+                except Exception as e2:
+                    if self.verbose:
+                        print(f"[WARN] SuspicionScorer also failed: {e2}", flush=True)
+                    self.suspicion = None
         if self.segmenter and self.verbose:
             print("Morphological Segmenter ready.", flush=True)
 
@@ -1466,6 +1488,19 @@ class AmharicOCRCorrector:
         beams = [[] for _ in range(n + 1)]
         beams[0] = [(0.0, start_state, [])]
 
+        # Per roadmap Stage 3.2: document-level voting — compute doc_freq if full doc provided
+        # If isolated token (n==1), doc_freq should be NaN per roadmap
+        try:
+            from collections import Counter
+            import math
+            # Canonical forms for doc freq counting (strict boundary)
+            doc_tokens_canonical = [self._norm(t[1]) for t in token_tuples if t[1]]
+            doc_counter = Counter(doc_tokens_canonical)
+            has_doc_context = n > 1
+        except Exception:
+            doc_counter = None
+            has_doc_context = False
+
         for idx, (leading, word, trailing) in enumerate(token_tuples):
             beam = self._prune(beams[idx])
             beams[idx] = []
@@ -1480,12 +1515,26 @@ class AmharicOCRCorrector:
                 continue
 
             # ---- Stage 1: error detection -------------------------------
+            # Per roadmap: LightGBM authoritative, doc_freq lifecycle explicit
             verdict = None
             extra_margin = 0.0
             if self.suspicion is not None:
                 ctx = [t[1] for t in token_tuples[max(0, idx - 2):idx] if t[1]]
                 conf = confs[idx] if confs is not None else None
-                verdict = self.suspicion.verdict(word, ctx, ocr_conf=conf)
+                # doc_freq: NaN for isolated token, else actual count
+                if has_doc_context and doc_counter is not None:
+                    try:
+                        df = doc_counter.get(self._norm(word), 1)
+                    except Exception:
+                        df = 1
+                else:
+                    df = float('nan')  # isolated token per roadmap
+                try:
+                    # Try new signature with doc_freq
+                    verdict = self.suspicion.verdict(word, ctx, ocr_conf=conf, doc_freq=df)
+                except TypeError:
+                    # Fallback to old signature
+                    verdict = self.suspicion.verdict(word, ctx, ocr_conf=conf)
                 self._stage1[verdict.label] += 1
                 if self.verdict_log is not None:
                     self.verdict_log.append({"word": word, "label": verdict.label,

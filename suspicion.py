@@ -1,5 +1,8 @@
 """
-Stage 1: error detection.
+Stage 1: error detection — DEPRECATED per roadmap, kept as lightweight fallback.
+
+Per architectural decision: LightGBM DetectionEngine is authoritative.
+This rule-based SuspicionScorer is retained only when LGBM/KenLM unavailable.
 
 The corrector currently generates candidates and runs the LM over EVERY token.
 At an 8% base rate that is ~92% wasted work, and worse, it gives the system

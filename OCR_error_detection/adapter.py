@@ -1,56 +1,59 @@
-# adapter.py — Lets the main corrector use this detection module.
+# adapter.py — Unifies corrector with authoritative DetectionEngine per roadmap Stage 3
 #
-# Instead of loading vocab/SymSpell twice, the adapter reuses the
-# corrector's existing resources.
+# The adapter now delegates to DetectionEngine (LightGBM authoritative)
+# instead of duplicating logic. It implements the same DetectorInterface
+# contract: verdict(tok, context, ocr_conf, doc_freq) -> Verdict
 #
-# Usage in the corrector:
-#     from OCR_error_detection.adapter import CorrectorDetectionAdapter
-#     self.suspicion = CorrectorDetectionAdapter(self)
-#     result = self.suspicion.verdict(word, context)
+# Lifecycle for doc_freq:
+#   - If full document/page provided → compute doc_freq via Counter
+#   - If isolated token → doc_freq = NaN (not singleton default)
+#
+# Usage:
+#   from OCR_error_detection.adapter import CorrectorDetectionAdapter
+#   self.suspicion = CorrectorDetectionAdapter(self)
+#   result = self.suspicion.verdict(word, context, ocr_conf, doc_freq)
 from __future__ import annotations
 
+import os
+from typing import Optional, Sequence, Dict, List
 import math
-from typing import Optional, Sequence
 
 from OCR_error_detection.signals import TokenSignals, Verdict
-from OCR_error_detection.signals import (
-    compute_surface_signals, compute_lexical_signals,
-    compute_one_flip_signals, compute_char_lm_score,
-    compute_lm_fit, compute_morphology,
-)
 from OCR_error_detection.scoring import combine_signals, DEFAULT_WEIGHTS
 
+# Import DetectionEngine lazily to avoid circular
+DetectionEngine = None
 
-class CorrectorDetectionAdapter:
-    """Adapter that lets DetectionEngine logic run on the corrector's resources.
+def _load_engine():
+    global DetectionEngine
+    if DetectionEngine is None:
+        from OCR_error_detection.detector import DetectionEngine as _DE
+        DetectionEngine = _DE
+    return DetectionEngine
 
-    This is the bridge between the standalone detection module and the main
-    corrector.  It reuses the corrector's vocab, SymSpell, confusion map,
-    normalizer, LM, and segmenter — no duplication.
+class DetectorInterface:
+    """Contract for detectors: verdict + batch"""
+    def verdict(self, tok: str, context: Sequence[str] = (), ocr_conf: Optional[float] = None, doc_freq: Optional[float] = None) -> Verdict:
+        raise NotImplementedError
+    def verdict_batch(self, tokens: Sequence[str], **kwargs) -> List[Verdict]:
+        raise NotImplementedError
 
-    Improved v2:
-    - Optionally loads LightGBM model if available (reuses corrector's vocab)
-    - Frequency-aware safety floors (high-freq words never flagged on low-conf)
-    - Supports expanded feature set (ocr_conf, n_neighbors, etc.)
+class CorrectorDetectionAdapter(DetectorInterface):
+    """Adapter that delegates to authoritative DetectionEngine.
+
+    Reuses corrector's vocab, SymSpell, confusion map, normalizer if possible,
+    but delegates scoring to DetectionEngine's LightGBM model.
+
+    If DetectionEngine cannot be loaded (missing LGBM), falls back to rule-based
+    SuspicionScorer logic (deprecated path).
 
     Parameters
     ----------
     corrector : AmharicOCRCorrector
-        The main corrector instance.
-    weights : dict, optional
-        Logistic scorer weights.  Default: same as DetectionEngine.
-    pass_below : float
-        Score threshold for PASS verdict.
-    flag_above : float
-        Score threshold for FLAG verdict.
-    use_morphology : bool
-        Whether to use the segmenter for the morphology signal.
-    char_lm : object, optional
-        Character-level LM.
-    max_one_flip : int
-        Cap on one-flip test results.
-    lgbm_model_path : str, optional
-        Path to LightGBM model. If None, tries to auto-discover.
+        Main corrector instance with vocab, symspell, reverse_sub_map, _norm, etc.
+    weights, pass_below, flag_above, use_morphology, char_lm, max_one_flip
+        Kept for backward compat, but LGBM thresholds from model take precedence.
+    lgbm_model_path : optional path to model
     """
 
     def __init__(
@@ -71,54 +74,73 @@ class CorrectorDetectionAdapter:
         self.use_morphology = use_morphology
         self.char_lm = char_lm
         self.max_one_flip = max_one_flip
-        self._morph_calls = 0
         self._stage1 = {"pass": 0, "gray": 0, "flag": 0}
 
-        # Try to load LGBM model if available
+        # Try to create authoritative DetectionEngine that reuses corrector's resources
+        self.engine = None
         self.lgbm_model = None
         self.lgbm_features = []
+        self.calibrator = None
+
         try:
-            import os, joblib
-            _HERE = os.path.dirname(os.path.abspath(__file__))
-            candidates = [
-                lgbm_model_path,
-                os.path.join(_HERE, "Model", "detector_lgbm_v2.pkl"),
-                os.path.join(_HERE, "Model", "detector_lgbm.pkl"),
-                os.path.join(_HERE, "detector_lgbm.pkl"),
-            ]
-            target = next((p for p in candidates if p and os.path.exists(p)), None)
-            if target:
-                payload = joblib.load(target)
-                self.lgbm_model = payload.get("model")
-                self.lgbm_features = payload.get("features", [])
-                self.pass_below = payload.get("pass_thresh", self.pass_below)
-                self.flag_above = payload.get("flag_thresh", self.flag_above)
-        except Exception:
+            DE = _load_engine()
+            # Create engine but inject corrector's vocab etc. if possible
+            # We instantiate with minimal loading, then override vocab/symspell
+            self.engine = DE(
+                dict_vocab_path=None,  # will fallback to minimal, we override below
+                confusion_matrix_path=None,
+                char_lm_path=None,
+                lgbm_model_path=lgbm_model_path,
+                pass_below=pass_below,
+                flag_above=flag_above,
+                max_one_flip=max_one_flip,
+                verbose=False,
+            )
+            # Override with corrector's resources to avoid double load
+            if hasattr(corrector, 'vocab') and corrector.vocab:
+                self.engine.vocab = corrector.vocab
+                self.engine.surface_form = getattr(corrector, 'surface_form', {})
+            if hasattr(corrector, 'symspell') and corrector.symspell:
+                self.engine.symspell = corrector.symspell
+            if hasattr(corrector, 'reverse_sub_map') and corrector.reverse_sub_map:
+                self.engine.reverse_sub_map = corrector.reverse_sub_map
+            if hasattr(corrector, '_norm') and corrector._norm:
+                self.engine._norm = corrector._norm
+            # Reuse model and thresholds
+            self.lgbm_model = self.engine.lgbm_model
+            self.lgbm_features = self.engine.lgbm_features
+            self.calibrator = self.engine.calibrator
+            self.pass_below = self.engine.pass_below
+            self.flag_above = self.engine.flag_above
+        except Exception as e:
+            # Fallback to rule-based
+            self.engine = None
             self.lgbm_model = None
-            self.lgbm_features = []
 
     def _cheap_signals(self, tok: str, context: Sequence[str] = ()) -> TokenSignals:
+        # If engine available, use its cheap signals (which uses canonical boundary)
+        if self.engine is not None:
+            return self.engine._cheap_signals(tok, context)
+        # Fallback: duplicate logic
+        from OCR_error_detection.signals import (
+            compute_surface_signals, compute_lexical_signals, compute_one_flip_signals
+        )
         sig = TokenSignals(token=tok)
         compute_surface_signals(tok, sig)
-        compute_lexical_signals(
-            tok, sig, self.c.vocab, self.c._norm,
-            getattr(self.c, 'symspell', None),
-            getattr(self.c, '_VERBOSITY_TOP', 2),
-        )
-        compute_one_flip_signals(
-            tok, sig, self.c.vocab, self.c._norm,
-            getattr(self.c, 'reverse_sub_map', {}),
-            self.max_one_flip,
-        )
+        try:
+            compute_lexical_signals(
+                tok, sig, self.c.vocab, self.c._norm,
+                getattr(self.c, 'symspell', None),
+                getattr(self.c, '_VERBOSITY_TOP', 2),
+            )
+            compute_one_flip_signals(
+                tok, sig, self.c.vocab, self.c._norm,
+                getattr(self.c, 'reverse_sub_map', {}),
+                self.max_one_flip,
+            )
+        except Exception:
+            pass
         return sig
-
-    def _enrich_expensive(self, sig: TokenSignals, tok: str,
-                          context: Sequence[str]) -> None:
-        compute_lm_fit(tok, context, sig, lm=getattr(self.c, 'lm', None))
-        if self.use_morphology:
-            seg = getattr(self.c, 'segmenter', None)
-            if seg is not None:
-                compute_morphology(tok, sig, is_known_word_fn=self.c.is_known_word)
 
     def signals(self, tok: str, context: Sequence[str] = ()) -> TokenSignals:
         return self._cheap_signals(tok, context)
@@ -126,146 +148,63 @@ class CorrectorDetectionAdapter:
     def score(self, sig: TokenSignals) -> float:
         return combine_signals(sig, self.w)
 
-    def _extract_lgbm_features(self, tok: str, sig: TokenSignals, doc_freq: int = 1, ocr_conf: Optional[float] = None):
-        import math, re
-        PUNCT_RE = re.compile(r'[^\w\s]|\d')
-        RARE_GLYPHS = set("ሠሡሢሣሤሥሦፀፁፂፃፄፅፆጰጱጲጳጴጵጶዐዑዒዓዔዕዖ")
-        clean_raw = PUNCT_RE.sub('', tok).strip()
-        t_len = max(len(clean_raw), 1)
-        norm_tok = self.c._norm(tok) if hasattr(self.c, '_norm') else tok
-        freq = self.c.vocab.get(norm_tok, 0) if hasattr(self.c, 'vocab') else 0
-        log_freq = math.log10(freq + 1) if freq > 0 else 0.0
-        in_lex = 1 if freq > 0 else 0
-        rare_cnt = sum(1 for ch in clean_raw if ch in RARE_GLYPHS)
-        rare_ratio = rare_cnt / float(t_len)
-        one_flip_cnt = len(sig.one_flip_words)
-        n_neighbors = getattr(sig, "n_neighbors", 0)
-        len_ratio = getattr(sig, "len_ratio", t_len / 4.14)
-        mixed_script = 1 if getattr(sig, "mixed_script", False) else 0
-        has_digit = 1 if getattr(sig, "has_digit", False) else 0
-        if ocr_conf is not None:
-            ocr_conf_norm = max(0.0, min(1.0, ocr_conf / 100.0)) if ocr_conf > 1 else max(0.0, min(1.0, ocr_conf))
-        elif sig.ocr_conf is not None:
-            ocr_conf_norm = sig.ocr_conf
-        else:
-            ocr_conf_norm = 0.85
-        feat_map = {
-            "log_corpus_freq": log_freq,
-            "in_lexicon": in_lex,
-            "doc_freq": doc_freq,
-            "is_doc_singleton": 1 if doc_freq == 1 else 0,
-            "token_len": t_len,
-            "has_one_flip": 1 if one_flip_cnt > 0 else 0,
-            "one_flip_count": one_flip_count,
-            "char_kenlm_score": getattr(sig, "char_lm", -2.5) or -2.5,
-            "rare_glyph_ratio": rare_ratio,
-            "ocr_conf": ocr_conf_norm,
-            "n_neighbors": float(n_neighbors),
-            "len_ratio": float(len_ratio),
-            "mixed_script": float(mixed_script),
-            "has_digit": float(has_digit),
-            "log_freq": log_freq,
-            "is_high_freq": 1 if log_freq > 3.0 else 0,
-        }
-        if not self.lgbm_features:
-            return []
-        return [feat_map.get(col, 0.0) for col in self.lgbm_features]
-
     def verdict(self, tok: str, context: Sequence[str] = (),
-                ocr_conf: Optional[float] = None, doc_freq: int = 1) -> Verdict:
+                ocr_conf: Optional[float] = None, doc_freq: Optional[float] = None) -> Verdict:
+        # Delegate to authoritative engine if available
+        if self.engine is not None:
+            v = self.engine.verdict(tok, context, ocr_conf=ocr_conf, doc_freq=doc_freq)
+            # Mirror counters
+            self._stage1 = dict(self.engine._stage1)
+            return v
+
+        # Fallback rule-based (deprecated)
         sig = self._cheap_signals(tok, context)
         if ocr_conf is not None:
-            sig.ocr_conf = max(0.0, min(1.0, ocr_conf / 100.0)) if ocr_conf > 1 else max(0.0, min(1.0, ocr_conf))
-
-        # If LGBM available, use it
-        if self.lgbm_model is not None and self.lgbm_features:
-            feats = self._extract_lgbm_features(tok, sig, doc_freq=doc_freq, ocr_conf=ocr_conf)
             try:
-                prob = float(self.lgbm_model.predict([feats])[0])
-            except Exception:
-                prob = combine_signals(sig, self.w)
-            s = prob
-            if s >= self.flag_above:
-                label = "flag"
-                reason = f"LGBM={s:.3f} (FLAG)"
-            elif s >= self.pass_below:
-                label = "gray"
-                reason = f"LGBM={s:.3f} (GRAY)"
-            else:
-                label = "pass"
-                reason = f"LGBM={s:.3f} (PASS)"
-
-            # Frequency-aware safety floors
-            is_high_freq = False
-            try:
-                freq = self.c.vocab.get(self.c._norm(tok), 0) if hasattr(self.c, 'vocab') else 0
-                is_high_freq = freq > 1000 or sig.log_freq > 3.0
+                sig.ocr_conf = max(0.0, min(1.0, ocr_conf / 100.0)) if ocr_conf > 1 else max(0.0, min(1.0, ocr_conf))
             except Exception:
                 pass
 
-            if not sig.in_lexicon and sig.ocr_conf is not None and sig.ocr_conf < 0.35:
-                if sig.one_flip_words:
-                    label = "flag"
-                    reason += f", low-conf + one-flip ({sig.ocr_conf*100:.0f}%)"
-                elif not is_high_freq:
-                    label = "flag"
-                    reason += f", severe low-conf OOV ({sig.ocr_conf*100:.0f}%)"
-
-            if not sig.in_lexicon and label == "pass":
-                label = "gray"
-                reason += ", OOV kept in gray"
-
-            if sig.ocr_conf is not None and sig.ocr_conf < 0.55 and label == "pass" and not is_high_freq:
-                label = "gray"
-                reason += f", low-conf floor ({sig.ocr_conf*100:.0f}%)"
-
-            if is_high_freq and label == "flag" and sig.ocr_conf is not None and sig.ocr_conf > 0.70:
-                if s < self.flag_above + 0.15:
-                    label = "gray"
-                    reason += ", high-freq downgrade"
-
-            if label == "pass":
-                self._stage1["pass"] += 1
-            elif label == "flag":
-                self._stage1["flag"] += 1
-            else:
-                self._stage1["gray"] += 1
-            return Verdict(s, label, sig, reason)
-
-        # Fallback to rule-based
         s = self.score(sig)
-
-        # Hard PASS
         if (sig.in_lexicon and not sig.one_flip_words
                 and not sig.mixed_script and sig.rare_glyph_ratio < 0.35
                 and (sig.ocr_conf is None or sig.ocr_conf >= 0.70)
                 and s < self.pass_below):
             self._stage1["pass"] += 1
-            return Verdict(s, "pass", sig,
-                           "clean lexicon word, no optical neighbour")
+            return Verdict(s, "pass", sig, "clean lexicon word (fallback)")
 
-        # Hard FLAG
-        if (not sig.in_lexicon and sig.one_flip_words
-                and s >= self.flag_above):
+        if not sig.in_lexicon and sig.one_flip_words and s >= 0.50:
             self._stage1["flag"] += 1
-            return Verdict(s, "flag", sig,
-                           f"OOV, one flip reaches {sig.one_flip_words[0]!r}")
+            return Verdict(s, "flag", sig, f"OOV, one flip reaches {sig.one_flip_words[0]!r} (fallback)")
 
-        # Gray: spend expensive signals
-        self._enrich_expensive(sig, tok, context)
-        s = self.score(sig)
         if s >= self.flag_above:
             self._stage1["flag"] += 1
-            return Verdict(s, "flag", sig, "gray resolved to flag")
-        if s >= self.pass_below:
+            return Verdict(s, "flag", sig, "flag (fallback)")
+        if s >= self.pass_below or not sig.in_lexicon:
             self._stage1["gray"] += 1
-            return Verdict(s, "gray", sig,
-                           "uncertain; correct only with a margin")
+            return Verdict(s, "gray", sig, "gray (fallback)")
+
         self._stage1["pass"] += 1
-        return Verdict(s, "pass", sig, "gray resolved to pass")
+        return Verdict(s, "pass", sig, "pass (fallback)")
+
+    def verdict_batch(self, tokens: Sequence[str], context_fn=None,
+                      ocr_confs: Optional[Sequence[Optional[float]]] = None,
+                      doc_freqs: Optional[Sequence[Optional[float]]] = None):
+        if self.engine is not None:
+            return self.engine.verdict_batch(tokens, context_fn=context_fn, ocr_confs=ocr_confs, doc_freqs=doc_freqs)
+        # Fallback loop
+        results = []
+        for i, tok in enumerate(tokens):
+            ctx = context_fn(i) if context_fn else []
+            conf = ocr_confs[i] if ocr_confs and i < len(ocr_confs) else None
+            df = doc_freqs[i] if doc_freqs and i < len(doc_freqs) else None
+            results.append(self.verdict(tok, ctx, ocr_conf=conf, doc_freq=df))
+        return results
 
     def detection_stats(self):
         return {"stage1": dict(self._stage1)}
 
     def reset_counters(self):
         self._stage1 = {"pass": 0, "gray": 0, "flag": 0}
+        if self.engine is not None:
+            self.engine.reset_counters()
