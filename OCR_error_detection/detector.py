@@ -3,10 +3,9 @@ from __future__ import annotations
 
 import logging
 import os
-import re
-import math 
+from typing import Dict, Optional, Sequence
+
 import joblib
-from typing import Callable, Dict, Optional, Sequence
 
 # Lazy imports for heavy dependencies
 SymSpell = Verbosity = None
@@ -32,14 +31,16 @@ def _load_kenlm():
     return kenlm
 
 
-from normalizer import AmharicNormalizer
-from confusion import ConfusionMatrix
-from signals import (
-    TokenSignals, Verdict,
-    compute_surface_signals, compute_lexical_signals,
-    compute_one_flip_signals,
-)
+from OCR_error_detection.normalizer import AmharicNormalizer
+from OCR_error_detection.confusion import ConfusionMatrix
+from OCR_error_detection.signals import TokenSignals, Verdict, compute_lexical_signals
 from OCR_error_detection.scoring import combine_signals, DEFAULT_WEIGHTS
+from OCR_error_detection.features import (
+    FEATURE_NAMES, FEATURE_SCHEMA_VERSION, FeatureContext,
+    PUNCT_RE, RARE_GLYPHS,
+    apply_legacy_imputation, cheap_signals, static_features, to_vector,
+    with_context,
+)
 
 logger = logging.getLogger("ocr_error_detection")
 
@@ -52,16 +53,13 @@ CANDIDATE_MODEL_PATHS = [
     os.path.join(os.path.dirname(_HERE), "detector_lgbm.pkl"),
 ]
 
-PUNCT_RE = re.compile(r'[^\w\s]|\d')
-RARE_GLYPHS = set("ሠሡሢሣሤሥሦፀፁፂፃፄፅፆጰጱጲጳጴጵጶዐዑዒዓዔዕዖ")
-
 
 class DetectionEngine:
     """Production OCR Error Detection Engine driven by LightGBM & Optical Evidence."""
 
     def __init__(
         self,
-        dict_vocab_path: str ="/mnt/mintdata/Users/Des/Mint/4_Dataset_wo/Data/dics_i7/main_i7.txt",
+        dict_vocab_path: str = "/mnt/mintdata/Users/Des/Mint/4_Dataset_wo/Data/dics_i7/main_i7.txt",
         confusion_matrix_path: str = "confusion_matrix.json",
         char_lm_path: Optional[str] = DEFAULT_CHAR_LM_PATH,
         lgbm_model_path: Optional[str] = "Model/detector_lgbm.pkl",
@@ -81,6 +79,7 @@ class DetectionEngine:
         self.max_one_flip = max_one_flip
         self.verbose = verbose
         self._stage1 = {"pass": 0, "gray": 0, "flag": 0}
+        self._legacy_model = False
 
         # ── 1. Load LightGBM Model ──
         self.lgbm_model = None
@@ -97,12 +96,25 @@ class DetectionEngine:
             try:
                 payload = joblib.load(target_pkl)
                 self.lgbm_model = payload["model"]
-                self.lgbm_features = payload["features"]
+                self.lgbm_features = list(payload["features"])
+                # Validate names now, so a mismatch fails at load time, not per word.
+                to_vector({n: 0.0 for n in FEATURE_NAMES}, self.lgbm_features)
+                schema = int(payload.get("feature_schema_version", 1))
+                self._legacy_model = schema < FEATURE_SCHEMA_VERSION
+                if self._legacy_model:
+                    msg = ("LightGBM model uses feature schema %d (current: %d). Missing "
+                           "context is imputed with legacy constants. Retrain to remove this."
+                           % (schema, FEATURE_SCHEMA_VERSION))
+                    if self.verbose:
+                        print(f"  [WARN] {msg}", flush=True)
+                    else:
+                        logger.info(msg)
                 self.pass_below = payload.get("pass_thresh", self.pass_below)
                 self.flag_above = payload.get("flag_thresh", self.flag_above)
                 if self.verbose:
                     print(f"  LightGBM loaded ({len(self.lgbm_features)} features, gates: {self.pass_below}/{self.flag_above})", flush=True)
             except Exception as e:
+                self.lgbm_model = None
                 if self.verbose:
                     print(f"  [WARN] Failed to load LightGBM model: {e}", flush=True)
         elif self.verbose:
@@ -155,6 +167,17 @@ class DetectionEngine:
         if self.verbose:
             print("  SymSpell index ready.", flush=True)
 
+        # ── 6. Shared feature context (same definition as training) ──
+        self._ctx = FeatureContext(
+            vocab=self.vocab,
+            norm=self._norm,
+            reverse_sub_map=self.reverse_sub_map,
+            max_one_flip=self.max_one_flip,
+            char_lm=self.char_lm,
+            symspell=self.symspell,
+            verbosity_top=self._VERBOSITY_TOP,
+        )
+
     def _load_vocabulary(self, path, max_types, min_freq):
         import heapq
         with open(path, "r", encoding="utf-8", errors="ignore") as f:
@@ -184,69 +207,30 @@ class DetectionEngine:
         if not word: return word
         return self.normalizer.normalize_word_strict(word)
 
-    def _score_char_lm(self, word: str) -> Optional[float]:
-        if not self.char_lm: return None
-        norm_w = self._norm(word)
-        clean_w = PUNCT_RE.sub('', norm_w).strip()
-        if len(clean_w) < 2: return None
-        spaced = " ".join(clean_w)
-        try:
-            raw = self.char_lm.score(spaced, bos=True, eos=True)
-            return raw / (len(clean_w) + 1.0)
-        except Exception:
-            return None
-
     def _cheap_signals(self, tok: str, context: Sequence[str] = ()) -> TokenSignals:
-        sig = TokenSignals(token=tok)
-        compute_surface_signals(tok, sig)
-        compute_lexical_signals(tok, sig, self.vocab, self._norm,
-                                self.symspell, getattr(self, '_VERBOSITY_TOP', 2))
-        compute_one_flip_signals(tok, sig, self.vocab, self._norm,
-                                 self.reverse_sub_map, self.max_one_flip)
-        return sig
+        return cheap_signals(tok, self._ctx)
 
-    def _extract_lgbm_features(self, tok: str, sig: TokenSignals, doc_freq: int = 1) -> list:
-        clean_w = PUNCT_RE.sub('', tok).strip()
-        t_len = max(len(clean_w), 1)
-
-        # Lookup corpus frequency from master dictionary
-        freq = self.vocab.get(clean_w, self.vocab.get(tok, 0))
-        log_freq = math.log10(freq + 1) if freq > 0 else 0.0
-        in_lex = 1 if freq > 0 else 0
-
-        char_klm = getattr(sig, "char_lm_score", None)
-        if char_klm is None:
-            char_klm = self._score_char_lm(tok)
-            if char_klm is not None:
-                setattr(sig, "char_lm_score", char_klm)
-            else:
-                char_klm = -2.5
-
-        rare_cnt = sum(1 for ch in clean_w if ch in RARE_GLYPHS)
-        rare_ratio = rare_cnt / float(t_len)
-        one_flip_cnt = len(sig.one_flip_words)
-
-        feat_map = {
-            "log_corpus_freq": log_freq,
-            "in_lexicon": in_lex,
-            "doc_freq": doc_freq,
-            "is_doc_singleton": 1 if doc_freq == 1 else 0,
-            "token_len": t_len,
-            "has_one_flip": 1 if one_flip_cnt > 0 else 0,
-            "one_flip_count": one_flip_cnt,
-            "char_kenlm_score": char_klm,
-            "rare_glyph_ratio": rare_ratio,
-        }
-        return [feat_map.get(col, 0.0) for col in self.lgbm_features]
+    def _extract_lgbm_features(self, tok: str, sig: TokenSignals,
+                               doc_freq: Optional[int] = None) -> list:
+        """Model input vector, in the order the model was trained with."""
+        feats = static_features(tok, self._ctx, sig)
+        feats = with_context(feats, doc_freq)
+        if self._legacy_model:
+            feats = apply_legacy_imputation(feats)
+        return to_vector(feats, self.lgbm_features)
 
     def verdict(
         self,
         tok: str,
         context: Sequence[str] = (),
         ocr_conf: Optional[float] = None,
-        doc_freq: int = 1,
+        doc_freq: Optional[int] = None,
     ) -> Verdict:
-        """Full detection verdict: returns 'pass', 'gray', or 'flag'."""
+        """Full detection verdict: returns 'pass', 'gray', or 'flag'.
+
+        doc_freq: occurrences of this word on its page. None = no page context
+        (isolated word); the model then sees NaN, not a singleton.
+        """
         sig = self._cheap_signals(tok, context)
         if ocr_conf is not None:
             sig.ocr_conf = max(0.0, min(1.0, ocr_conf / 100.0))
@@ -254,7 +238,7 @@ class DetectionEngine:
         # ── PATH A: LightGBM Model Prediction (Primary) ──
         if self.lgbm_model is not None:
             feats = self._extract_lgbm_features(tok, sig, doc_freq=doc_freq)
-            # Calibrated probability P(error) in [0, 1]
+            # Score of the model. Calibration is a Stage 2 task; see docs/lgbm_detector_review.md.
             prob = float(self.lgbm_model.predict([feats])[0])
             s = prob
 
@@ -268,7 +252,7 @@ class DetectionEngine:
                 label = "pass"
                 reason = f"LGBM={s:.3f} (PASS)"
 
-            # Optical Safety Floors
+            # Optical Safety Floors (removed in Stage 2 of the roadmap)
             if not sig.in_lexicon and sig.ocr_conf is not None and sig.ocr_conf < 0.50:
                 label = "flag"
                 reason += f", severe low-conf ({sig.ocr_conf*100:.0f}%)"
