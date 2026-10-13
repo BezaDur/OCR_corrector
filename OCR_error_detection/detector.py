@@ -1,22 +1,16 @@
-# detector.py — The main detection engine.
-#
-# Loads its own vocab, SymSpell index, and confusion matrix.
-# Does NOT need the corrector, KenLM, or the beam decoder.
-#
-# Usage:
-#     detector = DetectionEngine(dict_vocab_path="lexicon.txt")
-#     # confusion_matrix.json is optional — has a sensible default
-#     result = detector.verdict("በሸታ")
-#     print(result.label)  # "pass" | "gray" | "flag"
-# --------------------------------------------------------------------------- #
+# detector.py — Production OCR Error Detection Engine with LightGBM ML Classifier
 from __future__ import annotations
 
 import logging
 import os
+import re
+import math 
+import joblib
 from typing import Callable, Dict, Optional, Sequence
 
-# Lazy imports for heavy deps
+# Lazy imports for heavy dependencies
 SymSpell = Verbosity = None
+kenlm = None
 
 
 def _load_symspell():
@@ -27,108 +21,127 @@ def _load_symspell():
     return SymSpell, Verbosity
 
 
-from OCR_error_detection.normalizer import AmharicNormalizer
-from OCR_error_detection.confusion import ConfusionMatrix
-from OCR_error_detection.signals import (
+def _load_kenlm():
+    global kenlm
+    if kenlm is None:
+        try:
+            import kenlm as _kenlm
+            kenlm = _kenlm
+        except ImportError:
+            kenlm = False
+    return kenlm
+
+
+from normalizer import AmharicNormalizer
+from confusion import ConfusionMatrix
+from signals import (
     TokenSignals, Verdict,
     compute_surface_signals, compute_lexical_signals,
-    compute_one_flip_signals, compute_char_lm_score,
-    compute_lm_fit, compute_morphology,
-    MEAN_TOKEN_LEN,
+    compute_one_flip_signals,
 )
 from OCR_error_detection.scoring import combine_signals, DEFAULT_WEIGHTS
 
-
 logger = logging.getLogger("ocr_error_detection")
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_CHAR_LM_PATH = "/mnt/mintdata/Users/Des/Mint/Models/KenLM/character_model/amharic_char_model.klm"
+CANDIDATE_MODEL_PATHS = [
+    os.path.join(_HERE, "Model", "detector_lgbm.pkl"),
+    os.path.join(_HERE, "detector_lgbm.pkl"),
+    os.path.join(os.path.dirname(_HERE), "Model", "detector_lgbm.pkl"),
+    os.path.join(os.path.dirname(_HERE), "detector_lgbm.pkl"),
+]
+
+PUNCT_RE = re.compile(r'[^\w\s]|\d')
+RARE_GLYPHS = set("ሠሡሢሣሤሥሦፀፁፂፃፄፅፆጰጱጲጳጴጵጶዐዑዒዓዔዕዖ")
 
 
 class DetectionEngine:
-    """Standalone OCR error detector.
-
-    Loads its own lexicon, builds its own SymSpell index, and reads the
-    confusion matrix.  No dependency on the corrector or KenLM.
-
-    Parameters
-    ----------
-    dict_vocab_path : str
-        Path to the frequency dictionary.  Each line: "word [freq]"
-    confusion_matrix_path : str
-        Path to confusion_matrix.json.
-    weights : dict, optional
-        Logistic scorer weights.  Default: sensible starting point.
-    pass_below : float
-        Verdict threshold: score < pass_below → PASS.
-    flag_above : float
-        Verdict threshold: score ≥ flag_above → FLAG.
-    char_lm : object, optional
-        Character-level language model with .score(word, bos, eos).
-    max_one_flip : int
-        Maximum number of one-flip hits to record.
-    max_lexicon_types : int, optional
-        Cap the lexicon at the N most frequent types (memory bound).
-    dict_min_freq : int, optional
-        Drop types with frequency < N.
-    symspell_max_edit_distance : int
-        SymSpell edit distance (1 recommended; 2+ will OOM on large lexicons).
-    segmenter : object, optional
-        Morphological analyzer with .segment_word(word) → dict.
-        Used only for the morphology signal, which is expensive and optional.
-    morphemes_json_path : str, optional
-        Path to morphemes.json for the peel guard (used by the corrector,
-        optional for detection).
-    verbose : bool
-        Print initialization progress.
-    """
+    """Production OCR Error Detection Engine driven by LightGBM & Optical Evidence."""
 
     def __init__(
         self,
-        dict_vocab_path: str,
-        confusion_matrix_path: str = None,
+        dict_vocab_path: str ="/mnt/mintdata/Users/Des/Mint/4_Dataset_wo/Data/dics_i7/main_i7.txt",
+        confusion_matrix_path: str = "confusion_matrix.json",
+        char_lm_path: Optional[str] = DEFAULT_CHAR_LM_PATH,
+        lgbm_model_path: Optional[str] = "Model/detector_lgbm.pkl",
         weights: Optional[Dict[str, float]] = None,
-        pass_below: float = 0.30,
+        pass_below: float = 0.25,
         flag_above: float = 0.70,
-        char_lm=None,
         max_one_flip: int = 8,
         max_lexicon_types: int = None,
         dict_min_freq: int = None,
         symspell_max_edit_distance: int = 1,
-        segmenter=None,
-        morphemes_json_path: str = None,
         verbose: bool = True,
     ):
         self.normalizer = AmharicNormalizer()
         self.w = dict(DEFAULT_WEIGHTS if weights is None else weights)
         self.pass_below = pass_below
         self.flag_above = flag_above
-        self.char_lm = char_lm
         self.max_one_flip = max_one_flip
         self.verbose = verbose
-        self._morph_calls = 0
         self._stage1 = {"pass": 0, "gray": 0, "flag": 0}
 
-        # -- Morphological segmenter (optional) --
-        self.segmenter = segmenter
+        # ── 1. Load LightGBM Model ──
+        self.lgbm_model = None
+        self.lgbm_features = []
 
-        # -- Load confusion matrix --
+        if lgbm_model_path and os.path.exists(lgbm_model_path):
+            target_pkl = lgbm_model_path
+        else:
+            target_pkl = next((p for p in CANDIDATE_MODEL_PATHS if os.path.exists(p)), None)
+
+        if target_pkl:
+            if self.verbose:
+                print(f"Loading LightGBM Model: {target_pkl}", flush=True)
+            try:
+                payload = joblib.load(target_pkl)
+                self.lgbm_model = payload["model"]
+                self.lgbm_features = payload["features"]
+                self.pass_below = payload.get("pass_thresh", self.pass_below)
+                self.flag_above = payload.get("flag_thresh", self.flag_above)
+                if self.verbose:
+                    print(f"  LightGBM loaded ({len(self.lgbm_features)} features, gates: {self.pass_below}/{self.flag_above})", flush=True)
+            except Exception as e:
+                if self.verbose:
+                    print(f"  [WARN] Failed to load LightGBM model: {e}", flush=True)
+        elif self.verbose:
+            print("  [WARN] detector_lgbm.pkl not found, running rule fallback.", flush=True)
+
+        # ── 2. Load KenLM Character Model ──
+        self.char_lm = None
+        if char_lm_path and os.path.exists(char_lm_path):
+            klm = _load_kenlm()
+            if klm:
+                if self.verbose:
+                    print(f"Loading Character KenLM: {char_lm_path}", flush=True)
+                try:
+                    self.char_lm = klm.Model(char_lm_path)
+                except Exception as e:
+                    if self.verbose:
+                        print(f"  [WARN] Failed to load KenLM model: {e}", flush=True)
+
+        # ── 3. Load Confusion Matrix ──
         if confusion_matrix_path is None:
-            confusion_matrix_path = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)), "confusion_matrix.json")
+            confusion_matrix_path = os.path.join(_HERE, "confusion_matrix.json")
+            if not os.path.exists(confusion_matrix_path):
+                confusion_matrix_path = os.path.join(os.path.dirname(_HERE), "confusion_matrix.json")
+
         if self.verbose:
             print(f"Loading optical confusion matrix: {confusion_matrix_path}", flush=True)
         self._confusion = ConfusionMatrix(confusion_matrix_path)
         self.reverse_sub_map = self._confusion.reverse_sub_map
 
-        # -- Load vocabulary --
+        # ── 4. Load Vocabulary ──
         if self.verbose:
             print(f"Loading lexicon: {dict_vocab_path}", flush=True)
-        self.vocab = {}          # norm_word → frequency
-        self.surface_form = {}   # norm_word → best surface form
+        self.vocab = {}
+        self.surface_form = {}
         self._load_vocabulary(dict_vocab_path, max_lexicon_types, dict_min_freq)
-
         if self.verbose:
             print(f"  {len(self.vocab):,} active types", flush=True)
 
-        # -- Build SymSpell index --
+        # ── 5. Build SymSpell Index ──
         _SS, _V = _load_symspell()
         self._VERBOSITY_TOP = _V.CLOSEST if hasattr(_V, 'CLOSEST') else 2
         self.symspell = _SS(
@@ -142,18 +155,7 @@ class DetectionEngine:
         if self.verbose:
             print("  SymSpell index ready.", flush=True)
 
-        # -- Morphology-related data (optional) --
-        self.protected_suffixes = set()
-        self.protected_prefixes = set()
-        if morphemes_json_path:
-            self._load_morphemes(morphemes_json_path)
-
-    # ------------------------------------------------------------------ #
-    # Vocabulary loading
-    # ------------------------------------------------------------------ #
-
     def _load_vocabulary(self, path, max_types, min_freq):
-        """Read the frequency dictionary, optionally capping at top-N types."""
         import heapq
         with open(path, "r", encoding="utf-8", errors="ignore") as f:
             for line in f:
@@ -171,73 +173,30 @@ class DetectionEngine:
         if min_freq and min_freq > 1:
             keep = [w for w, f in self.vocab.items() if f >= min_freq]
             self.vocab = {w: self.vocab[w] for w in keep}
-            self.surface_form = {w: self.surface_form[w]
-                                 for w in keep if w in self.surface_form}
+            self.surface_form = {w: self.surface_form[w] for w in keep if w in self.surface_form}
 
         if max_types and len(self.vocab) > max_types:
-            keep = heapq.nlargest(max_types, self.vocab,
-                                  key=self.vocab.__getitem__)
+            keep = heapq.nlargest(max_types, self.vocab, key=self.vocab.__getitem__)
             self.vocab = {w: self.vocab[w] for w in keep}
-            self.surface_form = {w: self.surface_form[w]
-                                 for w in keep if w in self.surface_form}
-
-    # ------------------------------------------------------------------ #
-    # Morpheme loading (optional)
-    # ------------------------------------------------------------------ #
-
-    def _load_morphemes(self, path):
-        import json, os
-        if not os.path.exists(path):
-            if self.verbose:
-                print(f"  [WARN] morphemes.json not found at {path}", flush=True)
-            return
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        for k, v in data.items():
-            if not isinstance(v, (list, set, tuple)):
-                continue
-            if "suffix" in str(k):
-                self.protected_suffixes.update(v)
-            elif "prefix" in str(k):
-                self.protected_prefixes.update(v)
-
-    # ------------------------------------------------------------------ #
-    # Normalization
-    # ------------------------------------------------------------------ #
+            self.surface_form = {w: self.surface_form[w] for w in keep if w in self.surface_form}
 
     def _norm(self, word: str) -> str:
-        if not word:
-            return word
+        if not word: return word
         return self.normalizer.normalize_word_strict(word)
 
-    # ------------------------------------------------------------------ #
-    # Morphology helper (optional, expensive)
-    # ------------------------------------------------------------------ #
-
-    def _is_known_word(self, word: str) -> bool:
-        """Check if a word is known via vocab or segmenter."""
+    def _score_char_lm(self, word: str) -> Optional[float]:
+        if not self.char_lm: return None
         norm_w = self._norm(word)
-        if norm_w in self.vocab:
-            return True
-        if self.segmenter is not None:
-            try:
-                self._morph_calls += 1
-                res = self.segmenter.segment_word(self._norm(word))
-                pos = str(res.get("pos", "")) if isinstance(res, dict) else ""
-                if pos:
-                    tail = pos.rsplit(".", 1)[-1].upper()
-                    if tail not in ("", "UN", "UNKNOWN", "UNK", "NONE", "NULL"):
-                        return True
-            except Exception:
-                pass
-        return False
-
-    # ------------------------------------------------------------------ #
-    # Signal collection
-    # ------------------------------------------------------------------ #
+        clean_w = PUNCT_RE.sub('', norm_w).strip()
+        if len(clean_w) < 2: return None
+        spaced = " ".join(clean_w)
+        try:
+            raw = self.char_lm.score(spaced, bos=True, eos=True)
+            return raw / (len(clean_w) + 1.0)
+        except Exception:
+            return None
 
     def _cheap_signals(self, tok: str, context: Sequence[str] = ()) -> TokenSignals:
-        """Collect cheap signals: surface, lexical, one-flip."""
         sig = TokenSignals(token=tok)
         compute_surface_signals(tok, sig)
         compute_lexical_signals(tok, sig, self.vocab, self._norm,
@@ -246,97 +205,109 @@ class DetectionEngine:
                                  self.reverse_sub_map, self.max_one_flip)
         return sig
 
-    def _enrich_expensive(self, sig: TokenSignals, tok: str,
-                          context: Sequence[str]) -> None:
-        """Add the expensive signals.  Only call in the gray zone."""
-        compute_lm_fit(tok, context, sig, lm=getattr(self, '_lm', None))
-        compute_morphology(tok, sig,
-                           is_known_word_fn=self._is_known_word
-                           if self.segmenter else None)
+    def _extract_lgbm_features(self, tok: str, sig: TokenSignals, doc_freq: int = 1) -> list:
+        clean_w = PUNCT_RE.sub('', tok).strip()
+        t_len = max(len(clean_w), 1)
 
-    # ------------------------------------------------------------------ #
-    # Public API
-    # ------------------------------------------------------------------ #
+        # Lookup corpus frequency from master dictionary
+        freq = self.vocab.get(clean_w, self.vocab.get(tok, 0))
+        log_freq = math.log10(freq + 1) if freq > 0 else 0.0
+        in_lex = 1 if freq > 0 else 0
 
-    def signals(self, tok: str, context: Sequence[str] = ()) -> TokenSignals:
-        """Collect cheap signals for a token.  No LM, no morphology."""
-        return self._cheap_signals(tok, context)
+        char_klm = getattr(sig, "char_lm_score", None)
+        if char_klm is None:
+            char_klm = self._score_char_lm(tok)
+            if char_klm is not None:
+                setattr(sig, "char_lm_score", char_klm)
+            else:
+                char_klm = -2.5
 
-    def score(self, sig: TokenSignals) -> float:
-        """Score a TokenSignals into (0, 1)."""
-        return combine_signals(sig, self.w)
+        rare_cnt = sum(1 for ch in clean_w if ch in RARE_GLYPHS)
+        rare_ratio = rare_cnt / float(t_len)
+        one_flip_cnt = len(sig.one_flip_words)
 
-    def verdict(self, tok: str, context: Sequence[str] = (),
-                ocr_conf: Optional[float] = None) -> Verdict:
-        """Full detection verdict for a token.
+        feat_map = {
+            "log_corpus_freq": log_freq,
+            "in_lexicon": in_lex,
+            "doc_freq": doc_freq,
+            "is_doc_singleton": 1 if doc_freq == 1 else 0,
+            "token_len": t_len,
+            "has_one_flip": 1 if one_flip_cnt > 0 else 0,
+            "one_flip_count": one_flip_cnt,
+            "char_kenlm_score": char_klm,
+            "rare_glyph_ratio": rare_ratio,
+        }
+        return [feat_map.get(col, 0.0) for col in self.lgbm_features]
 
-        Returns a Verdict with label "pass", "gray", or "flag".
-        """
+    def verdict(
+        self,
+        tok: str,
+        context: Sequence[str] = (),
+        ocr_conf: Optional[float] = None,
+        doc_freq: int = 1,
+    ) -> Verdict:
+        """Full detection verdict: returns 'pass', 'gray', or 'flag'."""
         sig = self._cheap_signals(tok, context)
         if ocr_conf is not None:
             sig.ocr_conf = max(0.0, min(1.0, ocr_conf / 100.0))
 
-        s = self.score(sig)
+        # ── PATH A: LightGBM Model Prediction (Primary) ──
+        if self.lgbm_model is not None:
+            feats = self._extract_lgbm_features(tok, sig, doc_freq=doc_freq)
+            # Calibrated probability P(error) in [0, 1]
+            prob = float(self.lgbm_model.predict([feats])[0])
+            s = prob
 
-        # Hard PASS: a lexicon word with no optical neighbour and nothing odd.
+            if s >= self.flag_above:
+                label = "flag"
+                reason = f"LGBM={s:.3f} (FLAG)"
+            elif s >= self.pass_below:
+                label = "gray"
+                reason = f"LGBM={s:.3f} (GRAY)"
+            else:
+                label = "pass"
+                reason = f"LGBM={s:.3f} (PASS)"
+
+            # Optical Safety Floors
+            if not sig.in_lexicon and sig.ocr_conf is not None and sig.ocr_conf < 0.50:
+                label = "flag"
+                reason += f", severe low-conf ({sig.ocr_conf*100:.0f}%)"
+            elif not sig.in_lexicon and label == "pass":
+                label = "gray"
+                reason += ", OOV kept in gray"
+            elif sig.ocr_conf is not None and sig.ocr_conf < 0.60 and label == "pass":
+                label = "gray"
+                reason += f", low-conf floor ({sig.ocr_conf*100:.0f}%)"
+
+            if label == "pass": self._stage1["pass"] += 1
+            elif label == "flag": self._stage1["flag"] += 1
+            else: self._stage1["gray"] += 1
+
+            return Verdict(s, label, sig, reason)
+
+        # ── PATH B: Rule Fallback (if LightGBM is missing) ──
+        s = combine_signals(sig, self.w)
         if (sig.in_lexicon and not sig.one_flip_words
                 and not sig.mixed_script and sig.rare_glyph_ratio < 0.35
                 and (sig.ocr_conf is None or sig.ocr_conf >= 0.75)
                 and s < self.pass_below):
             self._stage1["pass"] += 1
-            return Verdict(s, "pass", sig,
-                           "clean lexicon word, no optical neighbour")
+            return Verdict(s, "pass", sig, "clean lexicon word")
 
-        # Hard FLAG: OOV + single optical flip reaches a real word.
-        if (not sig.in_lexicon and sig.one_flip_words
-                and s >= self.flag_above):
+        if not sig.in_lexicon and sig.one_flip_words and s >= 0.50:
             self._stage1["flag"] += 1
-            return Verdict(s, "flag", sig,
-                           f"OOV, one flip reaches {sig.one_flip_words[0]!r}")
+            return Verdict(s, "flag", sig, f"OOV, one flip reaches {sig.one_flip_words[0]!r}")
 
-        # Gray: spend the expensive signals to decide.
-        self._enrich_expensive(sig, tok, context)
-        s = self.score(sig)
+        if not sig.in_lexicon and sig.ocr_conf is not None and sig.ocr_conf < 0.50:
+            self._stage1["flag"] += 1
+            return Verdict(s, "flag", sig, f"low-conf ({sig.ocr_conf*100:.0f}%) + OOV")
+
         if s >= self.flag_above:
             self._stage1["flag"] += 1
-            return Verdict(s, "flag", sig, "gray resolved to flag")
-        if s >= self.pass_below:
+            return Verdict(s, "flag", sig, "flag")
+        if s >= self.pass_below or not sig.in_lexicon:
             self._stage1["gray"] += 1
-            return Verdict(s, "gray", sig,
-                           "uncertain; correct only with a margin")
+            return Verdict(s, "gray", sig, "gray")
+
         self._stage1["pass"] += 1
-        return Verdict(s, "pass", sig, "gray resolved to pass")
-
-    def verdict_batch(self, tokens: Sequence[str],
-                      context_fn: callable = None) -> Sequence[Verdict]:
-        """Batch detection over a sequence of tokens.
-
-        context_fn: optional function(index) -> context words for token at index.
-        Defaults to using up to 2 preceding tokens.
-        """
-        results = []
-        for i, tok in enumerate(tokens):
-            if context_fn is not None:
-                ctx = context_fn(i)
-            else:
-                ctx = [t for t in tokens[max(0, i - 2):i] if t]
-            results.append(self.verdict(tok, ctx))
-        return results
-
-    # ------------------------------------------------------------------ #
-    # Diagnostics
-    # ------------------------------------------------------------------ #
-
-    def detection_stats(self) -> dict:
-        """Cumulative detection counters."""
-        return {
-            "stage1": dict(self._stage1),
-            "morph_calls": self._morph_calls,
-            "vocab_size": len(self.vocab),
-            "confusion_reverse_map_size": len(self.reverse_sub_map),
-        }
-
-    def reset_counters(self) -> None:
-        """Reset detection counters (not caches)."""
-        self._stage1 = {"pass": 0, "gray": 0, "flag": 0}
-        self._morph_calls = 0
+        return Verdict(s, "pass", sig, "pass")
