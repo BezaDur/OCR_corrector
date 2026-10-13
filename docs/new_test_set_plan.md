@@ -107,3 +107,34 @@ tighter numbers.
 4. **Raw files for the 1,367 pages.** Do the raw per-page OCR outputs and raw ground truth
    (with punctuation) still exist? They are needed to rebuild the training rows (step 2,
    check C8).
+
+## Status (2026-10-13): first synthetic set built
+
+Source: `telegram_c4.txt` (new source, pulled from the branch). Built in `synthetic_eval/`,
+which is git-ignored, so the images and text stay out of Git.
+
+- **Selection** (`docs/lgbm_review/build_synthetic_source.py`): 35 consecutive posts per
+  page, 100 pages sampled at random (seed 7). Posts sharing any word 5-gram with the
+  training ground truth, the other corpus files, or the evaluation ground truth were
+  removed (8,061 of 187,748 candidate posts). Final ground truth has 0 shared 5-grams with
+  any of them.
+- **Rendering** (`docs/lgbm_review/make_synthetic_set.py`): A4 at 300 dpi, 36 px text,
+  11 legible fonts rotated page by page (Abyssinica SIL, Brana, FreeSerif, Noto Sans
+  Ethiopic regular and bold, Nyala, Jiret, Jiret slant, Hiwua, WashRa BS, WashRa slant).
+  Degradation rotates clean / light / medium. Five pages were too full; their last posts
+  are not rendered and are not in the ground truth (manifest notes say so).
+- **OCR** (`docs/lgbm_review/ocr_synthetic_api.py`): Tesseract 5.5.1 through the Python API,
+  model `amh_fast` from `models/`, page segmentation mode 3. The command-line binary is not
+  installed in this sandbox. On the saved preview images in `font_diag_temp/`, the API output
+  matches the saved OCR exactly for Abyssinica and gives 0.952 word similarity for Noto and
+  Nyala. The gap has not been explained. Check one page against `run_ocr.py` on your machine.
+- **Difficulty:** the synthetic pages are easier than real scans. Wrong OCR tokens are 3.7%
+  overall (2.8% clean, 3.9% light, 4.6% medium), against 7.0% on the real evaluation pages.
+  The degradation settings are the lever. The decision is what your real scans look like
+  (see "What I need from you" above).
+
+Still to do:
+1. Run `docs/lgbm_review/check_dictionary_coverage.py --dict <main_i7.txt> --set synthetic_eval`
+   on your machine. It needs the dictionary file.
+2. Decide whether the degradation settings should be harsher, to match the real error rate.
+3. Run one page through `run_ocr.py` and compare with `synthetic_eval/OCRed/`.
