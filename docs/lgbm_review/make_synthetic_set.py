@@ -67,21 +67,31 @@ def wrap(font, text, max_width):
 
 
 def render(page_lines, font, width, height, margin, line_gap):
+    """Draw whole source lines only. Returns (image, rendered_lines, truncated).
+
+    A source line is drawn only if all its wrapped lines fit on the page. The ground
+    truth is the rendered lines, so it always matches the image."""
     img = Image.new("L", (width, height), 255)
     draw = ImageDraw.Draw(img)
     y = margin
     max_w = width - 2 * margin
     line_h = font.size + line_gap
+    rendered, truncated = [], False
     for raw in page_lines:
         if not raw.strip():
             y += line_h // 2
+            rendered.append("")
             continue
-        for ln in wrap(font, raw.strip(), max_w):
-            if y + font.size > height - margin:
-                return img  # overflow: stop at the page edge (text is kept in GT as written)
+        wrapped = wrap(font, raw.strip(), max_w)
+        needed = len(wrapped) * line_h
+        if y + needed > height - margin:
+            truncated = True
+            break
+        for ln in wrapped:
             draw.text((margin, y), ln, font=font, fill=0)
             y += line_h
-    return img
+        rendered.append(raw)
+    return img, rendered, truncated
 
 
 def degrade(img, level, rng):
@@ -137,14 +147,16 @@ def main():
         name = f"page_{i:04d}"
         level = levels[(i - 1) % len(levels)]
         font_path, font = fonts[(i - 1) % len(fonts)]
-        img = render(lines, font, args.width, args.height, args.margin, args.line_gap)
+        img, rendered, truncated = render(lines, font, args.width, args.height,
+                                          args.margin, args.line_gap)
         img = degrade(img, level, rng)
         img.save(os.path.join(img_dir, name + ".png"), dpi=(args.dpi, args.dpi))
         with open(os.path.join(gt_dir, name + ".gt.txt"), "w", encoding="utf-8") as f:
-            f.write("\n".join(lines).strip() + "\n")
+            f.write("\n".join(rendered).strip() + "\n")
         rows.append(dict(page=name, source=args.source, date_collected=args.collected,
                          font=os.path.basename(font_path), font_size=args.size,
-                         degradation=level, seed=args.seed, notes=""))
+                         degradation=level, seed=args.seed,
+                         notes="truncated: lines not rendered were dropped from GT" if truncated else ""))
 
     with open(os.path.join(args.out, "manifest.csv"), "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0]))
