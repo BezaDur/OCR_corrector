@@ -15,7 +15,7 @@ There are no additional dependencies beyond Python's standard library.
 ## Run against the SAME raw files used to generate corrected output
 
 ```bash
-python 05_collect_error_cases.py \
+python 5_correction_evaluation/05_collect_error_cases.py \
   --gt-dir /media/des/Tess/Tesseract2/synthetic_eval/ground_truth \
   --raw-dir /media/des/Tess/Tesseract2/synthetic_eval/ocr_new_model \
   --corrected-dir /media/des/Tess/Tesseract2/synthetic_eval/ocr_corrected \
@@ -23,7 +23,7 @@ python 05_collect_error_cases.py \
   --output-tsv benchmark_results/decisions_strict.tsv \
   --output-summary benchmark_results/patterns_strict.txt
 
-python 05_collect_error_cases.py \
+python 5_correction_evaluation/05_collect_error_cases.py \
   --gt-dir /media/des/Tess/Tesseract2/synthetic_eval/ground_truth \
   --raw-dir /media/des/Tess/Tesseract2/synthetic_eval/ocr_new_model \
   --corrected-dir /media/des/Tess/Tesseract2/synthetic_eval/ocr_corrected \

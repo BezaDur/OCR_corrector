@@ -76,7 +76,7 @@ HEAD hard-codes `kenlm.Model(kenlm_path)`, imports `segmenter` at module scope
 from hard-coded `/mnt/mintdata/...` paths, and exposes none of the above. So:
 
 * `python -m unittest discover -s tests` → `TypeError` on the first `make()`.
-* `python 04_evaluate_full_corrector.py ...` → `TypeError` in `build_corrector()`.
+* `python 5_correction_evaluation/04_evaluate_full_corrector.py ...` → `TypeError` in `build_corrector()`.
 * `benchmark_full_symspell.json` was produced by the **lost** version. It is not
   a measurement of the code at HEAD.
 
