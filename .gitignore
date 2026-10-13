@@ -21,10 +21,16 @@ dist/
 # Ignore local environment configuration files
 .env
 
-
 # Local Python environments and caches
 .venv/
 __pycache__/
 
 # Machine-local benchmark reports
 /benchmark_results/
+
+# Generated evaluation images (too large for git; re-generate with generate_eval_pages.py)
+eval_data/images/
+evaluation_data/images/
+
+# Downloaded fonts (re-download with `gh` API)
+eval_fonts/
