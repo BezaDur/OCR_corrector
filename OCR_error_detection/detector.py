@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import logging
 import os
+from collections import OrderedDict
+from copy import copy
 from typing import Dict, Optional, Sequence
 
 import joblib
@@ -70,6 +72,7 @@ class DetectionEngine:
         max_lexicon_types: int = None,
         dict_min_freq: int = None,
         symspell_max_edit_distance: int = 1,
+        signal_cache_size: int = 4096,
         verbose: bool = True,
     ):
         self.normalizer = AmharicNormalizer()
@@ -80,6 +83,13 @@ class DetectionEngine:
         self.verbose = verbose
         self._stage1 = {"pass": 0, "gray": 0, "flag": 0}
         self._legacy_model = False
+
+        # Bounded cache: OCR documents often repeat the same word many times.
+        # Keep this bounded so long-running evaluation cannot grow RAM without limit.
+        self._signal_cache_maxsize = max(0, int(signal_cache_size))
+        self._signal_cache = OrderedDict()
+        self._signal_cache_hits = 0
+        self._signal_cache_misses = 0
 
         # ── 1. Load LightGBM Model ──
         self.lgbm_model = None
@@ -208,7 +218,38 @@ class DetectionEngine:
         return self.normalizer.normalize_word_strict(word)
 
     def _cheap_signals(self, tok: str, context: Sequence[str] = ()) -> TokenSignals:
-        return cheap_signals(tok, self._ctx)
+        """Compute lexical signals, reusing a bounded cache for repeated tokens.
+
+        The current implementation of cheap_signals receives only ``tok`` and
+        ``self._ctx`` (the ``context`` argument is not used by the original code).
+        A shallow copy prevents per-call OCR confidence assignment from mutating
+        the cached TokenSignals object. Cache size zero disables caching.
+        """
+        if not self._signal_cache_maxsize or not tok:
+            return cheap_signals(tok, self._ctx)
+
+        cached = self._signal_cache.get(tok)
+        if cached is not None:
+            self._signal_cache_hits += 1
+            self._signal_cache.move_to_end(tok)
+            return copy(cached)
+
+        self._signal_cache_misses += 1
+        sig = cheap_signals(tok, self._ctx)
+        self._signal_cache[tok] = copy(sig)
+        self._signal_cache.move_to_end(tok)
+        if len(self._signal_cache) > self._signal_cache_maxsize:
+            self._signal_cache.popitem(last=False)
+        return sig
+
+    def cache_stats(self) -> Dict[str, int]:
+        """Return cache counters for profiling without exposing cached objects."""
+        return {
+            "hits": self._signal_cache_hits,
+            "misses": self._signal_cache_misses,
+            "entries": len(self._signal_cache),
+            "max_entries": self._signal_cache_maxsize,
+        }
 
     def _extract_lgbm_features(self, tok: str, sig: TokenSignals,
                                doc_freq: Optional[int] = None) -> list:
