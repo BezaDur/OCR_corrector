@@ -37,6 +37,6 @@ python -m 4_ocr_correction.test_corrector
 ```
 
 ## Output
-- confusion_matrix.json (single source now in OCR_error_detection/Model/, symlink here)
+- confusion_matrix.json (single source now in OCR_error_detection/Model/, no symlinks)
 - Corrected text
 - Input to 5_correction_evaluation

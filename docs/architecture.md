@@ -266,7 +266,7 @@ except Exception as e:
 
 4. **Single source for confusion_matrix.json**:
    - Keep in OCR_error_detection/Model/confusion_matrix.json (authoritative)
-   - Root confusion_matrix.json becomes symlink or removed, parent loads via path
+   - Root confusion_matrix.json removed (no symlinks), parent loads via path
 
 5. **Archive old detection/**:
    - Move detection/ to archive/detection_old/, keep README explaining deprecated

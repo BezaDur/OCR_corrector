@@ -60,13 +60,13 @@ CANDIDATE_LEXICON_PATHS = [
     os.path.join(_HERE, "main_i7_frq10.txt"),
     os.path.join(_HERE, "Model", "local_lexicon.txt"),  # 750k types, 15MB, from 4.4M tokens
     os.path.join(_HERE, "local_lexicon.txt"),
-    os.path.join(_PARENT, "amh_final_training_text.txt"),
+    os.path.join(_PARENT, "1_data_preparation", "data", "amh_final_training_text.txt"),
     "/mnt/mintdata/Users/Des/Mint/4_Dataset_wo/Data/dics_i7/main_i7.txt",
 ]
 
 CANDIDATE_CONFUSION_PATHS = [
-    os.path.join(_HERE, "confusion_matrix.json"),
-    os.path.join(_HERE, "Model", "confusion_matrix.json"),
+    os.path.join(_HERE, "Model", "confusion_matrix.json"),  # single source, no symlinks
+    os.path.join(_PARENT, "4_ocr_correction", "confusion_matrix.json"),
     os.path.join(_PARENT, "confusion_matrix.json"),
 ]
 
@@ -153,7 +153,7 @@ class DetectionEngine:
         if confusion_matrix_path is None:
             confusion_matrix_path = _resolve_first_existing(CANDIDATE_CONFUSION_PATHS)
             if confusion_matrix_path is None:
-                confusion_matrix_path = os.path.join(_HERE, "confusion_matrix.json")
+                confusion_matrix_path = os.path.join(_HERE, "Model", "confusion_matrix.json")
         if char_lm_path is None:
             char_lm_path = _resolve_first_existing(CANDIDATE_CHAR_LM_PATHS)
         if lgbm_model_path is None:
