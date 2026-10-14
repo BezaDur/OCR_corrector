@@ -69,10 +69,14 @@ CANDIDATE_CONFUSION_PATHS = [
 ]
 
 CANDIDATE_MODEL_PATHS = [
-    os.path.join(_HERE, "Model", "detector_lgbm_v3.pkl"),  # v3 calibrated, no floors
-    os.path.join(_HERE, "Model", "detector_lgbm_v2.pkl"),
+    os.path.join(_HERE, "Model", "detector_lgbm_conffree.pkl"),  # conf-free, no ocr_conf, 14 feats, catches 90.8% high-conf errors
+    os.path.join(_HERE, "Model", "detector_lgbm_v3.pkl"),  # v3 calibrated, NaN for missing conf
+    os.path.join(_HERE, "Model", "detector_lgbm_v4.pkl"),
+    os.path.join(_HERE, "Model", "detector_lgbm_v2.pkl"),  # v2: 96.7% recall but trusts conf (56% high-conf caught)
     os.path.join(_HERE, "Model", "detector_lgbm.pkl"),
     os.path.join(_HERE, "detector_lgbm.pkl"),
+    os.path.join(_HERE, "..", "archive", "models", "detector_lgbm_conffree.pkl"),
+    os.path.join(_HERE, "..", "archive", "models", "detector_lgbm_v3.pkl"),
 ]
 
 CANDIDATE_CHAR_LM_PATHS = [
