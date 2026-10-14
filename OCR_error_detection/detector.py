@@ -56,7 +56,9 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _PARENT = os.path.dirname(_HERE)
 
 CANDIDATE_LEXICON_PATHS = [
-    os.path.join(_HERE, "Model", "local_lexicon.txt"),
+    os.path.join(_HERE, "Model", "main_i7_frq10.txt"),  # 737k types, 15MB, from bigger data, freq>=10, max freq 5.6M, cleaner
+    os.path.join(_HERE, "main_i7_frq10.txt"),
+    os.path.join(_HERE, "Model", "local_lexicon.txt"),  # 750k types, 15MB, from 4.4M tokens
     os.path.join(_HERE, "local_lexicon.txt"),
     os.path.join(_PARENT, "amh_final_training_text.txt"),
     "/mnt/mintdata/Users/Des/Mint/4_Dataset_wo/Data/dics_i7/main_i7.txt",
