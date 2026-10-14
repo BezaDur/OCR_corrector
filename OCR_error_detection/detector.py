@@ -43,6 +43,12 @@ except ImportError:
 
 from OCR_error_detection.normalizer import AmharicNormalizer
 from OCR_error_detection.confusion import ConfusionMatrix
+from OCR_error_detection.features import (
+    FEATURE_SCHEMA_VERSION,
+    FeatureContext,
+    static_features,
+    with_context,
+)
 from OCR_error_detection.signals import (
     TokenSignals, Verdict,
     compute_surface_signals, compute_lexical_signals,
@@ -163,6 +169,7 @@ class DetectionEngine:
         self.lgbm_model = None
         self.lgbm_features: List[str] = []
         self.calibrator = None
+        self._legacy_model = False  # True for schema-1 pickles (pre features.py)
 
         target_pkl = lgbm_model_path
         if target_pkl and not os.path.exists(target_pkl):
@@ -178,6 +185,8 @@ class DetectionEngine:
                 self.pass_below = payload.get("pass_thresh", self.pass_below)
                 self.flag_above = payload.get("flag_thresh", self.flag_above)
                 self.calibrator = payload.get("calibrator") or payload.get("isotonic") or payload.get("calibration")
+                schema = payload.get("feature_schema_version", payload.get("feature_schema", 1))
+                self._legacy_model = int(schema) < FEATURE_SCHEMA_VERSION
                 if self.verbose:
                     cal_info = "with isotonic calibration" if self.calibrator is not None else "no calibration"
                     print(f"  LightGBM loaded ({len(self.lgbm_features)} feats, gates {self.pass_below}/{self.flag_above}) {cal_info}", flush=True)
@@ -259,6 +268,18 @@ class DetectionEngine:
         else:
             if self.verbose:
                 print(f"  SymSpell disabled (enable_symspell=False) for speed — n_neighbors=0", flush=True)
+
+        # Shared feature context — features.py is the single feature definition
+        # used by training (Model/train_LightGBM.py) and inference (here).
+        self._ctx = FeatureContext(
+            vocab=self.vocab,
+            norm=self._norm,
+            reverse_sub_map=self.reverse_sub_map,
+            max_one_flip=self.max_one_flip,
+            char_lm=self.char_lm,
+            symspell=self.symspell,
+            verbosity_top=getattr(self, "_VERBOSITY_TOP", 2),
+        )
 
     def _load_vocabulary(self, path: str, max_types: Optional[int], min_freq: Optional[int]):
         import heapq
@@ -352,42 +373,21 @@ class DetectionEngine:
     def _extract_lgbm_features(self, tok: str, sig: TokenSignals,
                                doc_freq: Optional[float] = None,
                                ocr_conf: Optional[float] = None) -> List[float]:
-        """Extract features with NaN for missing (per roadmap)."""
-        # Canonical boundary: NFC + Amharic normalization before any lookup
-        canonical_tok = self._norm(tok)
-        clean_raw = PUNCT_RE.sub('', tok).strip()
-        clean_raw = ETHIOPIC_PUNCT_RE.sub('', clean_raw).strip()
-        canonical_clean = self._norm(clean_raw) if clean_raw else canonical_tok
+        """Extract features with NaN for missing (per roadmap).
 
-        t_len = max(len(clean_raw), 1)
+        The schema-2 columns come from features.static_features/with_context —
+        the exact code path Model/train_LightGBM.py uses — so a training row
+        and a serving row for the same word are identical (train/serve parity).
+        The extra columns at the bottom cover schema-1 (legacy) model shapes.
+        """
+        # Schema-2 columns: identical to a training extract_frame row.
+        feat_map = with_context(static_features(tok, self._ctx), doc_freq)
 
-        # Vocab lookup via canonical forms
-        freq = self.vocab.get(canonical_clean, 0)
-        if freq == 0:
-            freq = self.vocab.get(canonical_tok, 0)
-
-        log_freq = math.log10(freq + 1) if freq > 0 else 0.0
-        in_lex = 1 if freq > 0 else 0
-
-        # Char LM: NaN if missing (not -2.5)
-        char_klm = getattr(sig, "char_lm_score", None)
-        if char_klm is None:
-            char_klm = self._score_char_lm(tok)
-            if char_klm is not None:
-                setattr(sig, "char_lm_score", char_klm)
-
-        # Use NaN for missing char LM per roadmap
-        if char_klm is None:
-            char_klm_val = float('nan')
-        else:
-            char_klm_val = char_klm
-
-        rare_cnt = sum(1 for ch in clean_raw if ch in RARE_GLYPHS)
-        rare_ratio = rare_cnt / float(t_len)
-        one_flip_cnt = len(sig.one_flip_words)
-
+        # Legacy (schema-1) extras, taken from the caller's signals.
         n_neighbors = getattr(sig, "n_neighbors", 0)
-        len_ratio = getattr(sig, "len_ratio", t_len / 4.14)
+        len_ratio = getattr(sig, "len_ratio", None)
+        if len_ratio is None:
+            len_ratio = max(len(PUNCT_RE.sub('', tok or '').strip()), 1) / 4.14
         mixed_script = 1 if getattr(sig, "mixed_script", False) else 0
         has_digit = 1 if getattr(sig, "has_digit", False) else 0
 
@@ -402,37 +402,13 @@ class DetectionEngine:
         else:
             ocr_conf_norm = float('nan')
 
-        # doc_freq: NaN for isolated token (per roadmap)
-        if doc_freq is None:
-            doc_freq_val = float('nan')
-            is_singleton_val = float('nan')
-        else:
-            try:
-                df = float(doc_freq)
-                doc_freq_val = df
-                is_singleton_val = 1.0 if df == 1 else 0.0
-            except Exception:
-                doc_freq_val = float('nan')
-                is_singleton_val = float('nan')
-
-        feat_map = {
-            "log_corpus_freq": log_freq,
-            "in_lexicon": in_lex,
-            "doc_freq": doc_freq_val,
-            "is_doc_singleton": is_singleton_val,
-            "token_len": t_len,
-            "has_one_flip": 1 if one_flip_cnt > 0 else 0,
-            "one_flip_count": one_flip_cnt,
-            "char_kenlm_score": char_klm_val,
-            "rare_glyph_ratio": rare_ratio,
-            "ocr_conf": ocr_conf_norm,
-            "n_neighbors": float(n_neighbors),
-            "len_ratio": float(len_ratio),
-            "mixed_script": float(mixed_script),
-            "has_digit": float(has_digit),
-            "log_freq": log_freq,
-            "is_high_freq": 1 if log_freq > 3.0 else 0,
-        }
+        feat_map["ocr_conf"] = ocr_conf_norm
+        feat_map["n_neighbors"] = float(n_neighbors)
+        feat_map["len_ratio"] = float(len_ratio)
+        feat_map["mixed_script"] = float(mixed_script)
+        feat_map["has_digit"] = float(has_digit)
+        feat_map["log_freq"] = feat_map["log_corpus_freq"]
+        feat_map["is_high_freq"] = 1 if feat_map["log_corpus_freq"] > 3.0 else 0
 
         if not self.lgbm_features:
             return []
