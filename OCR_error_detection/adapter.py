@@ -94,6 +94,9 @@ class CorrectorDetectionAdapter(DetectorInterface):
                 pass_below=pass_below,
                 flag_above=flag_above,
                 max_one_flip=max_one_flip,
+                max_lexicon_types=50000,
+                dict_min_freq=10,
+                enable_symspell=False,
                 verbose=False,
             )
             # Override with corrector's resources to avoid double load

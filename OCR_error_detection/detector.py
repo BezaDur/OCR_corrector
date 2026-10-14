@@ -131,9 +131,10 @@ class DetectionEngine:
         pass_below: float = 0.20,
         flag_above: float = 0.65,
         max_one_flip: int = 8,
-        max_lexicon_types: Optional[int] = None,
-        dict_min_freq: Optional[int] = None,
+        max_lexicon_types: Optional[int] = 50000,
+        dict_min_freq: Optional[int] = 10,
         symspell_max_edit_distance: int = 1,
+        enable_symspell: bool = False,
         verbose: bool = False,
     ):
         self.normalizer = AmharicNormalizer()
@@ -230,19 +231,32 @@ class DetectionEngine:
                 self.vocab[nw] = 1000
                 self.surface_form[nw] = w
 
-        # SymSpell
-        _SS, _V = _load_symspell()
-        self._VERBOSITY_TOP = _V.CLOSEST if hasattr(_V, 'CLOSEST') else 2
-        self.symspell = _SS(max_dictionary_edit_distance=symspell_max_edit_distance, prefix_length=7)
-        if self.verbose:
-            print(f"  Building SymSpell for {len(self.vocab):,} types...", flush=True)
-        for norm_w, freq in self.vocab.items():
+        # SymSpell — optional, disabled by default for performance
+        # n_neighbors feature is 0 in conf-free models, so SymSpell not needed
+        # Enable only if you need neighbourhood density
+        self.symspell = None
+        self._VERBOSITY_TOP = 2
+        if enable_symspell:
             try:
-                self.symspell.create_dictionary_entry(norm_w, freq)
-            except Exception:
-                continue
-        if self.verbose:
-            print("  SymSpell ready.", flush=True)
+                _SS, _V = _load_symspell()
+                self._VERBOSITY_TOP = _V.CLOSEST if hasattr(_V, 'CLOSEST') else 2
+                self.symspell = _SS(max_dictionary_edit_distance=symspell_max_edit_distance, prefix_length=7)
+                if self.verbose:
+                    print(f"  Building SymSpell for {len(self.vocab):,} types...", flush=True)
+                for norm_w, freq in self.vocab.items():
+                    try:
+                        self.symspell.create_dictionary_entry(norm_w, freq)
+                    except Exception:
+                        continue
+                if self.verbose:
+                    print("  SymSpell ready.", flush=True)
+            except Exception as e:
+                if self.verbose:
+                    print(f"  [WARN] SymSpell build failed: {e}", flush=True)
+                self.symspell = None
+        else:
+            if self.verbose:
+                print(f"  SymSpell disabled (enable_symspell=False) for speed — n_neighbors=0", flush=True)
 
     def _load_vocabulary(self, path: str, max_types: Optional[int], min_freq: Optional[int]):
         import heapq
