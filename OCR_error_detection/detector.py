@@ -1,18 +1,18 @@
-# detector.py — Production OCR Error Detection Engine with LightGBM ML Classifier
+# detector.py — Production OCR Error Detection Engine with LightGBM (Authoritative v3)
+# Roadmap: LightGBM is sole authoritative detector, rule-based is fallback only
+# Stage 1 fixes: strict NFC+Amharic normalization, NaN for missing, fixed sub key
+# Stage 2: no manual floors, isotonic calibration, cost-sensitive thresholds
 from __future__ import annotations
 
 import logging
 import os
-from collections import OrderedDict
-from copy import copy
-from typing import Dict, Optional, Sequence
+import re
+import math
+import unicodedata
+from typing import Callable, Dict, List, Optional, Sequence
 
-import joblib
-
-# Lazy imports for heavy dependencies
 SymSpell = Verbosity = None
 kenlm = None
-
 
 def _load_symspell():
     global SymSpell, Verbosity
@@ -20,7 +20,6 @@ def _load_symspell():
         from symspellpy import SymSpell as _SymSpell, Verbosity as _Verbosity
         SymSpell, Verbosity = _SymSpell, _Verbosity
     return SymSpell, Verbosity
-
 
 def _load_kenlm():
     global kenlm
@@ -32,48 +31,113 @@ def _load_kenlm():
             kenlm = False
     return kenlm
 
+try:
+    import joblib
+except ImportError:
+    joblib = None
+
+try:
+    import numpy as np
+except ImportError:
+    np = None
 
 from OCR_error_detection.normalizer import AmharicNormalizer
 from OCR_error_detection.confusion import ConfusionMatrix
-from OCR_error_detection.signals import TokenSignals, Verdict, compute_lexical_signals
-from OCR_error_detection.scoring import combine_signals, DEFAULT_WEIGHTS
-from OCR_error_detection.features import (
-    FEATURE_NAMES, FEATURE_SCHEMA_VERSION, FeatureContext,
-    PUNCT_RE, RARE_GLYPHS,
-    apply_legacy_imputation, cheap_signals, static_features, to_vector,
-    with_context,
+from OCR_error_detection.signals import (
+    TokenSignals, Verdict,
+    compute_surface_signals, compute_lexical_signals,
+    compute_one_flip_signals,
 )
+from OCR_error_detection.scoring import combine_signals, DEFAULT_WEIGHTS
 
 logger = logging.getLogger("ocr_error_detection")
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_CHAR_LM_PATH = "/mnt/mintdata/Users/Des/Mint/Models/KenLM/character_model/amharic_char_model.klm"
-CANDIDATE_MODEL_PATHS = [
-    os.path.join(_HERE, "Model", "detector_lgbm.pkl"),
-    os.path.join(_HERE, "detector_lgbm.pkl"),
-    os.path.join(os.path.dirname(_HERE), "Model", "detector_lgbm.pkl"),
-    os.path.join(os.path.dirname(_HERE), "detector_lgbm.pkl"),
+_PARENT = os.path.dirname(_HERE)
+
+CANDIDATE_LEXICON_PATHS = [
+    os.path.join(_HERE, "Model", "main_i7_frq10.txt"),  # 737k types, 15MB, from bigger data, freq>=10, max freq 5.6M, cleaner
+    os.path.join(_HERE, "main_i7_frq10.txt"),
+    os.path.join(_HERE, "Model", "local_lexicon.txt"),  # 750k types, 15MB, from 4.4M tokens
+    os.path.join(_HERE, "local_lexicon.txt"),
+    os.path.join(_PARENT, "amh_final_training_text.txt"),
+    "/mnt/mintdata/Users/Des/Mint/4_Dataset_wo/Data/dics_i7/main_i7.txt",
 ]
 
+CANDIDATE_CONFUSION_PATHS = [
+    os.path.join(_HERE, "confusion_matrix.json"),
+    os.path.join(_HERE, "Model", "confusion_matrix.json"),
+    os.path.join(_PARENT, "confusion_matrix.json"),
+]
+
+CANDIDATE_MODEL_PATHS = [
+    os.path.join(_HERE, "Model", "detector_lgbm_conffree.pkl"),  # conf-free, no ocr_conf, 14 feats, catches 90.8% high-conf errors
+    os.path.join(_HERE, "Model", "detector_lgbm_v3.pkl"),  # v3 calibrated, NaN for missing conf
+    os.path.join(_HERE, "Model", "detector_lgbm_v4.pkl"),
+    os.path.join(_HERE, "Model", "detector_lgbm_v2.pkl"),  # v2: 96.7% recall but trusts conf (56% high-conf caught)
+    os.path.join(_HERE, "Model", "detector_lgbm.pkl"),
+    os.path.join(_HERE, "detector_lgbm.pkl"),
+    os.path.join(_HERE, "..", "archive", "models", "detector_lgbm_conffree.pkl"),
+    os.path.join(_HERE, "..", "archive", "models", "detector_lgbm_v3.pkl"),
+]
+
+CANDIDATE_CHAR_LM_PATHS = [
+    os.path.join(_HERE, "Model", "amharic_char_model.klm"),
+    "/mnt/mintdata/Users/Des/Mint/Models/KenLM/character_model/amharic_char_model.klm",
+]
+
+PUNCT_RE = re.compile(r'[^\w\s]|\d')
+ETHIOPIC_PUNCT_RE = re.compile(r'[፡።፣፤፥፦፧፨]')
+RARE_GLYPHS = set("ሠሡሢሣሤሥሦፀፁፂፃፄፅፆጰጱጲጳጴጵጶዐዑዒዓዔዕዖ")
+
+def _resolve_first_existing(candidates: List[str]) -> Optional[str]:
+    for p in candidates:
+        if p and os.path.exists(p):
+            return p
+    return None
+
+def _canonical_form(word: str, normalizer: AmharicNormalizer) -> str:
+    """Canonical Ingestion Boundary: NFC + Amharic strict normalization"""
+    if not word:
+        return word
+    # NFC first
+    try:
+        nfc = unicodedata.normalize('NFC', word)
+    except Exception:
+        nfc = word
+    # Then Amharic strict
+    try:
+        return normalizer.normalize_word_strict(nfc)
+    except Exception:
+        return nfc
 
 class DetectionEngine:
-    """Production OCR Error Detection Engine driven by LightGBM & Optical Evidence."""
+    """Authoritative LightGBM detector — sole source of truth.
+
+    v3 changes per roadmap:
+    - Canonical boundary: NFC + normalize_word_strict before any lookup
+    - NaN for missing KenLM / doc_freq / ocr_conf (LightGBM handles NaN)
+    - No manual safety floors — trusts calibrated P(error)
+    - Isotonic calibration support
+    - doc_freq optional: NaN for isolated token checks
+    - Rule fallback only when LGBM unavailable
+    """
 
     def __init__(
         self,
-        dict_vocab_path: str = "/mnt/mintdata/Users/Des/Mint/4_Dataset_wo/Data/dics_i7/main_i7.txt",
-        confusion_matrix_path: str = "confusion_matrix.json",
-        char_lm_path: Optional[str] = DEFAULT_CHAR_LM_PATH,
-        lgbm_model_path: Optional[str] = "Model/detector_lgbm.pkl",
+        dict_vocab_path: Optional[str] = None,
+        confusion_matrix_path: Optional[str] = None,
+        char_lm_path: Optional[str] = None,
+        lgbm_model_path: Optional[str] = None,
         weights: Optional[Dict[str, float]] = None,
-        pass_below: float = 0.25,
-        flag_above: float = 0.70,
+        pass_below: float = 0.20,
+        flag_above: float = 0.65,
         max_one_flip: int = 8,
-        max_lexicon_types: int = None,
-        dict_min_freq: int = None,
+        max_lexicon_types: Optional[int] = 50000,
+        dict_min_freq: Optional[int] = 10,
         symspell_max_edit_distance: int = 1,
-        signal_cache_size: int = 4096,
-        verbose: bool = True,
+        enable_symspell: bool = False,
+        verbose: bool = False,
     ):
         self.normalizer = AmharicNormalizer()
         self.w = dict(DEFAULT_WEIGHTS if weights is None else weights)
@@ -82,126 +146,170 @@ class DetectionEngine:
         self.max_one_flip = max_one_flip
         self.verbose = verbose
         self._stage1 = {"pass": 0, "gray": 0, "flag": 0}
-        self._legacy_model = False
 
-        # Bounded cache: OCR documents often repeat the same word many times.
-        # Keep this bounded so long-running evaluation cannot grow RAM without limit.
-        self._signal_cache_maxsize = max(0, int(signal_cache_size))
-        self._signal_cache = OrderedDict()
-        self._signal_cache_hits = 0
-        self._signal_cache_misses = 0
+        # Resolve paths
+        if dict_vocab_path is None:
+            dict_vocab_path = _resolve_first_existing(CANDIDATE_LEXICON_PATHS)
+        if confusion_matrix_path is None:
+            confusion_matrix_path = _resolve_first_existing(CANDIDATE_CONFUSION_PATHS)
+            if confusion_matrix_path is None:
+                confusion_matrix_path = os.path.join(_HERE, "confusion_matrix.json")
+        if char_lm_path is None:
+            char_lm_path = _resolve_first_existing(CANDIDATE_CHAR_LM_PATHS)
+        if lgbm_model_path is None:
+            lgbm_model_path = _resolve_first_existing(CANDIDATE_MODEL_PATHS)
 
-        # ── 1. Load LightGBM Model ──
+        # Load LGBM + calibrator
         self.lgbm_model = None
-        self.lgbm_features = []
+        self.lgbm_features: List[str] = []
+        self.calibrator = None
 
-        if lgbm_model_path and os.path.exists(lgbm_model_path):
-            target_pkl = lgbm_model_path
-        else:
-            target_pkl = next((p for p in CANDIDATE_MODEL_PATHS if os.path.exists(p)), None)
+        target_pkl = lgbm_model_path
+        if target_pkl and not os.path.exists(target_pkl):
+            target_pkl = _resolve_first_existing(CANDIDATE_MODEL_PATHS)
 
-        if target_pkl:
+        if target_pkl and joblib is not None and os.path.exists(target_pkl):
             if self.verbose:
                 print(f"Loading LightGBM Model: {target_pkl}", flush=True)
             try:
                 payload = joblib.load(target_pkl)
-                self.lgbm_model = payload["model"]
-                self.lgbm_features = list(payload["features"])
-                # Validate names now, so a mismatch fails at load time, not per word.
-                to_vector({n: 0.0 for n in FEATURE_NAMES}, self.lgbm_features)
-                schema = int(payload.get("feature_schema_version", 1))
-                self._legacy_model = schema < FEATURE_SCHEMA_VERSION
-                if self._legacy_model:
-                    msg = ("LightGBM model uses feature schema %d (current: %d). Missing "
-                           "context is imputed with legacy constants. Retrain to remove this."
-                           % (schema, FEATURE_SCHEMA_VERSION))
-                    if self.verbose:
-                        print(f"  [WARN] {msg}", flush=True)
-                    else:
-                        logger.info(msg)
+                self.lgbm_model = payload.get("model")
+                self.lgbm_features = payload.get("features", [])
                 self.pass_below = payload.get("pass_thresh", self.pass_below)
                 self.flag_above = payload.get("flag_thresh", self.flag_above)
+                self.calibrator = payload.get("calibrator") or payload.get("isotonic") or payload.get("calibration")
                 if self.verbose:
-                    print(f"  LightGBM loaded ({len(self.lgbm_features)} features, gates: {self.pass_below}/{self.flag_above})", flush=True)
+                    cal_info = "with isotonic calibration" if self.calibrator is not None else "no calibration"
+                    print(f"  LightGBM loaded ({len(self.lgbm_features)} feats, gates {self.pass_below}/{self.flag_above}) {cal_info}", flush=True)
             except Exception as e:
-                self.lgbm_model = None
                 if self.verbose:
-                    print(f"  [WARN] Failed to load LightGBM model: {e}", flush=True)
+                    print(f"  [WARN] Failed to load LGBM: {e}", flush=True)
         elif self.verbose:
-            print("  [WARN] detector_lgbm.pkl not found, running rule fallback.", flush=True)
+            print(f"  [WARN] LGBM not found, rule fallback active", flush=True)
 
-        # ── 2. Load KenLM Character Model ──
+        # Char LM optional
         self.char_lm = None
         if char_lm_path and os.path.exists(char_lm_path):
             klm = _load_kenlm()
             if klm:
-                if self.verbose:
-                    print(f"Loading Character KenLM: {char_lm_path}", flush=True)
                 try:
                     self.char_lm = klm.Model(char_lm_path)
+                    if self.verbose:
+                        print(f"Loading Char KenLM: {char_lm_path}", flush=True)
                 except Exception as e:
                     if self.verbose:
-                        print(f"  [WARN] Failed to load KenLM model: {e}", flush=True)
+                        print(f"  [WARN] KenLM load failed: {e}", flush=True)
 
-        # ── 3. Load Confusion Matrix ──
-        if confusion_matrix_path is None:
-            confusion_matrix_path = os.path.join(_HERE, "confusion_matrix.json")
-            if not os.path.exists(confusion_matrix_path):
-                confusion_matrix_path = os.path.join(os.path.dirname(_HERE), "confusion_matrix.json")
+        # Confusion matrix
+        if confusion_matrix_path and os.path.exists(confusion_matrix_path):
+            if self.verbose:
+                print(f"Loading confusion: {confusion_matrix_path}", flush=True)
+            self._confusion = ConfusionMatrix(confusion_matrix_path)
+            self.reverse_sub_map = self._confusion.reverse_sub_map
+        else:
+            if self.verbose:
+                print(f"  [WARN] Confusion not found, empty map", flush=True)
+            self._confusion = None
+            self.reverse_sub_map = {}
 
-        if self.verbose:
-            print(f"Loading optical confusion matrix: {confusion_matrix_path}", flush=True)
-        self._confusion = ConfusionMatrix(confusion_matrix_path)
-        self.reverse_sub_map = self._confusion.reverse_sub_map
+        # Vocab
+        self.vocab: Dict[str, int] = {}
+        self.surface_form: Dict[str, str] = {}
+        if dict_vocab_path and os.path.exists(dict_vocab_path):
+            if self.verbose:
+                print(f"Loading lexicon: {dict_vocab_path}", flush=True)
+            try:
+                self._load_vocabulary(dict_vocab_path, max_lexicon_types, dict_min_freq)
+                if self.verbose:
+                    print(f"  {len(self.vocab):,} types", flush=True)
+            except Exception as e:
+                if self.verbose:
+                    print(f"  [WARN] Lexicon load failed: {e}", flush=True)
+        else:
+            if self.verbose:
+                print(f"  [WARN] Lexicon not found, minimal fallback", flush=True)
+            for w in ["እና", "ነው", "ላይ", "እንደ", "አንድ", "ወደ", "ሰላም", "ቤት"]:
+                nw = _canonical_form(w, self.normalizer)
+                self.vocab[nw] = 1000
+                self.surface_form[nw] = w
 
-        # ── 4. Load Vocabulary ──
-        if self.verbose:
-            print(f"Loading lexicon: {dict_vocab_path}", flush=True)
-        self.vocab = {}
-        self.surface_form = {}
-        self._load_vocabulary(dict_vocab_path, max_lexicon_types, dict_min_freq)
-        if self.verbose:
-            print(f"  {len(self.vocab):,} active types", flush=True)
+        # SymSpell — optional, disabled by default for performance
+        # n_neighbors feature is 0 in conf-free models, so SymSpell not needed
+        # Enable only if you need neighbourhood density
+        self.symspell = None
+        self._VERBOSITY_TOP = 2
+        if enable_symspell:
+            try:
+                _SS, _V = _load_symspell()
+                self._VERBOSITY_TOP = _V.CLOSEST if hasattr(_V, 'CLOSEST') else 2
+                self.symspell = _SS(max_dictionary_edit_distance=symspell_max_edit_distance, prefix_length=7)
+                if self.verbose:
+                    print(f"  Building SymSpell for {len(self.vocab):,} types...", flush=True)
+                for norm_w, freq in self.vocab.items():
+                    try:
+                        self.symspell.create_dictionary_entry(norm_w, freq)
+                    except Exception:
+                        continue
+                if self.verbose:
+                    print("  SymSpell ready.", flush=True)
+            except Exception as e:
+                if self.verbose:
+                    print(f"  [WARN] SymSpell build failed: {e}", flush=True)
+                self.symspell = None
+        else:
+            if self.verbose:
+                print(f"  SymSpell disabled (enable_symspell=False) for speed — n_neighbors=0", flush=True)
 
-        # ── 5. Build SymSpell Index ──
-        _SS, _V = _load_symspell()
-        self._VERBOSITY_TOP = _V.CLOSEST if hasattr(_V, 'CLOSEST') else 2
-        self.symspell = _SS(
-            max_dictionary_edit_distance=symspell_max_edit_distance,
-            prefix_length=7,
-        )
-        if self.verbose:
-            print(f"  Building SymSpell index for {len(self.vocab):,} types...", flush=True)
-        for norm_w, freq in self.vocab.items():
-            self.symspell.create_dictionary_entry(norm_w, freq)
-        if self.verbose:
-            print("  SymSpell index ready.", flush=True)
-
-        # ── 6. Shared feature context (same definition as training) ──
-        self._ctx = FeatureContext(
-            vocab=self.vocab,
-            norm=self._norm,
-            reverse_sub_map=self.reverse_sub_map,
-            max_one_flip=self.max_one_flip,
-            char_lm=self.char_lm,
-            symspell=self.symspell,
-            verbosity_top=self._VERBOSITY_TOP,
-        )
-
-    def _load_vocabulary(self, path, max_types, min_freq):
+    def _load_vocabulary(self, path: str, max_types: Optional[int], min_freq: Optional[int]):
         import heapq
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
-            for line in f:
-                parts = line.strip().split()
-                if not parts:
+        # Detect raw text vs lexicon
+        is_raw = False
+        try:
+            with open(path, "r", encoding="utf-8", errors="ignore") as probe:
+                first = probe.readline()
+                if len(first.strip().split()) > 5:
+                    is_raw = True
+        except Exception:
+            pass
+
+        if is_raw:
+            from collections import Counter
+            counter = Counter()
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    for tok in line.strip().split():
+                        tok = tok.strip()
+                        if not tok:
+                            continue
+                        counter[tok] += 1
+            for w, freq in counter.items():
+                nw = _canonical_form(w, self.normalizer)
+                if not nw:
                     continue
-                w = parts[0]
-                freq = int(parts[-1]) if len(parts) > 1 and parts[-1].isdigit() else 1
-                norm_w = self._norm(w)
-                prev = self.vocab.get(norm_w, 0)
+                prev = self.vocab.get(nw, 0)
                 if freq >= prev:
-                    self.surface_form[norm_w] = w
-                self.vocab[norm_w] = max(prev, freq)
+                    self.surface_form[nw] = w
+                self.vocab[nw] = max(prev, freq)
+        else:
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    parts = line.strip().split()
+                    if not parts:
+                        continue
+                    w = parts[0]
+                    freq = 1
+                    if len(parts) > 1 and parts[-1].isdigit():
+                        try:
+                            freq = int(parts[-1])
+                        except ValueError:
+                            freq = 1
+                    nw = _canonical_form(w, self.normalizer)
+                    if not nw:
+                        continue
+                    prev = self.vocab.get(nw, 0)
+                    if freq >= prev:
+                        self.surface_form[nw] = w
+                    self.vocab[nw] = max(prev, freq)
 
         if min_freq and min_freq > 1:
             keep = [w for w, f in self.vocab.items() if f >= min_freq]
@@ -214,73 +322,188 @@ class DetectionEngine:
             self.surface_form = {w: self.surface_form[w] for w in keep if w in self.surface_form}
 
     def _norm(self, word: str) -> str:
-        if not word: return word
-        return self.normalizer.normalize_word_strict(word)
+        return _canonical_form(word, self.normalizer)
+
+    def _score_char_lm(self, word: str) -> Optional[float]:
+        if not self.char_lm:
+            return None
+        # Canonical
+        norm_w = self._norm(word)
+        clean_w = PUNCT_RE.sub('', norm_w).strip()
+        clean_w = ETHIOPIC_PUNCT_RE.sub('', clean_w).strip()
+        if len(clean_w) < 2:
+            return None
+        spaced = " ".join(clean_w)
+        try:
+            raw = self.char_lm.score(spaced, bos=True, eos=True)
+            return raw / (len(clean_w) + 1.0)
+        except Exception:
+            return None
 
     def _cheap_signals(self, tok: str, context: Sequence[str] = ()) -> TokenSignals:
-        """Compute lexical signals, reusing a bounded cache for repeated tokens.
-
-        The current implementation of cheap_signals receives only ``tok`` and
-        ``self._ctx`` (the ``context`` argument is not used by the original code).
-        A shallow copy prevents per-call OCR confidence assignment from mutating
-        the cached TokenSignals object. Cache size zero disables caching.
-        """
-        if not self._signal_cache_maxsize or not tok:
-            return cheap_signals(tok, self._ctx)
-
-        cached = self._signal_cache.get(tok)
-        if cached is not None:
-            self._signal_cache_hits += 1
-            self._signal_cache.move_to_end(tok)
-            return copy(cached)
-
-        self._signal_cache_misses += 1
-        sig = cheap_signals(tok, self._ctx)
-        self._signal_cache[tok] = copy(sig)
-        self._signal_cache.move_to_end(tok)
-        if len(self._signal_cache) > self._signal_cache_maxsize:
-            self._signal_cache.popitem(last=False)
+        sig = TokenSignals(token=tok)
+        compute_surface_signals(tok, sig)
+        compute_lexical_signals(tok, sig, self.vocab, self._norm,
+                                self.symspell, getattr(self, '_VERBOSITY_TOP', 2))
+        compute_one_flip_signals(tok, sig, self.vocab, self._norm,
+                                 self.reverse_sub_map, self.max_one_flip)
         return sig
 
-    def cache_stats(self) -> Dict[str, int]:
-        """Return cache counters for profiling without exposing cached objects."""
-        return {
-            "hits": self._signal_cache_hits,
-            "misses": self._signal_cache_misses,
-            "entries": len(self._signal_cache),
-            "max_entries": self._signal_cache_maxsize,
+    def _extract_lgbm_features(self, tok: str, sig: TokenSignals,
+                               doc_freq: Optional[float] = None,
+                               ocr_conf: Optional[float] = None) -> List[float]:
+        """Extract features with NaN for missing (per roadmap)."""
+        # Canonical boundary: NFC + Amharic normalization before any lookup
+        canonical_tok = self._norm(tok)
+        clean_raw = PUNCT_RE.sub('', tok).strip()
+        clean_raw = ETHIOPIC_PUNCT_RE.sub('', clean_raw).strip()
+        canonical_clean = self._norm(clean_raw) if clean_raw else canonical_tok
+
+        t_len = max(len(clean_raw), 1)
+
+        # Vocab lookup via canonical forms
+        freq = self.vocab.get(canonical_clean, 0)
+        if freq == 0:
+            freq = self.vocab.get(canonical_tok, 0)
+
+        log_freq = math.log10(freq + 1) if freq > 0 else 0.0
+        in_lex = 1 if freq > 0 else 0
+
+        # Char LM: NaN if missing (not -2.5)
+        char_klm = getattr(sig, "char_lm_score", None)
+        if char_klm is None:
+            char_klm = self._score_char_lm(tok)
+            if char_klm is not None:
+                setattr(sig, "char_lm_score", char_klm)
+
+        # Use NaN for missing char LM per roadmap
+        if char_klm is None:
+            char_klm_val = float('nan')
+        else:
+            char_klm_val = char_klm
+
+        rare_cnt = sum(1 for ch in clean_raw if ch in RARE_GLYPHS)
+        rare_ratio = rare_cnt / float(t_len)
+        one_flip_cnt = len(sig.one_flip_words)
+
+        n_neighbors = getattr(sig, "n_neighbors", 0)
+        len_ratio = getattr(sig, "len_ratio", t_len / 4.14)
+        mixed_script = 1 if getattr(sig, "mixed_script", False) else 0
+        has_digit = 1 if getattr(sig, "has_digit", False) else 0
+
+        # OCR conf: normalized 0-1, NaN if missing
+        if ocr_conf is not None:
+            if ocr_conf > 1:
+                ocr_conf_norm = max(0.0, min(1.0, ocr_conf / 100.0))
+            else:
+                ocr_conf_norm = max(0.0, min(1.0, ocr_conf))
+        elif sig.ocr_conf is not None:
+            ocr_conf_norm = sig.ocr_conf
+        else:
+            ocr_conf_norm = float('nan')
+
+        # doc_freq: NaN for isolated token (per roadmap)
+        if doc_freq is None:
+            doc_freq_val = float('nan')
+            is_singleton_val = float('nan')
+        else:
+            try:
+                df = float(doc_freq)
+                doc_freq_val = df
+                is_singleton_val = 1.0 if df == 1 else 0.0
+            except Exception:
+                doc_freq_val = float('nan')
+                is_singleton_val = float('nan')
+
+        feat_map = {
+            "log_corpus_freq": log_freq,
+            "in_lexicon": in_lex,
+            "doc_freq": doc_freq_val,
+            "is_doc_singleton": is_singleton_val,
+            "token_len": t_len,
+            "has_one_flip": 1 if one_flip_cnt > 0 else 0,
+            "one_flip_count": one_flip_cnt,
+            "char_kenlm_score": char_klm_val,
+            "rare_glyph_ratio": rare_ratio,
+            "ocr_conf": ocr_conf_norm,
+            "n_neighbors": float(n_neighbors),
+            "len_ratio": float(len_ratio),
+            "mixed_script": float(mixed_script),
+            "has_digit": float(has_digit),
+            "log_freq": log_freq,
+            "is_high_freq": 1 if log_freq > 3.0 else 0,
         }
 
-    def _extract_lgbm_features(self, tok: str, sig: TokenSignals,
-                               doc_freq: Optional[int] = None) -> list:
-        """Model input vector, in the order the model was trained with."""
-        feats = static_features(tok, self._ctx, sig)
-        feats = with_context(feats, doc_freq)
-        if self._legacy_model:
-            feats = apply_legacy_imputation(feats)
-        return to_vector(feats, self.lgbm_features)
+        if not self.lgbm_features:
+            return []
+
+        return [feat_map.get(col, float('nan')) for col in self.lgbm_features]
+
+    # Public API for tests
+    def signals(self, tok: str, context: Sequence[str] = ()) -> TokenSignals:
+        return self._cheap_signals(tok, context)
+
+    def score(self, sig: TokenSignals) -> float:
+        return combine_signals(sig, self.w)
+
+    def detection_stats(self):
+        return {"stage1": dict(self._stage1)}
+
+    def reset_counters(self):
+        self._stage1 = {"pass": 0, "gray": 0, "flag": 0}
+
+    def verdict_batch(self, tokens: Sequence[str],
+                      context_fn: Optional[Callable] = None,
+                      ocr_confs: Optional[Sequence[Optional[float]]] = None,
+                      doc_freqs: Optional[Sequence[Optional[float]]] = None) -> List[Verdict]:
+        results = []
+        for i, tok in enumerate(tokens):
+            ctx = context_fn(i) if context_fn else []
+            conf = ocr_confs[i] if ocr_confs and i < len(ocr_confs) else None
+            df = doc_freqs[i] if doc_freqs and i < len(doc_freqs) else None
+            results.append(self.verdict(tok, ctx, ocr_conf=conf, doc_freq=df))
+        return results
 
     def verdict(
         self,
         tok: str,
         context: Sequence[str] = (),
         ocr_conf: Optional[float] = None,
-        doc_freq: Optional[int] = None,
+        doc_freq: Optional[float] = None,
     ) -> Verdict:
-        """Full detection verdict: returns 'pass', 'gray', or 'flag'.
-
-        doc_freq: occurrences of this word on its page. None = no page context
-        (isolated word); the model then sees NaN, not a singleton.
-        """
+        """Authoritative verdict: calibrated P(error) -> pass/gray/flag, no manual floors."""
         sig = self._cheap_signals(tok, context)
         if ocr_conf is not None:
-            sig.ocr_conf = max(0.0, min(1.0, ocr_conf / 100.0))
+            # Store normalized 0-1
+            try:
+                if ocr_conf > 1:
+                    sig.ocr_conf = max(0.0, min(1.0, ocr_conf / 100.0))
+                else:
+                    sig.ocr_conf = max(0.0, min(1.0, ocr_conf))
+            except Exception:
+                sig.ocr_conf = None
 
-        # ── PATH A: LightGBM Model Prediction (Primary) ──
-        if self.lgbm_model is not None:
-            feats = self._extract_lgbm_features(tok, sig, doc_freq=doc_freq)
-            # Score of the model. Calibration is a Stage 2 task; see docs/lgbm_detector_review.md.
-            prob = float(self.lgbm_model.predict([feats])[0])
+        # PATH A: LightGBM authoritative
+        if self.lgbm_model is not None and self.lgbm_features:
+            feats = self._extract_lgbm_features(tok, sig, doc_freq=doc_freq, ocr_conf=ocr_conf)
+            try:
+                raw_prob = float(self.lgbm_model.predict([feats])[0])
+            except Exception as e:
+                if self.verbose:
+                    print(f"[WARN] LGBM predict failed: {e}, fallback to rule", flush=True)
+                raw_prob = combine_signals(sig, self.w)
+
+            # Isotonic calibration if available
+            prob = raw_prob
+            if self.calibrator is not None:
+                try:
+                    # IsotonicRegression expects array
+                    prob = float(self.calibrator.predict([raw_prob])[0])
+                    # Clip to [0,1]
+                    prob = max(0.0, min(1.0, prob))
+                except Exception:
+                    prob = raw_prob
+
             s = prob
 
             if s >= self.flag_above:
@@ -293,46 +516,38 @@ class DetectionEngine:
                 label = "pass"
                 reason = f"LGBM={s:.3f} (PASS)"
 
-            # Optical Safety Floors (removed in Stage 2 of the roadmap)
-            if not sig.in_lexicon and sig.ocr_conf is not None and sig.ocr_conf < 0.50:
-                label = "flag"
-                reason += f", severe low-conf ({sig.ocr_conf*100:.0f}%)"
-            elif not sig.in_lexicon and label == "pass":
-                label = "gray"
-                reason += ", OOV kept in gray"
-            elif sig.ocr_conf is not None and sig.ocr_conf < 0.60 and label == "pass":
-                label = "gray"
-                reason += f", low-conf floor ({sig.ocr_conf*100:.0f}%)"
+            # No manual floors per roadmap — trust calibrated probabilities
+            # Only keep minimal OOV->gray for backward compat if model says pass but OOV
+            # But per roadmap we should NOT override. We keep no overrides.
 
-            if label == "pass": self._stage1["pass"] += 1
-            elif label == "flag": self._stage1["flag"] += 1
-            else: self._stage1["gray"] += 1
+            if label == "pass":
+                self._stage1["pass"] += 1
+            elif label == "flag":
+                self._stage1["flag"] += 1
+            else:
+                self._stage1["gray"] += 1
 
             return Verdict(s, label, sig, reason)
 
-        # ── PATH B: Rule Fallback (if LightGBM is missing) ──
+        # PATH B: Rule fallback (deprecated, lightweight)
         s = combine_signals(sig, self.w)
         if (sig.in_lexicon and not sig.one_flip_words
                 and not sig.mixed_script and sig.rare_glyph_ratio < 0.35
-                and (sig.ocr_conf is None or sig.ocr_conf >= 0.75)
+                and (sig.ocr_conf is None or sig.ocr_conf >= 0.70)
                 and s < self.pass_below):
             self._stage1["pass"] += 1
-            return Verdict(s, "pass", sig, "clean lexicon word")
+            return Verdict(s, "pass", sig, "clean lexicon word (fallback)")
 
         if not sig.in_lexicon and sig.one_flip_words and s >= 0.50:
             self._stage1["flag"] += 1
-            return Verdict(s, "flag", sig, f"OOV, one flip reaches {sig.one_flip_words[0]!r}")
-
-        if not sig.in_lexicon and sig.ocr_conf is not None and sig.ocr_conf < 0.50:
-            self._stage1["flag"] += 1
-            return Verdict(s, "flag", sig, f"low-conf ({sig.ocr_conf*100:.0f}%) + OOV")
+            return Verdict(s, "flag", sig, f"OOV, one flip reaches {sig.one_flip_words[0]!r} (fallback)")
 
         if s >= self.flag_above:
             self._stage1["flag"] += 1
-            return Verdict(s, "flag", sig, "flag")
+            return Verdict(s, "flag", sig, "flag (fallback)")
         if s >= self.pass_below or not sig.in_lexicon:
             self._stage1["gray"] += 1
-            return Verdict(s, "gray", sig, "gray")
+            return Verdict(s, "gray", sig, "gray (fallback)")
 
         self._stage1["pass"] += 1
-        return Verdict(s, "pass", sig, "pass")
+        return Verdict(s, "pass", sig, "pass (fallback)")

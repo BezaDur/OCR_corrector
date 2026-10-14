@@ -7,7 +7,28 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence
 
-from OCR_error_detection.utils import RARE_GLYPH_CLASSES, _confusion_alts, _is_ethiopic
+try:
+    from .utils import RARE_GLYPH_CLASSES, _confusion_alts, _is_ethiopic
+except ImportError:
+    try:
+        from OCR_error_detection.utils import RARE_GLYPH_CLASSES, _confusion_alts, _is_ethiopic
+    except ImportError:
+        try:
+            from utils import RARE_GLYPH_CLASSES, _confusion_alts, _is_ethiopic
+        except ImportError:
+            # Fallback minimal definitions
+            RARE_GLYPH_CLASSES = (
+                set("ሠሡሢሣሤሥሦሧ"),
+                set("ጰጱጲጳጴጵጶጷ"),
+                set("ፀፁፂፃፄፅፆፇ"),
+                set("ዐዑዒዓዔዕዖ"),
+                set("ሷሹሺሻሼሽሾሿ"),
+            )
+            def _is_ethiopic(ch: str) -> bool:
+                o = ord(ch)
+                return (0x1200 <= o < 0x1380) or (0x2D80 <= o < 0x2DE0)
+            def _confusion_alts(ch: str) -> list:
+                return []
 
 
 # --------------------------------------------------------------------------- #

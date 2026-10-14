@@ -7,6 +7,11 @@ rows remain visible rather than being forced into TP/FP/FN categories.
 """
 from dataclasses import dataclass
 
+import os, sys
+_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+for p in [os.path.join(_root, '4_ocr_correction'), os.path.join(_root, '3_training_evaluation'), _root]:
+    if p not in sys.path:
+        sys.path.insert(0, p)
 from ocr_metrics import align_tokens
 
 DECISION_STATUSES = (

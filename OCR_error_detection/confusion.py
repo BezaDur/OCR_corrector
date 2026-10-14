@@ -21,14 +21,43 @@ class ConfusionMatrix:
         # Precompute reverse optical substitutions.
         # Keys: observed character -> list of (true_char, cost).
         # Gated by max_reverse_sub_cost (component-level, NOT the pairwise sum).
+        # FIXED: now handles both "sub" dict format and old "substitutions" list format
         self.reverse_sub_map: Dict[str, List[Tuple[str, float]]] = \
             collections.defaultdict(list)
-        for true_ch, obs_map in self._raw.get("sub", {}).items():
-            if isinstance(obs_map, dict):
-                for obs_ch, cost in obs_map.items():
+
+        # New format: {"sub": {"true_char": {"observed_char": cost}}}
+        if "sub" in self._raw:
+            for true_ch, obs_map in self._raw.get("sub", {}).items():
+                if isinstance(obs_map, dict):
+                    for obs_ch, cost in obs_map.items():
+                        try:
+                            c_flt = float(cost)
+                        except Exception:
+                            c_flt = self.default_sub
+                        if c_flt <= max_reverse_sub_cost and true_ch != obs_ch:
+                            self.reverse_sub_map[obs_ch].append((true_ch, c_flt))
+                elif isinstance(obs_map, list):
+                    # Alternative: list of observed chars
+                    for obs_ch in obs_map:
+                        if true_ch != obs_ch:
+                            self.reverse_sub_map[obs_ch].append((true_ch, 2.2))
+
+        # Old format: {"substitutions": [{"target":..., "ocr":..., "cost":...}]}
+        if "substitutions" in self._raw:
+            for entry in self._raw.get("substitutions", []):
+                if not isinstance(entry, dict):
+                    continue
+                true_ch = entry.get("target") or entry.get("true") or entry.get("gt")
+                obs_ch = entry.get("ocr") or entry.get("observed") or entry.get("pred")
+                cost = entry.get("cost", 2.2)
+                if not true_ch or not obs_ch:
+                    continue
+                try:
                     c_flt = float(cost)
-                    if c_flt <= max_reverse_sub_cost and true_ch != obs_ch:
-                        self.reverse_sub_map[obs_ch].append((true_ch, c_flt))
+                except Exception:
+                    c_flt = 2.2
+                if c_flt <= max_reverse_sub_cost and true_ch != obs_ch:
+                    self.reverse_sub_map[obs_ch].append((true_ch, c_flt))
 
     @property
     def sub_table(self) -> dict:
