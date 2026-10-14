@@ -1,0 +1,5 @@
+symspellpy==6.10.0
+lightgbm
+pandas
+scikit-learn
+symspellpy

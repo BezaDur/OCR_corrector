@@ -9,8 +9,6 @@
 /font_diag_google/
 /synthetic_eval/
 
-
-
 # Ignore any folder named "temp" anywhere in the project
 temp/
 
@@ -34,3 +32,16 @@ evaluation_data/images/
 
 # Downloaded fonts (re-download with `gh` API)
 eval_fonts/
+
+# Cache and temp (cleaned, now in archive/)
+augraphy_cache/
+font_diag_temp/
+
+# Old locations now symlinked - keep symlinks but ignore real data if regenerated
+# true_google_best/ -> 2_training/models/best/
+# amh/ -> archive/models_old/
+# eval_data/ -> archive/eval_data_old/
+
+# Logs
+nohup.out
+time
