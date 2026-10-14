@@ -1,0 +1,13 @@
+rows 946,057  pages 1,367
+C1 label consistency: 0 disagreements; error rate 6.46%
+C2 confidence: distinct values 1; most common ('75.0', 946057)
+C3 doc_freq equals count within page: 642/642 on page_0001
+C4 pages 1367 of 1..1370; missing [1232, 1272, 1279]
+C5 eval OCR tokens 62,479; harmonized rows 62,479; identical aligned tokens 62,479 (100.0% of eval OCR)
+C8 punctuation/digits: training rows 0; eval OCR tokens with them 7,818/63,573 (12.3%)
+C6 eval 5-grams found in training GT: 61,613/61,613 (100.0%)
+C6 eval lines (4+ words) verbatim in training GT: 4,148/4,148
+C6 share of each eval page's 5-grams found on the SAME-numbered training page: mean 0.991, min 0.906
+C7 distinct 5-grams 109,413; on more than one page 82.5%
+C7 groups (5-gram pages <= 50, link >= 20 shared): 19 groups; largest [1147, 31, 31, 27, 20]
+C7 groups (5-gram pages <= 5, link >= 20 shared): 1193 groups; largest [27, 18, 18, 17, 16]

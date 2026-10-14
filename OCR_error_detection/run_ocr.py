@@ -18,6 +18,7 @@ import csv
 import glob
 import os
 import subprocess
+import argparse
 import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -75,6 +76,13 @@ def run_tesseract(image_path, output_base):
 
 
 def main():
+    global IMAGES_DIR, OUTPUT_DIR
+    ap = argparse.ArgumentParser(description="OCR page images with the deployment settings.")
+    ap.add_argument("--images", default=IMAGES_DIR, help="folder of page images")
+    ap.add_argument("--out", default=OUTPUT_DIR, help="folder for .ocr.txt and .conf.tsv")
+    args = ap.parse_args()
+    IMAGES_DIR, OUTPUT_DIR = args.images, args.out
+
     print(f"Python: {sys.executable}")
     try:
         r = subprocess.run(["tesseract", "--version"], capture_output=True, text=True, check=True)

@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence
 
-from utils import RARE_GLYPH_CLASSES, _confusion_alts, _is_ethiopic
+from OCR_error_detection.utils import RARE_GLYPH_CLASSES, _confusion_alts, _is_ethiopic
 
 
 # --------------------------------------------------------------------------- #
