@@ -94,13 +94,14 @@ If LightGBM is not available, it falls back to simple rule-based scorer.
 - `run_ocr.py` — runs Tesseract on images and saves text + confidence
 
 **Model and data:**
-- `Model/detector_lgbm_conffree.pkl` — **NEW authoritative, conf-free** (14 feats, no ocr_conf, 982K) — catches 90.8% high-conf errors, 0.07% false flag
+- `Model/detector_lgbm_conffree.pkl` — **FINAL authoritative, conf-free FULL** (14 feats, no ocr_conf, 4.8MB, 1267 pages train, 150k lexicon, isotonic, pass 0.10/flag 0.70, val recall 94.2% false_flag 0.04%) — catches 90.8% high-conf errors in small test, 0.07% false flag
 - `Model/detector_lgbm_v3.pkl` — previous clean baseline (15 feats with NaN conf, 4.8MB, 91.3% recall, 0.72% false flag, no leakage) — kept as fallback
-- `Model/local_lexicon.txt` — dictionary built from `amh_final_training_text.txt`, 750k types, capped to 15k for small test (15MB full)
+- `Model/local_lexicon.txt` — dictionary built from `amh_final_training_text.txt`, 750k types, capped to 150k for training (15MB)
 - `Model/confusion_matrix.json` — learned optical confusions (also copied to package root for tests, 47K)
-- `Model/harmonized_corpus_jiwer.tsv` — 1367 pages, 946k words, with error labels (49MB, dummy conf 75)
-- `Model/train_conffree.py` — training script for conf-free model (14 feats, no conf)
-- `Model/train_final.py` — copy of conf-free training
+- `Model/harmonized_corpus_jiwer.tsv` — 1367 pages, 946k words, with error labels (49MB, dummy conf 75 — ignored for conf-free)
+- `Model/train_conffree_full.py` — **FINAL training script** (1267 pages, 150k lexicon, 14 feats, no conf, isotonic, no leakage)
+- `Model/train_conffree.py` — small sample version (100 pages, 15k lexicon, for quick experiment)
+- `Model/train_final.py` — copy of full training
 - `Evaluation/` — 100 pages images + ground truth + OCR output with real confidences + `analysis.tsv` (62k rows)
 
 **Tests:**
@@ -114,24 +115,33 @@ If LightGBM is not available, it falls back to simple rule-based scorer.
 
 ## How to train (simple)
 
-**Quick train conf-free (100 eval pages, 15k lexicon, ~1 min):**
+**Quick train conf-free small sample (100 eval pages, 15k lexicon, ~1 min):**
 
 ```bash
 pip install symspellpy lightgbm scikit-learn pandas
 python OCR_error_detection/Model/train_conffree.py
-# Saves Model/detector_lgbm_conffree.pkl (14 feats, no conf)
+# Saves Model/detector_lgbm_conffree.pkl (14 feats, no conf, 982K) — sample, not final
 ```
 
-**Test conf vs conf-free:**
+**Final train conf-free FULL (1267 pages, 150k lexicon, ~2 min, 4.8MB model):**
+
+```bash
+python OCR_error_detection/Model/train_conffree_full.py
+# Saves Model/detector_lgbm_conffree.pkl (14 feats, no conf, 4.8MB, val recall 94.2% false_flag 0.04%)
+# Also saves detector_lgbm_conffree_full.pkl (same)
+```
+
+**Test conf vs conf-free (why conf-free is better):**
 
 ```bash
 python OCR_error_detection/archive/test_conf_free.py
 # Compares WITH conf vs WITHOUT conf on 70/30 split
-# Shows high-conf errors caught, low-conf correct false-flagged
+# WITH conf: 56% high-conf errors caught, 11.7% low-conf false-flagged
+# WITHOUT: 90.8% high-conf caught, 0.1% false-flagged
 ```
 
-**Full training (1267 pages, strict split):**
-- See `train_v3.py` in archive for 1200/67/100 split, isotonic calibration, NaN handling
+**Full training old (with NaN conf, 15 feats):**
+- See `train_v3.py` in archive for 1200/67/100 split, isotonic, NaN handling — previous baseline
 
 ---
 

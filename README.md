@@ -55,11 +55,12 @@ See `OCR_error_detection/README.md` for plain guide, results, and future directi
 **One-line:**
 - Old: 9.85% false flags, 56% clean kept
 - WITH conf (v2): 0.85% false flag, 87.9% recall, but misses 44% high-conf errors (conf>85), false-flags 11.7% low-conf correct
-- **WITHOUT conf (conf-free, NEW): 0.07% false flag (12x better), 90.8% recall, 90.8% high-conf errors caught vs 56%, 0.1% low-conf false-flag vs 11.7%, 0 ሕ/ኀ errors**
+- **WITHOUT conf small sample (100 pages, 15k lexicon): 0.07% false flag (12x better), 90.8% recall, 90.8% high-conf errors caught vs 56%, 0.1% low-conf false-flag vs 11.7%, 0 ሕ/ኀ errors**
+- **WITHOUT conf FULL FINAL (1267 pages, 150k lexicon, 4.8MB, isotonic): val recall 94.2% false_flag 0.04% at 0.10/0.70, pass 0.10 flag 0.70, 14 linguistic feats only**
 
 **Why conf-free is better:** Tesseract conf is unreliable — 19% of real errors have conf>85 (confident but wrong), 7.5% correct have conf<70. If model trusts conf, it misses dangerous high-conf errors and false-flags low-conf correct. Conf-free relies only on linguistic features (dictionary, one-flip, rare glyphs, doc_freq) and gives same verdict regardless of conf — correct behavior.
 
-**Authoritative model:** `OCR_error_detection/Model/detector_lgbm_conffree.pkl` (14 feats, no ocr_conf, 982K, catches 90.8% high-conf errors) — prioritized in `CANDIDATE_MODEL_PATHS`
+**Authoritative FINAL model:** `OCR_error_detection/Model/detector_lgbm_conffree.pkl` (14 feats, no ocr_conf, 4.8MB FULL, 1267 pages, 150k lexicon, isotonic, 94.2% val recall, 0.04% false_flag) — prioritized in `CANDIDATE_MODEL_PATHS`
 
 Previous clean baseline `detector_lgbm_v3.pkl` (15 feats, NaN conf, 4.8MB) kept as fallback.
 
