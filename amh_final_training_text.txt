@@ -1,1 +1,0 @@
-1_data_preparation/data/amh_final_training_text.txt

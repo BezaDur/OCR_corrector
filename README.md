@@ -48,8 +48,7 @@ Child Project (Error Detection, self-contained)
     └── docs/
 
 Old (archived)
-├── archive/detection_old/ — old logistic regression detection/ (deprecated, use OCR_error_detection)
-└── detection -> archive/detection_old (symlink for backward compat)
+└── archive/detection_old/ — old logistic regression detection/ (deprecated, use OCR_error_detection)
 
 Docs
 └── docs/

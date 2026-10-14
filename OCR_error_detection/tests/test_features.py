@@ -17,7 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 _HERE = Path(__file__).resolve().parents[1]
-CONFUSION = str(_HERE / "confusion_matrix.json")
+CONFUSION = str(_HERE / "Model" / "confusion_matrix.json")
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 

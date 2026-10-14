@@ -36,10 +36,9 @@ eval_fonts/
 augraphy_cache/
 font_diag_temp/
 
-# Old locations now symlinked - keep symlinks but ignore real data if regenerated
-# true_google_best/ -> 2_training/models/best/
-# amh/ -> archive/models_old/
-# eval_data/ -> archive/eval_data_old/
+# Old locations that used to be symlinked at the root — the symlinks are gone.
+# Data lives in its numbered folder (e.g. eval_data/ is created fresh by
+# 1_data_preparation/generate_eval_pages.py when needed).
 
 # Logs
 nohup.out

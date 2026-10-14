@@ -45,16 +45,12 @@ from OCR_error_detection.features import (
     FEATURE_NAMES, FEATURE_SCHEMA_VERSION, FeatureContext, extract_frame,
 )
 
-HARMONIZED_TSV = "harmonized_corpus_jiwer.tsv"
-if not os.path.exists(HARMONIZED_TSV):
-    HARMONIZED_TSV = os.path.join(_ROOT, "harmonized_corpus_jiwer.tsv")
+HARMONIZED_TSV = os.path.join(_HERE, "harmonized_corpus_jiwer.tsv")
 
 MASTER_DICT_PATH = "/mnt/mintdata/Users/Des/Mint/4_Dataset_wo/Data/dics_i7/main_i7.txt"
 CHAR_LM_PATH = "/mnt/mintdata/Users/Des/Mint/Models/KenLM/character_model/amharic_char_model.klm"
 
-CONFUSION_PATH = os.path.join(_PARENT, "confusion_matrix.json")
-if not os.path.exists(CONFUSION_PATH):
-    CONFUSION_PATH = os.path.join(_ROOT, "confusion_matrix.json")
+CONFUSION_PATH = os.path.join(_HERE, "confusion_matrix.json")
 
 MODEL_OUTPUT = os.path.join(_HERE, "detector_lgbm.pkl")
 

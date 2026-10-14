@@ -85,7 +85,7 @@
 │   ├── amharic_canonical_normalizer.py (moved from root, canonicalize for metrics)
 │   ├── suspicion.py (fallback SuspicionScorer, moved from root, deprecated but kept)
 │   ├── 03_build_confusion_matrix.py (builds confusion_matrix.json from OCR errors)
-│   ├── confusion_matrix.json -> ../OCR_error_detection/Model/confusion_matrix.json (symlink, single source)
+│   ├── confusion_matrix.json (single source lives in OCR_error_detection/Model/confusion_matrix.json; no symlinks)
 │   ├── trace_candidate.py (debug candidate generation)
 │   └── ...
 │
@@ -185,7 +185,7 @@
 
 6. **No duplicates**:
    - confusion_matrix.json single source in OCR_error_detection/Model/
-   - Root confusion_matrix.json removed or symlink to Model/
+   - Root confusion_matrix.json removed (no symlinks; load the Model/ copy by path)
    - normalizer.py separate: parent (bigger) in 4_ocr_correction/, child (smaller) in OCR_error_detection/
 
 7. **Parent imports child via adapter**:
