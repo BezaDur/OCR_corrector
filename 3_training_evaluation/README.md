@@ -3,11 +3,11 @@
 **Parent project, step 3: evaluate OCR training.**
 
 ## What it does
-- Run OCR eval (02_run_ocr_eval.py)
-- Diagnose OCR engine (06_diagnose_ocr_engine.py)
-- Analyze error composition (09_analyze_error_composition.py)
-- Benchmark new vs existing models (11_benchmark_new_model.py, 11b_benchmark_existing_ocr.py)
-- Audit raw OCR sentences (12_audit_raw_ocr_sentences.py)
+- Run OCR eval (01_run_ocr_eval.py)
+- Diagnose OCR engine (07_diagnose_ocr_engine.py)
+- Analyze error composition (05_analyze_error_composition.py)
+- Benchmark new vs existing models (02_benchmark_new_model.py, 03_benchmark_existing_ocr.py)
+- Audit raw OCR sentences (06_audit_raw_ocr_sentences.py)
 
 ## Metrics (moved from root)
 - ocr_metrics.py — canonical CER/WER, edit distance
@@ -17,8 +17,8 @@
 
 ## How to run
 ```bash
-python 02_run_ocr_eval.py
-python 09_analyze_error_composition.py
+python 01_run_ocr_eval.py
+python 05_analyze_error_composition.py
 ```
 
 ## Output

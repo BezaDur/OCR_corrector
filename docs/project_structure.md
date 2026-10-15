@@ -2,177 +2,86 @@
 
 **You asked: Organizing it in a sensible manner, not just data but also scripts and other stuff is good practice. Also, directory structures, I want files relevant to detection should be inside the directory.**
 
-## Current Layout (before reorg) — Problems
+## Layout
 
-```
-. (repo root, messy)
-├── 1_data_preparation/ (OK, but data file at root)
-├── 2_training/ (OK)
-├── 3_training_evaluation/ (OK, but metrics at root)
-├── 4_ocr_correction/ (only has 03_build_confusion_matrix.py, main corrector at root)
-├── 5_correction_evaluation/ (OK)
-├── detection/ (old logistic regression, deprecated, confusing with OCR_error_detection)
-├── OCR_error_detection/ (new LightGBM, child, self-contained, OK)
-│   ├── Model/ (detector_lgbm_conffree.pkl, main_i7_frq10.txt, etc.)
-│   ├── Evaluation/ (100 pages)
-│   └── ...
-├── amharic_ocr_corrector.py (MAIN CORRECTOR, should be in 4_ocr_correction/)
-├── normalizer.py (PARENT normalizer, bigger, should be in 4_ocr_correction/, duplicate with child)
-├── suspicion.py (fallback, should be in 4_ocr_correction/)
-├── amharic_canonical_normalizer.py (eval util, should be in 3_ or 4_)
-├── ocr_metrics.py (eval metric, should be in 3_)
-├── tsv_gt.py, tsv_confidence.py (eval, should be in 3_)
-├── confusion_matrix.json (duplicate, root and Model/)
-├── amh_final_training_text.txt (4.4M tokens, 56MB, training text, should be in 1_data_preparation/data/)
-├── tests/ (mixed: old detection tests + parent tests)
-├── docs/
-│   ├── components_guide.md (OK)
-│   └── ...
-└── ...
-```
-
-**Problems:**
-- Root files mixed: parent corrector, child detection, old detection, eval utils all at root
-- Duplicates: confusion_matrix.json at root and Model/, normalizer.py at root and child
-- detection/ vs OCR_error_detection/ confusing (old vs new)
-- No clear import parent → child
-- Data file amh_final_training_text.txt at root, not in data folder
-- Evaluation data in multiple places: eval_data/, evaluation_data/, OCR_error_detection/Evaluation/
-
-## Proposed Layout (after reorg) — Clean
+The full annotated tree is in the root `README.md`. This file covers the rules
+behind it and why the layout looks the way it does.
 
 ```
 .
-├── README.md (overall project overview, pipeline 1→2→3→4→5 + child)
-├── requirements.txt (pip install -r requirements.txt)
-├── .gitignore (ignore training/, fonts/, eval_data/images/, etc.)
-├── docs/
-│   ├── components_guide.md (plain explanation: KenLM, SymSpell, LightGBM, dict, model, with diagrams)
-│   ├── architecture.md (parent vs child, data flow, how parent imports child via adapter)
-│   └── project_structure.md (this file)
-│
-├── 1_data_preparation/ (prepare data for OCR training)
-│   ├── README.md (what it does, how to run)
-│   ├── 01_generate_eval_pages.py (generate 100 eval pages)
-│   ├── 07_generate_training_boxes.py
-│   ├── 08_compile_lstmf_and_split.py
-│   ├── assemble_balanced_training_data.py
-│   ├── build_final_training_data.py
-│   ├── data/
-│   │   └── amh_final_training_text.txt (4.4M tokens, 56MB, moved from root)
-│   └── ...
-│
-├── 2_training/ (train Tesseract LSTM)
-│   ├── README.md
-│   ├── 09_train_epochs.sh
-│   ├── 10_package_best_and_fast.sh
-│   └── ...
-│
-├── 3_training_evaluation/ (evaluate OCR, CER/WER)
-│   ├── README.md
-│   ├── 02_run_ocr_eval.py
-│   ├── 06_diagnose_ocr_engine.py
-│   ├── ocr_metrics.py (moved from root, canonical metrics)
-│   ├── tsv_gt.py (moved from root, ground-truth alignment)
-│   ├── tsv_confidence.py (moved from root)
-│   ├── tsv_gt_stats.py (moved from root)
-│   └── ...
-│
-├── 4_ocr_correction/ (parent corrector, main correction logic)
-│   ├── README.md (explains corrector, how it calls child detection via adapter)
-│   ├── amharic_ocr_corrector.py (main corrector, moved from root, 80K lines)
-│   ├── normalizer.py (parent normalizer, bigger, punctuation/numerals/abbrev, moved from root)
-│   ├── amharic_canonical_normalizer.py (moved from root, canonicalize for metrics)
-│   ├── suspicion.py (fallback SuspicionScorer, moved from root, deprecated but kept)
-│   ├── 03_build_confusion_matrix.py (builds confusion_matrix.json from OCR errors)
-│   ├── confusion_matrix.json (single source lives in OCR_error_detection/Model/confusion_matrix.json; no symlinks)
-│   ├── trace_candidate.py (debug candidate generation)
-│   └── ...
-│
-├── 5_correction_evaluation/ (evaluate full corrector)
-│   ├── README.md
-│   ├── 04_evaluate_full_corrector.py
-│   ├── 05_collect_error_cases.py
-│   ├── 13_audit_correction_decisions.py
-│   ├── stage1_labels.py (moved from root, labels for eval)
-│   ├── stage1_fit.py (moved from root, fit for eval)
-│   └── ...
-│
-├── OCR_error_detection/ (child project, self-contained error detection)
-│   ├── README.md (child overview, final model main_i7 freq>=500 54k types recall 94.2% FF 0.01%)
-│   ├── __init__.py (exports DetectionEngine, CorrectorDetectionAdapter, etc.)
-│   ├── detector.py (main, LightGBM, default 50k types freq>=10 no SymSpell, 2.9s init 0.56ms/word)
-│   ├── adapter.py (for parent to import child, reuses vocab, no double load)
-│   ├── normalizer.py (child normalizer, smaller, lexicon keying only, ሐ→ሀ etc.)
-│   ├── signals.py (surface, lexical, one-flip signals)
-│   ├── confusion.py (ConfusionMatrix, reverse map)
-│   ├── scoring.py (combine_signals, deprecated, LightGBM authoritative now)
-│   ├── alignment.py (align OCR vs GT for labels)
-│   ├── utils.py (ETHIOPIC, RARE_GLYPH_CLASSES, etc.)
-│   ├── run_ocr.py (run OCR for eval)
-│   ├── Model/
-│   │   ├── detector_lgbm_conffree.pkl (FINAL, 3.5MB, main_i7 freq>=500 54k types, 1267 pages, 14 feats conf-free)
-│   │   ├── main_i7_frq10.txt (737k types, 15MB, from bigger data, freq>=10, max freq 5.6M, default dict for all needs)
-│   │   ├── local_lexicon.txt (750k types, 15MB, from 4.4M tokens, fallback)
-│   │   ├── confusion_matrix.json (single source, 47K, learned from real errors)
-│   │   ├── harmonized_corpus_jiwer.tsv (1367 pages, 946k words, 49MB, training data)
-│   │   └── train_final.py (train final model)
-│   ├── Evaluation/
-│   │   ├── analysis.tsv (62k rows, page, ocr_word, gt_word, is_error, conf, etc.)
-│   │   ├── GroundTruth/ (100 pages, page_*.gt.txt)
-│   │   ├── OCRed/ (100 pages, page_*.ocr.txt + page_*.conf.tsv)
-│   │   └── images/ (ignored by git, generated)
-│   ├── tests/
-│   │   ├── test_detector.py (child tests)
-│   │   └── ...
-│   ├── scripts/
-│   │   ├── audit_decision.py (moved from root ocr_decision_audit.py)
-│   │   └── ...
-│   └── docs/ (child docs, if needed)
-│
-├── detection/ (old logistic regression, deprecated, will archive)
-│   ├── README.md (explains deprecated, use OCR_error_detection instead)
-│   ├── detector.py (old ErrorDetector, logistic)
-│   ├── train.py
-│   ├── evaluate.py
-│   └── ...
-│
-├── archive/
-│   ├── detection_old/ (old detection/ moved here)
-│   ├── OCR_error_detection_archive/ (old versions of child)
-│   └── ...
-│
-├── vendor/
-│   └── segmenter/ (morphological suite, vendored)
-│       ├── segmenter.py
-│       ├── seg_normalizer.py
-│       └── ...
-│
-├── eval_data/ (deprecated, use OCR_error_detection/Evaluation/)
-├── evaluation_data/ (deprecated, use OCR_error_detection/Evaluation/)
-├── tests/ (parent tests, or move to 5_correction_evaluation/tests/)
-│   ├── test_ocr_corrector.py (parent corrector tests)
-│   └── ...
-│
-└── config/
-    └── ...
+├── 1_data_preparation/    prepare data for Tesseract OCR training
+├── 2_training/            train the Tesseract LSTM
+├── 3_training_evaluation/ evaluate the OCR engine (CER/WER)
+├── 4_ocr_correction/      detect errors, build the confusion matrix, correct
+│   └── error_detection/   the detector (child project)
+├── 5_correction_evaluation/  evaluate the corrections
+├── Evaluation/            the shared 100-page corpus
+├── tools/                 cross-stage utilities (not a pipeline stage)
+│   ├── stage_paths.py     puts every stage folder on sys.path
+│   ├── repo_paths.py      one place for the external data roots
+│   └── analysis/          exploratory scripts behind docs/lgbm_detector_review.md
+├── tests/                 the cross-stage test suite
+├── docs/                  architecture, components, this file, the plain-language guide
+├── vendor/segmenter/      vendored morphological suite
+├── archive/               superseded code, kept for reference, not on sys.path
+├── conftest.py            calls stage_paths.register() for pytest
+└── README.md, requirements.txt, .gitignore
 ```
+
+### Numbering: the folder says what it is for, the number says when it runs
+
+Numbers are **per stage** and start at `01` in each one. They used to be a single
+global counter spread across the five folders, which recorded the order scripts
+were *written* rather than the order they *run*: `02_run_ocr_eval.py` sat in stage
+3, `03_build_confusion_matrix.py` in stage 4, `04_evaluate_full_corrector.py` in
+stage 5, and two different files were both named `09_`. Reading a filename told
+you nothing about where it belonged.
+
+Now `3_training_evaluation/01_run_ocr_eval.py` is unambiguously the first thing
+stage 3 does. Scripts that are not steps in their stage's flow — audits,
+diagnostics, shared libraries — carry **no** number, so a number always means
+"pipeline step, in order".
+
+### Why stage folders are on sys.path instead of being packages
+
+`4_ocr_correction` starts with a digit, so it can never be a Python package:
+`import 4_ocr_correction.x` is a syntax error. But the stages genuinely import
+each other — stage 5 pulls `ocr_metrics` from stage 3 and
+`amharic_canonical_normalizer` from stage 4, and the detector's scripts pull
+`ocr_metrics` from stage 3. The only way those bare imports resolve is for each
+stage folder itself to be on `sys.path`.
+
+That used to be done with thirteen root-level shim modules, one per shared file,
+each an importlib forward to the real module inside a stage. Every new shared
+module needed another shim written by hand. `tools/stage_paths.py` replaces all
+thirteen by registering the *folders*, so a new shared module needs no
+root-level change at all. The root `conftest.py` calls it for pytest; scripts
+call it from the bootstrap block documented in that module.
+
+### Why Evaluation/ sits at the root
+
+The 100-page corpus (GroundTruth, OCRed, and 570 MB of source page images) is
+read by stage 3's `01_run_ocr_eval.py` and `02_benchmark_new_model.py` *and* by
+the detector's `run_ocr.py` and `scripts/evaluate_child.py`. It belongs to
+neither, so it lives above both. The images are the irreplaceable input — the
+OCR output is derived from them, not the other way round.
 
 ## What Goes Where — Rules
 
-1. **Files relevant to detection inside OCR_error_detection/**:
+1. **Files relevant to detection inside 4_ocr_correction/error_detection/**:
    - detector.py, adapter.py, normalizer.py (child), signals.py, confusion.py, scoring.py, alignment.py, utils.py, run_ocr.py
    - Model/* (pkl, txt dicts, json confusion, tsv corpus)
-   - Evaluation/* (GroundTruth, OCRed, analysis.tsv)
    - tests/* (child tests)
-   - scripts/* (train_final.py, audit_decision.py)
+   - scripts/* (evaluate_child.py, tune_gates.py, compare_lexicon_configs.py,
+     probe_late_fusion.py, audit_decision.py, test_child.py)
+   - Model/train_LightGBM.py, Model/train_final.py (training entry points)
 
 2. **Parent corrector files inside 4_ocr_correction/**:
    - amharic_ocr_corrector.py (main corrector)
    - normalizer.py (parent, bigger)
    - suspicion.py (fallback)
    - amharic_canonical_normalizer.py
-   - 03_build_confusion_matrix.py
+   - 01_build_confusion_matrix.py
 
 3. **Evaluation metrics inside 3_training_evaluation/**:
    - ocr_metrics.py, tsv_gt.py, tsv_confidence.py, tsv_gt_stats.py
@@ -181,15 +90,35 @@
    - amh_final_training_text.txt moved to 1_data_preparation/data/
 
 5. **Old detection/ archived**:
-   - detection/ → archive/detection_old/, README says deprecated, use OCR_error_detection
+   - detection/ → archive/detection_old/, README says deprecated, use error_detection
 
-6. **No duplicates**:
-   - confusion_matrix.json single source in OCR_error_detection/Model/
-   - Root confusion_matrix.json removed (no symlinks; load the Model/ copy by path)
-   - normalizer.py separate: parent (bigger) in 4_ocr_correction/, child (smaller) in OCR_error_detection/
+6. **Shared corpus at the root, not inside a consumer**:
+   - Evaluation/ (GroundTruth, OCRed, images, analysis.tsv) at the repo root,
+     because stage 3 and the detector both read it
 
-7. **Parent imports child via adapter**:
-   - 4_ocr_correction/amharic_ocr_corrector.py does `from OCR_error_detection.adapter import CorrectorDetectionAdapter`
+7. **Two different `normalizer.py` modules — always import them qualified**:
+   - `4_ocr_correction/normalizer.py` (311 lines, the parent's)
+   - `4_ocr_correction/error_detection/normalizer.py` (90 lines, the detector's)
+   - A bare `from normalizer import AmharicNormalizer` resolves by sys.path
+     order, so it silently picks one. Write
+     `from error_detection.normalizer import AmharicNormalizer` for the child's.
+
+8. **Three distinct confusion files, not one** (this corrects the earlier
+   "single source, no duplicates" claim; see docs/readme_claims_audit.md):
+   - `4_ocr_correction/error_detection/Model/confusion_matrix.json` — 47,847 B,
+     304 reverse substitutions, the one the detector loads
+   - `2_training/config/confusion_matrix.json` — 65,839 B
+   - `4_ocr_correction/confusion_matrix_patch.json` — 33,843 B
+   - Three different checksums and three different contents. Know which one a
+     number came from before comparing results.
+
+9. **Cross-stage utilities live in tools/, not at the root**:
+   - `tools/repo_paths.py` (external data roots), `tools/stage_paths.py`
+     (sys.path registrar), `tools/analysis/` (exploratory scripts)
+   - Nothing importable sits at the repo root except `conftest.py`
+
+10. **Parent imports child via adapter**:
+   - 4_ocr_correction/amharic_ocr_corrector.py does `from error_detection.adapter import CorrectorDetectionAdapter`
    - Adapter reuses parent's vocab, no double load
    - Child doesn't import parent (no circular)
 
@@ -197,12 +126,12 @@
 
 ```python
 # In 4_ocr_correction/amharic_ocr_corrector.py
-from OCR_error_detection import DetectionEngine
-from OCR_error_detection.adapter import CorrectorDetectionAdapter
+from error_detection import DetectionEngine
+from error_detection.adapter import CorrectorDetectionAdapter
 
 # Option 1: Direct use (self-contained)
 det = DetectionEngine(
-    dict_vocab_path="OCR_error_detection/Model/main_i7_frq10.txt",
+    dict_vocab_path="4_ocr_correction/error_detection/Model/main_i7_frq10.txt",
     dict_min_freq=500,  # 54k types, best FF 0.01%
     max_lexicon_types=None,
     enable_symspell=False
@@ -229,15 +158,33 @@ class AmharicOCRCorrector:
 - **Single source**: Dictionary main_i7_frq10.txt default for all needs, confusion_matrix.json single source
 - **Good practice**: Scripts call dictionary, don't train it; child doesn't train dict, parent doesn't duplicate
 - **Easy import**: Parent calls child via adapter, no circular, no double memory
-- **Clean tests**: Child tests in OCR_error_detection/tests/, parent tests in tests/ or 5_correction_evaluation/
+- **Clean tests**: Child tests in 4_ocr_correction/error_detection/tests/, parent tests in tests/ or 5_correction_evaluation/
 
 ## Migration Steps (implemented)
 
-1. Create docs/architecture.md, docs/project_structure.md (this file)
-2. Move parent corrector files from root to 4_ocr_correction/ (with git mv, update imports)
-3. Move eval utils from root to 3_training_evaluation/
-4. Move detection-relevant from root to OCR_error_detection/scripts/ or archive/
-5. Single source confusion_matrix.json in Model/
-6. Archive old detection/ to archive/detection_old/
-7. Create READMEs for each folder explaining what it does and how to run
-8. Ensure tests pass after moves
+The first reorganization moved the loose root modules into the stage folders and
+left thirteen shims behind at the root so the old import paths kept working.
+
+The second one (this layout) removed that indirection:
+
+1. `OCR_error_detection/` → `4_ocr_correction/error_detection/` — the detector is
+   stage 4's first half, so it sits beside the corrector it feeds
+2. `OCR_error_detection/Evaluation/` → `Evaluation/` at the root — shared corpus
+3. Deleted the thirteen root shims; added `tools/stage_paths.py` and
+   `conftest.py` to replace them
+4. `repo_paths.py` → `tools/repo_paths.py`
+5. Renumbered every stage's scripts from `01` within that stage
+6. Root data into the stages that own it: `fonts/` → `1_data_preparation/fonts/`,
+   `telegram_c4.txt` → `1_data_preparation/data/`, `models/` →
+   `2_training/models/packaged/`
+7. `docs/lgbm_review/*.py` → `tools/analysis/` — they are scripts, not docs
+8. Stage 4's tests into `4_ocr_correction/tests/`
+9. Deleted dead tracked artifacts: `font_diag_temp/`, `augraphy_cache/` (both
+   already in `.gitignore` yet still tracked, referenced by no code) and three
+   committed `.pyc` files
+10. Fixed `_vendored_segmenter_path()`, which resolved `vendor/segmenter`
+    relative to `4_ocr_correction/` instead of the repo root, so the vendored
+    morphology suite was never found and the corrector ran with `lambda_morph`
+    silently cancelled out
+11. Added the missing `pydantic` dependency to `requirements.txt`
+12. Full suite green after every step

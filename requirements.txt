@@ -4,6 +4,7 @@
 #
 # Grouped by what needs them:
 #   - detector / corrector:  numpy, joblib, lightgbm, scikit-learn, symspellpy
+#   - vendored morphology:    pydantic  (vendor/segmenter/morph_types.py)
 #   - training + evaluation:  pandas
 #   - page synthesis / OCR:   opencv-python, Pillow, fonttools
 #   - KenLM:  not on PyPI. Install "kenlm" itself (pip install kenlm, or the
@@ -14,6 +15,11 @@ joblib
 lightgbm
 scikit-learn
 symspellpy==6.10.0
+# vendor/segmenter/morph_types.py raises ImportError without it, and the
+# corrector then runs with morphology silently disabled (lambda_morph cancels
+# out). It was missing from this file, which is why the failure looked like a
+# missing module rather than a missing dependency.
+pydantic
 pandas
 opencv-python
 Pillow

@@ -7,7 +7,7 @@ Date: 2026-10-13. Branch: `arena/3ca31a9a-ocr-corrector`.
 > The plain-language account of step 1, including the dictionary and confidence decisions,
 > is in `docs/lgbm_step1_changes.md`.
 
-Scope: the LightGBM model in `OCR_error_detection/` (`Model/detector_lgbm.pkl`,
+Scope: the LightGBM model in `4_ocr_correction/error_detection/` (`Model/detector_lgbm.pkl`,
 `Model/train_LightGBM.py`, `detector.py`) and how it is used. The request said
 "LightBLM"; I read this as LightGBM, the only gradient-boosting model in the repo.
 
@@ -15,14 +15,14 @@ Method: static reading of the code, loading the pickle, probing the inference pa
 on a small lexicon, and analysis of the saved `Evaluation/analysis.tsv` (100 pages,
 62,385 aligned substitution and correct rows). I did not retrain. The production
 training inputs (`/mnt/mintdata/...` master dictionary and KenLM model) are not in
-this sandbox. Scripts used for the numbers are in `docs/lgbm_review/`.
+this sandbox. Scripts used for the numbers are in `tools/analysis/`.
 
 ## Bottom line
 
 1. **The model is not used by the corrector.** It runs only inside
-   `OCR_error_detection.DetectionEngine`. The corrector (`amharic_ocr_corrector.py`)
+   `error_detection.DetectionEngine`. The corrector (`amharic_ocr_corrector.py`)
    runs `suspicion.SuspicionScorer` with hand-tuned weights, and nothing outside
-   `OCR_error_detection/` references the model. Today the integration does not affect
+   `4_ocr_correction/error_detection/` references the model. Today the integration does not affect
    correction output.
 2. **The reported results are in-sample.** The 100 evaluation pages are part of the
    training corpus, token for token. The final model is fit on all of it.
@@ -43,8 +43,8 @@ per-page `doc_freq` used in `analyze_methods.py` matches the training definition
 
 | Path | Uses LightGBM? | Notes |
 |---|---|---|
-| `OCR_error_detection.DetectionEngine.verdict` | yes (primary) | floors applied after the model |
-| `OCR_error_detection.adapter.CorrectorDetectionAdapter` | no | rule-based `combine_signals`, same name, different logic |
+| `error_detection.DetectionEngine.verdict` | yes (primary) | floors applied after the model |
+| `error_detection.adapter.CorrectorDetectionAdapter` | no | rule-based `combine_signals`, same name, different logic |
 | `suspicion.SuspicionScorer` (corrector Stage 1) | no | `DEFAULT_WEIGHTS` hand-tuned |
 | `detection/` (`ErrorDetector`) | no | separate logistic model (JSON) |
 
@@ -225,10 +225,10 @@ re-check whether the floors still help.
 
 ### 4.10 Package and tests (medium)
 
-- `from OCR_error_detection import DetectionEngine` fails from the repo root
+- `from error_detection import DetectionEngine` fails from the repo root
   (`ModuleNotFoundError: confusion`): `detector.py`, `signals.py` and others use bare
   imports that only resolve when the package folder is on `sys.path`. The README and
-  the test command (`python -m unittest OCR_error_detection.tests.test_detector`)
+  the test command (`python -m unittest error_detection.tests.test_detector`)
   fail as written.
 - With the package folder on the path, 40 tests run: 5 errors and 1 failure. Four
   errors call methods that do not exist on `DetectionEngine` (`verdict_batch`,
@@ -264,7 +264,7 @@ re-check whether the floors still help.
 
 ## Reproducing the numbers
 
-Scripts in `docs/lgbm_review/`:
+Scripts in `tools/analysis/`:
 
 - `probe.py`: inference-path probe (features, normalization mismatch, `doc_freq`, speed).
 - `analyze_eval.py`: AUC/AP, threshold sweep, floor breakdown, normalization groups.
@@ -275,7 +275,7 @@ Scripts in `docs/lgbm_review/`:
 - `label_check.py`: normalizer-equivalent label check in section 4.9.
 
 They need `lightgbm`, `scikit-learn`, `pandas`, `joblib`, and `symspellpy`. They read
-`OCR_error_detection/Evaluation/analysis.tsv`, `harmonized_corpus_jiwer.tsv`, and
+`Evaluation/analysis.tsv`, `harmonized_corpus_jiwer.tsv`, and
 `confusion_matrix.json`, and do not require the master dictionary or KenLM.
 
 ## Step 1 status (data pipeline and hygiene)
@@ -291,9 +291,9 @@ Done in code (no retraining, see "not verified" below):
 | Missing context | `NaN`, not magic numbers: no KenLM, words under 2 characters, no page context (`doc_freq=None`) | `features.py`, `detector.py` |
 | One definition | training and inference both call `features.py`; a parity test checks equal vectors | `tests/test_features.py` |
 | Schema version | pickles carry `feature_schema_version`; schema 1 gets explicit legacy imputation and a warning | `detector.py`, `features.py` |
-| Imports | `from OCR_error_detection import DetectionEngine` works from the repo root | `signals.py`, `detector.py` |
+| Imports | `from error_detection import DetectionEngine` works from the repo root | `signals.py`, `detector.py` |
 
-Tests: `python -m unittest OCR_error_detection.tests.test_features` runs 15 tests and all pass.
+Tests: `python -m unittest error_detection.tests.test_features` runs 15 tests and all pass.
 The existing `test_detector.py` still has the 5 stale-API errors and the `test_passes_all_clean_words` failure. Those belong to step 4.
 
 ### Not verified

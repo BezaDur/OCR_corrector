@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fast smoke run of 04_evaluate_full_corrector.py on the first N pages.
+# Fast smoke run of 01_evaluate_full_corrector.py on the first N pages.
 # Builds a small subset by copying files, so it works with any evaluator version.
 # Usage: ./smoke_eval.sh [N]        (default N=10)
 # Override paths with environment variables, e.g. DATA=/other/path ./smoke_eval.sh 5
@@ -13,8 +13,8 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 # in-repo copies, and KenLM is pointed at explicitly.
 DATA="${DATA:-${TESSERACT_WORKSPACE:-/media/des/Tess/Tesseract2}/synthetic_eval}"
 KENLM="${KENLM:-${AMHARIC_WORD_KENLM:-/mnt/mintdata/Users/Des/Mint/Models/KenLM/word_model/amharic_5gram.binary}}"
-CONF="${CONF:-$REPO/OCR_error_detection/Model/confusion_matrix.json}"
-DICT="${DICT:-$REPO/OCR_error_detection/Model/main_i7_frq10.txt}"
+CONF="${CONF:-$REPO/4_ocr_correction/error_detection/Model/confusion_matrix.json}"
+DICT="${DICT:-$REPO/4_ocr_correction/error_detection/Model/main_i7_frq10.txt}"
 MIN_FREQ="${MIN_FREQ:-2}"
 CHAR_LM="${CHAR_LM:-}"
 CHAR_ARGS=()
@@ -39,7 +39,7 @@ done
 echo "Subset: $count pages in $SUB"
 
 cd "$REPO"
-nohup nice -n 19 python3 "$HERE/04_evaluate_full_corrector.py" \
+nohup nice -n 19 python3 "$HERE/01_evaluate_full_corrector.py" \
   --gt-dir "$SUB/gt" --raw-dir "$SUB/raw" --output-dir "$SUB/out" \
   --kenlm "$KENLM" --confusion "$CONF" --dictionary "$DICT" \
   --dict-min-freq "$MIN_FREQ" "${CHAR_ARGS[@]}" \
