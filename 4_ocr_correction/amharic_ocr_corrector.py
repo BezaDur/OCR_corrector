@@ -342,11 +342,12 @@ class AmharicOCRCorrector:
     """
 
     #: Resolved relative to this file, so the defaults work from any directory.
-    _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    DEFAULT_CONFUSION_MATRIX = os.path.join(
-        _REPO, "error_detection", "Model", "confusion_matrix.json")
-    DEFAULT_DICT_VOCAB = os.path.join(
-        _REPO, "error_detection", "Model", "main_i7_frq10.txt")
+    _STAGE4 = os.path.dirname(os.path.abspath(__file__))
+    _REPO = os.path.dirname(_STAGE4)
+    #: The detector lives beside the corrector, inside stage 4.
+    _DETECTOR_MODEL = os.path.join(_STAGE4, "error_detection", "Model")
+    DEFAULT_CONFUSION_MATRIX = os.path.join(_DETECTOR_MODEL, "confusion_matrix.json")
+    DEFAULT_DICT_VOCAB = os.path.join(_DETECTOR_MODEL, "main_i7_frq10.txt")
 
     def __init__(
         self,

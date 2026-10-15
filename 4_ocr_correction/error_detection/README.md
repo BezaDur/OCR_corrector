@@ -67,7 +67,9 @@ For 5M dict, **freq>=500** gives 54k clean types — best tradeoff (similar to l
 - `Model/local_lexicon.txt` — 750k types, 15MB, from 4.4M tokens
 - `Model/confusion_matrix.json` — 47K
 - `Model/harmonized_corpus_jiwer.tsv` — 1367 pages, 946k words (49MB)
-- `Evaluation/` — 100 pages + analysis.tsv (62k rows)
+- `../../Evaluation/` — the 100-page corpus lives at the **repo root**, not inside
+  this package, because stage 3 reads the same pages (GroundTruth, OCRed,
+  images/, analysis.tsv 62k rows)
 
 Tests: 40 OK
 
