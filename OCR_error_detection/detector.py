@@ -4,6 +4,17 @@
 # Stage 2: no manual floors, isotonic calibration, cost-sensitive thresholds
 from __future__ import annotations
 
+# --- make repo_paths importable from any working directory -------------------
+import os as _os
+import sys as _sys
+_root = _os.path.dirname(_os.path.abspath(__file__))
+while _root != _os.path.dirname(_root) and not _os.path.exists(_os.path.join(_root, "repo_paths.py")):
+    _root = _os.path.dirname(_root)
+if _root not in _sys.path:
+    _sys.path.insert(0, _root)
+import repo_paths  # noqa: E402  (imported after the path bootstrap)
+# ----------------------------------------------------------------------------
+
 import logging
 import os
 import re
@@ -44,8 +55,15 @@ except ImportError:
 from OCR_error_detection.normalizer import AmharicNormalizer
 from OCR_error_detection.confusion import ConfusionMatrix
 from OCR_error_detection.features import (
+    FEATURE_NAMES,
     FEATURE_SCHEMA_VERSION,
+    NAN_SCHEMA_VERSION,
     FeatureContext,
+    FeatureError,
+    cheap_signals,
+    clean_surface,
+    extract_vector,
+    missing_features,
     static_features,
     with_context,
 )
@@ -55,11 +73,20 @@ from OCR_error_detection.signals import (
     compute_one_flip_signals,
 )
 from OCR_error_detection.scoring import combine_signals, DEFAULT_WEIGHTS
+from OCR_error_detection.utils import MODEL_RARE_GLYPHS as _MODEL_RARE_GLYPHS
 
 logger = logging.getLogger("ocr_error_detection")
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _PARENT = os.path.dirname(_HERE)
+
+# Lexicon the shipped model was trained against: main_i7 with freq>=500,
+# which normalizes to exactly 54,057 canonical types (README "FINAL
+# authoritative", and the note inside Model/detector_lgbm_conffree.pkl).
+# A model payload can carry its own lexicon_min_freq / lexicon_max_types;
+# those win. Caller-supplied lexicons keep whatever the caller asks for.
+DEFAULT_DICT_MIN_FREQ = 500
+DEFAULT_MAX_LEXICON_TYPES = None
 
 CANDIDATE_LEXICON_PATHS = [
     os.path.join(_HERE, "Model", "main_i7_frq10.txt"),  # 737k types, 15MB, from bigger data, freq>=10, max freq 5.6M, cleaner
@@ -67,7 +94,6 @@ CANDIDATE_LEXICON_PATHS = [
     os.path.join(_HERE, "Model", "local_lexicon.txt"),  # 750k types, 15MB, from 4.4M tokens
     os.path.join(_HERE, "local_lexicon.txt"),
     os.path.join(_PARENT, "1_data_preparation", "data", "amh_final_training_text.txt"),
-    "/mnt/mintdata/Users/Des/Mint/4_Dataset_wo/Data/dics_i7/main_i7.txt",
 ]
 
 CANDIDATE_CONFUSION_PATHS = [
@@ -89,12 +115,14 @@ CANDIDATE_MODEL_PATHS = [
 
 CANDIDATE_CHAR_LM_PATHS = [
     os.path.join(_HERE, "Model", "amharic_char_model.klm"),
-    "/mnt/mintdata/Users/Des/Mint/Models/KenLM/character_model/amharic_char_model.klm",
+    repo_paths.char_kenlm(),
 ]
 
 PUNCT_RE = re.compile(r'[^\w\s]|\d')
 ETHIOPIC_PUNCT_RE = re.compile(r'[፡።፣፤፥፦፧፨]')
-RARE_GLYPHS = set("ሠሡሢሣሤሥሦፀፁፂፃፄፅፆጰጱጲጳጴጵጶዐዑዒዓዔዕዖ")
+# One definition, in utils.py, re-exported here for the analysis scripts in
+# docs/lgbm_review/ that import it from this module.
+RARE_GLYPHS = set(_MODEL_RARE_GLYPHS)
 
 def _resolve_first_existing(candidates: List[str]) -> Optional[str]:
     for p in candidates:
@@ -136,24 +164,39 @@ class DetectionEngine:
         char_lm_path: Optional[str] = None,
         lgbm_model_path: Optional[str] = None,
         weights: Optional[Dict[str, float]] = None,
-        pass_below: float = 0.20,
+        pass_below: float = 0.10,
         flag_above: float = 0.65,
         max_one_flip: int = 8,
-        max_lexicon_types: Optional[int] = 50000,
-        dict_min_freq: Optional[int] = 10,
+        max_lexicon_types: Optional[int] = None,
+        dict_min_freq: Optional[int] = None,
         symspell_max_edit_distance: int = 1,
         enable_symspell: bool = False,
+        legacy_impute: Optional[bool] = None,
         verbose: bool = False,
     ):
+        """pass_below / flag_above default to the README's gates (0.10 / 0.65);
+        a model payload that carries its own thresholds always wins.
+
+        dict_min_freq / max_lexicon_types apply to a caller-supplied lexicon.
+        When the built-in lexicon is used and the caller passes None, the model
+        payload decides, falling back to the documented main_i7 freq>=500
+        (54,057 types) — not the old ad-hoc 50,000-type truncation.
+
+        legacy_impute: None (default) fills missing values the way the loaded
+        model was trained (only models older than the NaN schema need it).
+        True/False forces it on/off.
+        """
         self.normalizer = AmharicNormalizer()
         self.w = dict(DEFAULT_WEIGHTS if weights is None else weights)
         self.pass_below = pass_below
         self.flag_above = flag_above
         self.max_one_flip = max_one_flip
+        self.legacy_impute = legacy_impute
         self.verbose = verbose
         self._stage1 = {"pass": 0, "gray": 0, "flag": 0}
 
         # Resolve paths
+        caller_lexicon = dict_vocab_path is not None
         if dict_vocab_path is None:
             dict_vocab_path = _resolve_first_existing(CANDIDATE_LEXICON_PATHS)
         if confusion_matrix_path is None:
@@ -170,6 +213,9 @@ class DetectionEngine:
         self.lgbm_features: List[str] = []
         self.calibrator = None
         self._legacy_model = False  # True for schema-1 pickles (pre features.py)
+        self.model_path = None
+        self._payload = {}
+        self._feature_warning = ""
 
         target_pkl = lgbm_model_path
         if target_pkl and not os.path.exists(target_pkl):
@@ -180,17 +226,22 @@ class DetectionEngine:
                 print(f"Loading LightGBM Model: {target_pkl}", flush=True)
             try:
                 payload = joblib.load(target_pkl)
+                self.model_path = target_pkl
+                self._payload = payload
                 self.lgbm_model = payload.get("model")
-                self.lgbm_features = payload.get("features", [])
+                self.lgbm_features = list(payload.get("features", []))
                 self.pass_below = payload.get("pass_thresh", self.pass_below)
                 self.flag_above = payload.get("flag_thresh", self.flag_above)
                 self.calibrator = payload.get("calibrator") or payload.get("isotonic") or payload.get("calibration")
                 schema = payload.get("feature_schema_version", payload.get("feature_schema", 1))
-                self._legacy_model = int(schema) < FEATURE_SCHEMA_VERSION
+                self._legacy_model = int(schema) < NAN_SCHEMA_VERSION
                 if self.verbose:
                     cal_info = "with isotonic calibration" if self.calibrator is not None else "no calibration"
                     print(f"  LightGBM loaded ({len(self.lgbm_features)} feats, gates {self.pass_below}/{self.flag_above}) {cal_info}", flush=True)
             except Exception as e:
+                self.lgbm_model = None
+                self.lgbm_features = []
+                self.calibrator = None
                 if self.verbose:
                     print(f"  [WARN] Failed to load LGBM: {e}", flush=True)
         elif self.verbose:
@@ -221,14 +272,56 @@ class DetectionEngine:
             self._confusion = None
             self.reverse_sub_map = {}
 
-        # Vocab
+        # Schema / feature-name guard: a payload that asks for a column this
+        # code cannot compute would otherwise be served with NaN or 0 silently.
+        self._feature_warning = ""
+        if self.lgbm_model is not None and self.lgbm_features:
+            unknown = missing_features(self.lgbm_features)
+            if unknown:
+                self._feature_warning = (
+                    "model expects features this code does not define: "
+                    + ", ".join(unknown))
+                raise FeatureError(f"{target_pkl}: {self._feature_warning}")
+        if self._legacy_model:
+            # Documented legacy behaviour (docs/lgbm_step1_changes.md §2.7):
+            # a model without a feature version is older than the NaN schema,
+            # so it is served with the fixed values it was trained under.
+            self._feature_warning = (
+                f"model has no feature schema version (pre-schema-{NAN_SCHEMA_VERSION}); "
+                "missing values are imputed with the trained constants"
+            )
+            logger.warning("%s: %s", target_pkl, self._feature_warning)
+            if self.verbose:
+                print(f"  [WARN] {self._feature_warning}", flush=True)
+
+        # Vocab. A built-in lexicon (dict_vocab_path=None) follows the model's
+        # own metadata; an explicit caller path follows the caller.
         self.vocab: Dict[str, int] = {}
         self.surface_form: Dict[str, str] = {}
+        self.lexicon_info = {"path": dict_vocab_path, "min_freq": None,
+                             "max_types": None, "types": 0, "caller_supplied": caller_lexicon}
         if dict_vocab_path and os.path.exists(dict_vocab_path):
+            if caller_lexicon:
+                resolved_min_freq = dict_min_freq
+                resolved_max_types = max_lexicon_types
+            else:
+                resolved_min_freq = dict_min_freq
+                if resolved_min_freq is None:
+                    resolved_min_freq = self._payload.get("lexicon_min_freq",
+                                                          DEFAULT_DICT_MIN_FREQ)
+                resolved_max_types = max_lexicon_types
+                if resolved_max_types is None:
+                    resolved_max_types = self._payload.get("lexicon_max_types",
+                                                           DEFAULT_MAX_LEXICON_TYPES)
+            self.lexicon_info.update(min_freq=resolved_min_freq,
+                                     max_types=resolved_max_types)
             if self.verbose:
-                print(f"Loading lexicon: {dict_vocab_path}", flush=True)
+                print(f"Loading lexicon: {dict_vocab_path}"
+                      f" (min freq {resolved_min_freq}, cap {resolved_max_types})",
+                      flush=True)
             try:
-                self._load_vocabulary(dict_vocab_path, max_lexicon_types, dict_min_freq)
+                self._load_vocabulary(dict_vocab_path, resolved_max_types, resolved_min_freq)
+                self.lexicon_info["types"] = len(self.vocab)
                 if self.verbose:
                     print(f"  {len(self.vocab):,} types", flush=True)
             except Exception as e:
@@ -271,6 +364,14 @@ class DetectionEngine:
 
         # Shared feature context — features.py is the single feature definition
         # used by training (Model/train_LightGBM.py) and inference (here).
+        self._rebuild_context()
+
+    def _rebuild_context(self) -> None:
+        """(Re)build the FeatureContext from the current resources.
+
+        Called at init and again by adopt_lexicon(), so the feature code always
+        reads the resources the engine really has in hand.
+        """
         self._ctx = FeatureContext(
             vocab=self.vocab,
             norm=self._norm,
@@ -280,6 +381,46 @@ class DetectionEngine:
             symspell=self.symspell,
             verbosity_top=getattr(self, "_VERBOSITY_TOP", 2),
         )
+
+    def adopt_lexicon(self, vocab: Mapping[str, int],
+                      surface_form: Optional[Mapping[str, str]] = None,
+                      norm: Optional[Callable[[str], str]] = None) -> int:
+        """Take over a lexicon the caller has already loaded.
+
+        README: the parent's adapter reuses its own vocabulary instead of
+        reading the dictionary a second time (Model/main_i7_frq10.txt is 15MB).
+
+        The model's own frequency filter still applies first, because the
+        features must stay in the distribution the model was trained on
+        (main_i7 freq>=500). A lexicon that carries no usable frequencies — a
+        bare word list, a test fixture — is honoured exactly as the caller
+        loaded it, since there is nothing to filter on.
+
+        Returns the number of types now in use.
+        """
+        import heapq
+
+        vocab = dict(vocab or {})
+        min_freq = self.lexicon_info.get("min_freq")
+        max_types = self.lexicon_info.get("max_types")
+        filtered = vocab
+        if min_freq and min_freq > 1:
+            filtered = {w: f for w, f in vocab.items() if f >= min_freq}
+            if not filtered and vocab:
+                filtered = vocab
+        if max_types and len(filtered) > max_types:
+            keep = heapq.nlargest(max_types, filtered, key=filtered.__getitem__)
+            filtered = {w: filtered[w] for w in keep}
+
+        self.vocab = filtered
+        forms = surface_form if surface_form is not None else self.surface_form
+        self.surface_form = {k: v for k, v in forms.items() if k in filtered}
+        if norm is not None:
+            self._norm = norm
+        self.lexicon_info["reused_from_caller"] = True
+        self.lexicon_info["types"] = len(self.vocab)
+        self._rebuild_context()
+        return len(self.vocab)
 
     def _load_vocabulary(self, path: str, max_types: Optional[int], min_freq: Optional[int]):
         import heapq
@@ -345,75 +486,29 @@ class DetectionEngine:
     def _norm(self, word: str) -> str:
         return _canonical_form(word, self.normalizer)
 
-    def _score_char_lm(self, word: str) -> Optional[float]:
-        if not self.char_lm:
-            return None
-        # Canonical
-        norm_w = self._norm(word)
-        clean_w = PUNCT_RE.sub('', norm_w).strip()
-        clean_w = ETHIOPIC_PUNCT_RE.sub('', clean_w).strip()
-        if len(clean_w) < 2:
-            return None
-        spaced = " ".join(clean_w)
-        try:
-            raw = self.char_lm.score(spaced, bos=True, eos=True)
-            return raw / (len(clean_w) + 1.0)
-        except Exception:
-            return None
-
     def _cheap_signals(self, tok: str, context: Sequence[str] = ()) -> TokenSignals:
-        sig = TokenSignals(token=tok)
-        compute_surface_signals(tok, sig)
-        compute_lexical_signals(tok, sig, self.vocab, self._norm,
-                                self.symspell, getattr(self, '_VERBOSITY_TOP', 2))
-        compute_one_flip_signals(tok, sig, self.vocab, self._norm,
-                                 self.reverse_sub_map, self.max_one_flip)
-        return sig
+        """Signals from the shared feature code — one definition, one path."""
+        return cheap_signals(tok, self._ctx)
 
-    def _extract_lgbm_features(self, tok: str, sig: TokenSignals,
+    def _extract_lgbm_features(self, tok: str, sig: TokenSignals = None,
                                doc_freq: Optional[float] = None,
                                ocr_conf: Optional[float] = None) -> List[float]:
-        """Extract features with NaN for missing (per roadmap).
+        """Feature vector for one token, in the loaded model's column order.
 
-        The schema-2 columns come from features.static_features/with_context —
-        the exact code path Model/train_LightGBM.py uses — so a training row
-        and a serving row for the same word are identical (train/serve parity).
-        The extra columns at the bottom cover schema-1 (legacy) model shapes.
+        Everything comes from OCR_error_detection.features — the same code path
+        Model/train_LightGBM.py uses — so a training row and a serving row for
+        the same word are identical (train/serve parity). Older models get
+        their trained constants back for missing values.
         """
-        # Schema-2 columns: identical to a training extract_frame row.
-        feat_map = with_context(static_features(tok, self._ctx), doc_freq)
-
-        # Legacy (schema-1) extras, taken from the caller's signals.
-        n_neighbors = getattr(sig, "n_neighbors", 0)
-        len_ratio = getattr(sig, "len_ratio", None)
-        if len_ratio is None:
-            len_ratio = max(len(PUNCT_RE.sub('', tok or '').strip()), 1) / 4.14
-        mixed_script = 1 if getattr(sig, "mixed_script", False) else 0
-        has_digit = 1 if getattr(sig, "has_digit", False) else 0
-
-        # OCR conf: normalized 0-1, NaN if missing
-        if ocr_conf is not None:
-            if ocr_conf > 1:
-                ocr_conf_norm = max(0.0, min(1.0, ocr_conf / 100.0))
-            else:
-                ocr_conf_norm = max(0.0, min(1.0, ocr_conf))
-        elif sig.ocr_conf is not None:
-            ocr_conf_norm = sig.ocr_conf
-        else:
-            ocr_conf_norm = float('nan')
-
-        feat_map["ocr_conf"] = ocr_conf_norm
-        feat_map["n_neighbors"] = float(n_neighbors)
-        feat_map["len_ratio"] = float(len_ratio)
-        feat_map["mixed_script"] = float(mixed_script)
-        feat_map["has_digit"] = float(has_digit)
-        feat_map["log_freq"] = feat_map["log_corpus_freq"]
-        feat_map["is_high_freq"] = 1 if feat_map["log_corpus_freq"] > 3.0 else 0
-
         if not self.lgbm_features:
             return []
-
-        return [feat_map.get(col, float('nan')) for col in self.lgbm_features]
+        if self._legacy_model and (self.legacy_impute is None or self.legacy_impute):
+            impute = True
+        else:
+            impute = bool(self.legacy_impute)
+        return extract_vector(tok, self._ctx, self.lgbm_features,
+                              doc_freq=doc_freq, ocr_conf=ocr_conf,
+                              legacy_impute=impute)
 
     # Public API for tests
     def signals(self, tok: str, context: Sequence[str] = ()) -> TokenSignals:

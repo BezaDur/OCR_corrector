@@ -8,7 +8,7 @@ Produces two files per image in Evaluation/OCRed/:
 
 One-time setup: symlink the model into system tessdata so Tesseract
 finds it AND its config files (tsv, hocr) in the same place:
-    sudo ln -s /media/des/Tess/Tesseract2/training/models/amh_fast.traineddata \
+    sudo ln -s ${TESSERACT_WORKSPACE:-/media/des/Tess/Tesseract2}/training/models/amh_fast.traineddata \
                /usr/share/tesseract-ocr/5/tessdata/amh_fast.traineddata
 
 Usage:
@@ -22,6 +22,10 @@ import argparse
 import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
+# Training output lives outside the repo; TESSERACT_WORKSPACE points at it.
+if os.path.dirname(_HERE) not in sys.path:
+    sys.path.insert(0, os.path.dirname(_HERE))
+import repo_paths  # noqa: E402
 IMAGES_DIR = os.path.join(_HERE, "Evaluation", "images")
 OUTPUT_DIR = os.path.join(_HERE, "Evaluation", "OCRed")
 LANG = "amh_fast"
@@ -114,7 +118,8 @@ def main():
     if test_r.returncode != 0:
         print(f"\nERROR: Tesseract can't load model '{LANG}'.")
         print(f"Fix (one-time):")
-        print(f"  sudo ln -s /media/des/Tess/Tesseract2/training/models/{LANG}.traineddata \\")
+        models_dir = repo_paths.workspace("training", "models")
+        print(f"  sudo ln -s {models_dir}/{LANG}.traineddata \\")
         print(f"             /usr/share/tesseract-ocr/5/tessdata/{LANG}.traineddata")
         sys.exit(1)
 

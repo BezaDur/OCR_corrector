@@ -4,18 +4,29 @@ Step 11: Comprehensive Benchmark of the Newly Trained amh_best model
 over all 150 stress-tested evaluation pages.
 """
 
+# --- make repo_paths importable from any working directory -------------------
+import os as _os
+import sys as _sys
+_root = _os.path.dirname(_os.path.abspath(__file__))
+while _root != _os.path.dirname(_root) and not _os.path.exists(_os.path.join(_root, "repo_paths.py")):
+    _root = _os.path.dirname(_root)
+if _root not in _sys.path:
+    _sys.path.insert(0, _root)
+import repo_paths  # noqa: E402  (imported after the path bootstrap)
+# ----------------------------------------------------------------------------
+
 import os
 import glob
 import subprocess
 import time
 from concurrent.futures import ProcessPoolExecutor
 
-DATASET_DIR = "/media/des/Tess/Tesseract2/synthetic_eval"
+DATASET_DIR = repo_paths.workspace("synthetic_eval")
 IMAGES_DIR = os.path.join(DATASET_DIR, "images")
 GT_DIR = os.path.join(DATASET_DIR, "ground_truth")
 OUT_DIR = os.path.join(DATASET_DIR, "ocr_new_model")
 
-MODELS_DIR = "/media/des/Tess/Tesseract2/training/models"
+MODELS_DIR = repo_paths.workspace("training/models")
 MODEL_NAME = "amh_epoch1_fast"
 PSM = "3"
 NUM_WORKERS = 4

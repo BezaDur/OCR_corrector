@@ -7,11 +7,22 @@ Audits langdata/amh.training_text against langdata/amh.unicharset:
 4. Checks line length distributions.
 """
 
+# --- make repo_paths importable from any working directory -------------------
+import os as _os
+import sys as _sys
+_root = _os.path.dirname(_os.path.abspath(__file__))
+while _root != _os.path.dirname(_root) and not _os.path.exists(_os.path.join(_root, "repo_paths.py")):
+    _root = _os.path.dirname(_root)
+if _root not in _sys.path:
+    _sys.path.insert(0, _root)
+import repo_paths  # noqa: E402  (imported after the path bootstrap)
+# ----------------------------------------------------------------------------
+
 import os
 import collections
 
-TRAINING_TEXT = "/media/des/Tess/Tesseract/TessTraining/langdata/amh.training_text"
-UNICHARSET_FILE = "/media/des/Tess/Tesseract/TessTraining/langdata/amh.unicharset"
+TRAINING_TEXT = repo_paths.langdata("amh.training_text")
+UNICHARSET_FILE = repo_paths.langdata("amh.unicharset")
 
 CONFUSED_PAIRS = [
     ('ስ', 'ሰ'), ('ሽ', 'ሸ'), ('ክ', 'ከ'), ('ህ', 'ሀ'), ('ት', 'ተ'),

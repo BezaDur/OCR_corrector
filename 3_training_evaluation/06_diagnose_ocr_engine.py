@@ -7,16 +7,27 @@ Pinpoints:
   3. Abbreviation and punctuation dropping (/ and .)
 """
 
+# --- make repo_paths importable from any working directory -------------------
+import os as _os
+import sys as _sys
+_root = _os.path.dirname(_os.path.abspath(__file__))
+while _root != _os.path.dirname(_root) and not _os.path.exists(_os.path.join(_root, "repo_paths.py")):
+    _root = _os.path.dirname(_root)
+if _root not in _sys.path:
+    _sys.path.insert(0, _root)
+import repo_paths  # noqa: E402  (imported after the path bootstrap)
+# ----------------------------------------------------------------------------
+
 import os
 import glob
 import re
 import collections
 from fontTools.ttLib import TTFont
 
-DATASET_DIR = "/media/des/Tess/Tesseract2/synthetic_eval"
+DATASET_DIR = repo_paths.workspace("synthetic_eval")
 GT_DIR = os.path.join(DATASET_DIR, "ground_truth")
 RAW_OCR_DIR = os.path.join(DATASET_DIR, "ocr_pred")
-OUTPUT_REPORT = "/media/des/Tess/Tesseract2/ocr_engine_faults.txt"
+OUTPUT_REPORT = repo_paths.workspace("ocr_engine_faults.txt")
 
 # Vowel order shift pairs: (6th order / Sadis, 1st order / Ge'ez)
 SADIS_GEEZ_PAIRS = {

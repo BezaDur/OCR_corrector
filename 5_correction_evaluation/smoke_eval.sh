@@ -7,10 +7,14 @@ set -euo pipefail
 
 N="${1:-10}"
 SUB="${SUB:-/tmp/ocr_smoke$N}"
-DATA="${DATA:-/media/des/Tess/Tesseract2/synthetic_eval}"
-KENLM="${KENLM:-/mnt/mintdata/Users/Des/Mint/Models/KenLM/word_model/amharic_5gram.binary}"
-CONF="${CONF:-/media/des/Tess/Tesseract2/confusion_matrix.json}"
-DICT="${DICT:-/mnt/mintdata/Users/Des/Mint/4_Dataset_wo/Projects/p16_morpheme_analysis/data/main_i7.txt}"
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+# Defaults: the synthetic evaluation set is outside the repo (point
+# TESSERACT_WORKSPACE at it); the confusion matrix and dictionary have
+# in-repo copies, and KenLM is pointed at explicitly.
+DATA="${DATA:-${TESSERACT_WORKSPACE:-/media/des/Tess/Tesseract2}/synthetic_eval}"
+KENLM="${KENLM:-${AMHARIC_WORD_KENLM:-/mnt/mintdata/Users/Des/Mint/Models/KenLM/word_model/amharic_5gram.binary}}"
+CONF="${CONF:-$REPO/OCR_error_detection/Model/confusion_matrix.json}"
+DICT="${DICT:-$REPO/OCR_error_detection/Model/main_i7_frq10.txt}"
 MIN_FREQ="${MIN_FREQ:-2}"
 CHAR_LM="${CHAR_LM:-}"
 CHAR_ARGS=()
@@ -20,7 +24,6 @@ TSV_DIR="${TSV_DIR:-}"
 VERDICT_DIR="${VERDICT_DIR:-}"
 [ -n "$VERDICT_DIR" ] && CHAR_ARGS+=(--verdict-dir "$VERDICT_DIR")
 HERE="$(cd "$(dirname "$0")" && pwd)"
-REPO="$(cd "$HERE/.." && pwd)"
 
 rm -rf "$SUB" && mkdir -p "$SUB/gt" "$SUB/raw"
 count=0

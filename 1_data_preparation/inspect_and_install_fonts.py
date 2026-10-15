@@ -7,13 +7,24 @@ Diagnostic & Installer Tool:
 4. Tests each font directly with text2image to verify Pango registration.
 """
 
+# --- make repo_paths importable from any working directory -------------------
+import os as _os
+import sys as _sys
+_root = _os.path.dirname(_os.path.abspath(__file__))
+while _root != _os.path.dirname(_root) and not _os.path.exists(_os.path.join(_root, "repo_paths.py")):
+    _root = _os.path.dirname(_root)
+if _root not in _sys.path:
+    _sys.path.insert(0, _root)
+import repo_paths  # noqa: E402  (imported after the path bootstrap)
+# ----------------------------------------------------------------------------
+
 import os
 import glob
 import shutil
 import subprocess
 from fontTools.ttLib import TTFont
 
-SOURCE_FONTS_DIR = "/media/des/Tess/Tesseract2/fonts"
+SOURCE_FONTS_DIR = repo_paths.workspace("fonts")
 USER_FONTS_DIR = os.path.expanduser("~/.local/share/fonts/amharic_fonts")
 
 

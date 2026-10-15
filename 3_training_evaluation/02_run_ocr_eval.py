@@ -4,13 +4,24 @@ Step 2: Batch OCR inference over synthetic evaluation pages using fine-tuned Tes
 Uses multi-processing on CPU for maximum throughput.
 """
 
+# --- make repo_paths importable from any working directory -------------------
+import os as _os
+import sys as _sys
+_root = _os.path.dirname(_os.path.abspath(__file__))
+while _root != _os.path.dirname(_root) and not _os.path.exists(_os.path.join(_root, "repo_paths.py")):
+    _root = _os.path.dirname(_root)
+if _root not in _sys.path:
+    _sys.path.insert(0, _root)
+import repo_paths  # noqa: E402  (imported after the path bootstrap)
+# ----------------------------------------------------------------------------
+
 import os
 import glob
 import subprocess
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 # ----------------- Configuration -----------------
-DATASET_DIR = "/media/des/Tess/Tesseract2/synthetic_eval"
+DATASET_DIR = repo_paths.workspace("synthetic_eval")
 IMAGES_DIR = os.path.join(DATASET_DIR, "images")
 OCR_OUT_DIR = os.path.join(DATASET_DIR, "ocr_pred")
 
@@ -61,8 +72,25 @@ def run_tesseract_on_page(image_path):
         return (base_name, False, str(e))
 
 
-def main():
-    os.makedirs(OCR_OUT_DIR, exist_ok=True)
+def _parse_args(argv=None):
+    import argparse
+    ap = argparse.ArgumentParser(description="Run Tesseract over the evaluation images and collect per-word output.",
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--dataset-dir", default=DATASET_DIR,
+                    help="synthetic evaluation set (images/ + ground_truth/)")
+    ap.add_argument("--images-dir", default=IMAGES_DIR, help="page images")
+    ap.add_argument("--out-dir", default=OCR_OUT_DIR, help="OCR output directory")
+    ap.add_argument("-v", "--verbose", action="store_true", help="more output")
+    return ap.parse_args(argv)
+
+
+def main(argv=None):
+    global DATASET_DIR, IMAGES_DIR, OCR_OUT_DIR
+    args = _parse_args(argv)
+    DATASET_DIR, IMAGES_DIR = args.dataset_dir, args.images_dir
+    OCR_OUT_DIR = args.out_dir
+
+    repo_paths.makedirs(OCR_OUT_DIR, "the OCR output directory")
 
     image_files = sorted(glob.glob(os.path.join(IMAGES_DIR, "*.png")))
     total_images = len(image_files)

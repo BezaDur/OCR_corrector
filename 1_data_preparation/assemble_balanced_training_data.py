@@ -5,15 +5,26 @@ to produce a 70,000-line training set with balanced character representation.
 Compiles the final, zero-defect amh.unicharset.
 """
 
+# --- make repo_paths importable from any working directory -------------------
+import os as _os
+import sys as _sys
+_root = _os.path.dirname(_os.path.abspath(__file__))
+while _root != _os.path.dirname(_root) and not _os.path.exists(_os.path.join(_root, "repo_paths.py")):
+    _root = _os.path.dirname(_root)
+if _root not in _sys.path:
+    _sys.path.insert(0, _root)
+import repo_paths  # noqa: E402  (imported after the path bootstrap)
+# ----------------------------------------------------------------------------
+
 import os
 import random
 import collections
 
-MINED_RARE_FILE = "/media/des/Tess/Tesseract2/mined_rare_sentences.txt"
-GENERAL_TEXT_FILE = "/media/des/Tess/Tesseract2/amh.training_text"
+MINED_RARE_FILE = repo_paths.workspace("mined_rare_sentences.txt")
+GENERAL_TEXT_FILE = repo_paths.workspace("amh.training_text")
 
-FINAL_TRAINING_TEXT = "/media/des/Tess/Tesseract2/amh_final_training_text.txt"
-FINAL_UNICHARSET = "/media/des/Tess/Tesseract2/amh.unicharset"
+FINAL_TRAINING_TEXT = repo_paths.workspace("amh_final_training_text.txt")
+FINAL_UNICHARSET = repo_paths.workspace("amh.unicharset")
 
 TOTAL_TARGET_LINES = 70000
 BASE_SEED = 42

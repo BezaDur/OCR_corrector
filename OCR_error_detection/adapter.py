@@ -14,9 +14,12 @@
 #   result = self.suspicion.verdict(word, context, ocr_conf, doc_freq)
 from __future__ import annotations
 
+import logging
 import os
 from typing import Optional, Sequence, Dict, List
 import math
+
+logger = logging.getLogger(__name__)
 
 from OCR_error_detection.signals import TokenSignals, Verdict
 from OCR_error_detection.scoring import combine_signals, DEFAULT_WEIGHTS
@@ -81,34 +84,32 @@ class CorrectorDetectionAdapter(DetectorInterface):
         self.lgbm_model = None
         self.lgbm_features = []
         self.calibrator = None
+        self._lexicon_adopted = False
 
+        self.last_error = None
         try:
             DE = _load_engine()
             # Create engine but inject corrector's vocab etc. if possible
-            # We instantiate with minimal loading, then override vocab/symspell
+            # We instantiate with minimal loading, then override vocab/symspell.
+            # Lexicon knobs are left at None so the model payload decides; the
+            # corrector's own vocabulary replaces the engine's anyway.
             self.engine = DE(
-                dict_vocab_path=None,  # will fallback to minimal, we override below
+                dict_vocab_path=None,  # resolved from the model / documented default
                 confusion_matrix_path=None,
                 char_lm_path=None,
                 lgbm_model_path=lgbm_model_path,
                 pass_below=pass_below,
                 flag_above=flag_above,
                 max_one_flip=max_one_flip,
-                max_lexicon_types=50000,
-                dict_min_freq=10,
+                max_lexicon_types=None,
+                dict_min_freq=None,
                 enable_symspell=False,
                 verbose=False,
             )
-            # Override with corrector's resources to avoid double load
-            if hasattr(corrector, 'vocab') and corrector.vocab:
-                self.engine.vocab = corrector.vocab
-                self.engine.surface_form = getattr(corrector, 'surface_form', {})
-            if hasattr(corrector, 'symspell') and corrector.symspell:
-                self.engine.symspell = corrector.symspell
-            if hasattr(corrector, 'reverse_sub_map') and corrector.reverse_sub_map:
-                self.engine.reverse_sub_map = corrector.reverse_sub_map
-            if hasattr(corrector, '_norm') and corrector._norm:
-                self.engine._norm = corrector._norm
+            # Hand over the corrector's own resources (see below); the corrector
+            # loads its vocabulary *after* building stage 1, so this usually
+            # does nothing here and happens on the first verdict()/signals().
+            self._adopt_corrector_resources()
             # Reuse model and thresholds
             self.lgbm_model = self.engine.lgbm_model
             self.lgbm_features = self.engine.lgbm_features
@@ -116,11 +117,61 @@ class CorrectorDetectionAdapter(DetectorInterface):
             self.pass_below = self.engine.pass_below
             self.flag_above = self.engine.flag_above
         except Exception as e:
-            # Fallback to rule-based
+            # Fallback to rule-based. Keep the reason so the caller can log it
+            # instead of silently degrading (the corrector prints it).
+            self.last_error = e
             self.engine = None
             self.lgbm_model = None
 
+    def _adopt_corrector_resources(self) -> None:
+        """Give the engine the resources the corrector already has in memory.
+
+        README: "adapter.py — for parent to import child (reuses vocab, no
+        double load)". Two things have to be true for that to work:
+
+        * the handover must reach the FeatureContext, not just engine.vocab
+          (features.py reads ctx.vocab), and
+        * it must run after the corrector has loaded its vocabulary, which
+          happens *after* stage 1 is constructed — hence the lazy retry from
+          verdict()/signals().
+
+        The model's own frequency filter is applied to the adopted lexicon, so
+        the features stay in the distribution the model was trained on
+        (main_i7 freq>=500); symspell is deliberately NOT adopted, because the
+        model is served with n_neighbors=0 (README: "SymSpell OFF, gain 0").
+        """
+        if self.engine is None or self._lexicon_adopted:
+            return
+        vocab = getattr(self.c, "vocab", None)
+        if not vocab:
+            return
+        try:
+            expected = self.engine.lexicon_info.get("types") or 0
+            n_types = self.engine.adopt_lexicon(
+                vocab,
+                surface_form=getattr(self.c, "surface_form", None),
+                norm=getattr(self.c, "_norm", None),
+            )
+            self._lexicon_adopted = True
+            if self.engine.verbose:
+                print(f"Stage 1: reusing the corrector's vocabulary "
+                      f"({n_types:,} types after the model's filter)", flush=True)
+            # The model was trained on its own lexicon. Serving it a very
+            # different one (a domain list, a test fixture) puts the feature
+            # values outside the training distribution, which shows up as
+            # everything looking equally likely — say so instead of silently
+            # degrading.
+            if expected and not (0.5 * expected <= n_types <= 2.0 * expected):
+                logger.warning(
+                    "detector model was trained on %s lexicon types but the "
+                    "corrector supplied %s; detection quality is only "
+                    "calibrated for the model's own lexicon", f"{expected:,}",
+                    f"{n_types:,}")
+        except Exception as e:  # never let a handover failure break correction
+            self.last_error = e
+
     def _cheap_signals(self, tok: str, context: Sequence[str] = ()) -> TokenSignals:
+        self._adopt_corrector_resources()
         # If engine available, use its cheap signals (which uses canonical boundary)
         if self.engine is not None:
             return self.engine._cheap_signals(tok, context)
@@ -153,6 +204,7 @@ class CorrectorDetectionAdapter(DetectorInterface):
 
     def verdict(self, tok: str, context: Sequence[str] = (),
                 ocr_conf: Optional[float] = None, doc_freq: Optional[float] = None) -> Verdict:
+        self._adopt_corrector_resources()
         # Delegate to authoritative engine if available
         if self.engine is not None:
             v = self.engine.verdict(tok, context, ocr_conf=ocr_conf, doc_freq=doc_freq)

@@ -25,6 +25,15 @@ RARE_GLYPH_CLASSES = (
     set("ሷሹሺሻሼሽሾሿ"),      # 6th/7th-order ዘ/ሸ-type forms
 )
 
+# The MODEL's rare-glyph set — the four sadis / AIN / TSA / PHA series the
+# LightGBM detector's rare_glyph_ratio column was trained with. Deliberately
+# NARROWER than RARE_GLYPH_CLASSES above: the ሸ series (ሷሹሺሻሼሽሾሿ) is ordinary
+# Amharic, and adding it to the model's feature was measured to multiply the
+# false-flag rate by ~13 (0.027% -> 0.353% on the 1,367-page corpus).
+# RARE_GLYPH_CLASSES stays the wider list the rule-based fallback scores with.
+# Do not "unify" these two without retraining the model.
+MODEL_RARE_GLYPHS = frozenset("ሠሡሢሣሤሥሦፀፁፂፃፄፅፆጰጱጲጳጴጵጶዐዑዒዓዔዕዖ")
+
 
 # Curated Amharic confusion classes.
 #

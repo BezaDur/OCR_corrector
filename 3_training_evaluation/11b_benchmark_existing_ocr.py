@@ -43,6 +43,17 @@ Usage
     # quick look on the first 100 pages
     python 11b_benchmark_existing_ocr.py --compare-all --limit 100
 """
+# --- make repo_paths importable from any working directory -------------------
+import os as _os
+import sys as _sys
+_root = _os.path.dirname(_os.path.abspath(__file__))
+while _root != _os.path.dirname(_root) and not _os.path.exists(_os.path.join(_root, "repo_paths.py")):
+    _root = _os.path.dirname(_root)
+if _root not in _sys.path:
+    _sys.path.insert(0, _root)
+import repo_paths  # noqa: E402  (imported after the path bootstrap)
+# ----------------------------------------------------------------------------
+
 import argparse
 import glob
 import os
@@ -64,7 +75,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 # file needs nothing from the repo, which is why it runs anywhere you can copy
 # a single file to.
 
-DATASET_DIR = "/media/des/Tess/Tesseract2/synthetic_eval"
+DATASET_DIR = repo_paths.workspace("synthetic_eval")
 GT_DIR = os.path.join(DATASET_DIR, "ground_truth")
 
 NUM_WORKERS = 8

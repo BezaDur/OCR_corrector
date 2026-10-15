@@ -4,14 +4,25 @@ Diagnoses Google's official 'amh.traineddata' accuracy broken down per font.
 Reveals which font families Google trained on vs which ones cause it to fail.
 """
 
+# --- make repo_paths importable from any working directory -------------------
+import os as _os
+import sys as _sys
+_root = _os.path.dirname(_os.path.abspath(__file__))
+while _root != _os.path.dirname(_root) and not _os.path.exists(_os.path.join(_root, "repo_paths.py")):
+    _root = _os.path.dirname(_root)
+if _root not in _sys.path:
+    _sys.path.insert(0, _root)
+import repo_paths  # noqa: E402  (imported after the path bootstrap)
+# ----------------------------------------------------------------------------
+
 import os
 import glob
 import subprocess
 from PIL import Image, ImageDraw, ImageFont
 
-FONTS_DIR = "/media/des/Tess/Tesseract/TessTraining/Fonts"
-GOOGLE_TESSDATA = "/media/des/Tess/Tesseract/Google_best"
-TEMP_DIR = "/media/des/Tess/Tesseract2/font_diag_google"
+FONTS_DIR = repo_paths.fonts()
+GOOGLE_TESSDATA = repo_paths.GOOGLE_BEST
+TEMP_DIR = repo_paths.workspace("font_diag_google")
 
 BENCHMARK_TEXT = (
     "የኢትዮጵያ ፌዴራላዊ ዴሞክራሲያዊ ሪፐብሊክ መንግሥት የትምህርት ጥራትን ለማረጋገጥ አዲስ መመሪያ አወጣ። "
