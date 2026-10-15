@@ -14,6 +14,14 @@ Usage:
     python3 OCR_error_detection/scripts/evaluate_child.py [--max-pages N] [--verbose]
     python3 OCR_error_detection/scripts/evaluate_child.py --min-recall 90 --max-false-flag 1
 
+    # a specific model, served with the lexicon it was trained on
+    python3 OCR_error_detection/scripts/evaluate_child.py \
+        --model /tmp/loc_f10.pkl \
+        --lexicon OCR_error_detection/Model/local_lexicon.txt --min-freq 10
+
+Compare several configurations on these same held-out pages with
+scripts/compare_lexicon_configs.py.
+
 Exit code 0 when the evaluation completes and meets the quality gates
 (default: recall >= 80%, false flag <= 2%); 1 otherwise.
 """
@@ -184,6 +192,15 @@ def main(argv=None):
     ap.add_argument("--max-pages", type=int, default=0,
                     help="evaluate only the first N pages (default: all)")
     ap.add_argument("--verbose", action="store_true", help="per-page progress")
+    ap.add_argument("--model", default=None,
+                    help="LightGBM payload to serve (default: auto-resolve, "
+                         "which picks Model/detector_lgbm_conffree.pkl)")
+    ap.add_argument("--lexicon", default=None,
+                    help="lexicon for --model. A model trained on local_lexicon "
+                         "must be served with it, or in_lexicon / "
+                         "log_corpus_freq come from the wrong vocabulary")
+    ap.add_argument("--min-freq", type=int, default=None,
+                    help="lexicon frequency filter to apply to --lexicon")
     ap.add_argument("--min-recall", type=float, default=80.0,
                     help="exit 1 if error recall (flag+gray) is below this %%")
     ap.add_argument("--max-false-flag", type=float, default=2.0,
@@ -197,7 +214,21 @@ def main(argv=None):
     print(f"Loaded {len(pages)} pages from Evaluation/")
 
     print("Loading DetectionEngine (lexicon + LightGBM + confusion)...", flush=True)
-    detector = DetectionEngine(verbose=args.verbose)
+    engine_kwargs = {"verbose": args.verbose}
+    if args.model:
+        engine_kwargs["lgbm_model_path"] = args.model
+    if args.lexicon:
+        engine_kwargs["dict_vocab_path"] = args.lexicon
+        if args.min_freq:
+            engine_kwargs["dict_min_freq"] = args.min_freq
+    elif args.min_freq:
+        print("--min-freq needs --lexicon; ignored", file=sys.stderr)
+    detector = DetectionEngine(**engine_kwargs)
+    if args.model or args.lexicon:
+        print(f"  model : {detector.model_path}")
+        print(f"  lexicon: {detector.lexicon_info['path']} "
+              f"(min freq {detector.lexicon_info['min_freq']}, "
+              f"{detector.lexicon_info['types']:,} types)")
 
     stats = evaluate(detector, pages, verbose=args.verbose)
     if not stats["aligned"]:

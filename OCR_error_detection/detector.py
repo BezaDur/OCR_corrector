@@ -20,7 +20,7 @@ import os
 import re
 import math
 import unicodedata
-from typing import Callable, Dict, List, Optional, Sequence
+from typing import Callable, Dict, List, Mapping, Optional, Sequence
 
 SymSpell = Verbosity = None
 kenlm = None
@@ -172,15 +172,30 @@ class DetectionEngine:
         symspell_max_edit_distance: int = 1,
         enable_symspell: bool = False,
         legacy_impute: Optional[bool] = None,
+        gates_override_model: bool = False,
         verbose: bool = False,
     ):
         """pass_below / flag_above default to the README's gates (0.10 / 0.65);
-        a model payload that carries its own thresholds always wins.
+        a model payload that carries its own thresholds wins unless
+        gates_override_model=True.
 
-        dict_min_freq / max_lexicon_types apply to a caller-supplied lexicon.
-        When the built-in lexicon is used and the caller passes None, the model
-        payload decides, falling back to the documented main_i7 freq>=500
-        (54,057 types) — not the old ad-hoc 50,000-type truncation.
+        gates_override_model: the shipped payload stores pass_thresh /
+        flag_thresh, and those have always taken precedence — which made the
+        gates impossible to retune without rewriting the pickle. Set this to
+        True to make the values you pass authoritative instead. It is opt-in
+        because the parent corrector forwards its own concrete defaults
+        (suspicion_pass_below=0.30, suspicion_flag_above=0.70) through the
+        adapter; honouring those unconditionally would silently move the
+        parent's Stage-1 operating point. Retune deliberately, then measure
+        with scripts/tune_gates.py.
+
+        dict_vocab_path / dict_min_freq / max_lexicon_types apply to a
+        caller-supplied lexicon. A caller-supplied path that does not exist
+        raises FileNotFoundError rather than degrading to the minimal
+        vocabulary. When the built-in lexicon is used and the caller passes
+        None, the model payload decides, falling back to the documented
+        main_i7 freq>=500 (54,057 types) — not the old ad-hoc 50,000-type
+        truncation.
 
         legacy_impute: None (default) fills missing values the way the loaded
         model was trained (only models older than the NaN schema need it).
@@ -192,6 +207,7 @@ class DetectionEngine:
         self.flag_above = flag_above
         self.max_one_flip = max_one_flip
         self.legacy_impute = legacy_impute
+        self.gates_override_model = gates_override_model
         self.verbose = verbose
         self._stage1 = {"pass": 0, "gray": 0, "flag": 0}
 
@@ -230,8 +246,9 @@ class DetectionEngine:
                 self._payload = payload
                 self.lgbm_model = payload.get("model")
                 self.lgbm_features = list(payload.get("features", []))
-                self.pass_below = payload.get("pass_thresh", self.pass_below)
-                self.flag_above = payload.get("flag_thresh", self.flag_above)
+                if not gates_override_model:
+                    self.pass_below = payload.get("pass_thresh", self.pass_below)
+                    self.flag_above = payload.get("flag_thresh", self.flag_above)
                 self.calibrator = payload.get("calibrator") or payload.get("isotonic") or payload.get("calibration")
                 schema = payload.get("feature_schema_version", payload.get("feature_schema", 1))
                 self._legacy_model = int(schema) < NAN_SCHEMA_VERSION
@@ -300,6 +317,19 @@ class DetectionEngine:
         self.surface_form: Dict[str, str] = {}
         self.lexicon_info = {"path": dict_vocab_path, "min_freq": None,
                              "max_types": None, "types": 0, "caller_supplied": caller_lexicon}
+        if caller_lexicon and not os.path.exists(dict_vocab_path):
+            # An explicitly requested lexicon that is missing used to fall through
+            # to the 8-word minimal fallback below. That silently invalidated
+            # in_lexicon and log_corpus_freq — together ~80% of the shipped
+            # model's gain — so every verdict came back wrong with no warning.
+            # A typo is the common cause (the real file is main_i7_frq10.txt, not
+            # main_i7_freq10.txt). Fail loudly, and show what is actually here.
+            raise FileNotFoundError(
+                f"dict_vocab_path={dict_vocab_path!r} does not exist. "
+                "The lexicon supplies in_lexicon / log_corpus_freq, so refusing to "
+                "fall back to the minimal vocabulary. In-repo candidates:\n  "
+                + "\n  ".join(p for p in CANDIDATE_LEXICON_PATHS if os.path.exists(p))
+                + "\nPass dict_vocab_path=None to auto-resolve one of those.")
         if dict_vocab_path and os.path.exists(dict_vocab_path):
             if caller_lexicon:
                 resolved_min_freq = dict_min_freq

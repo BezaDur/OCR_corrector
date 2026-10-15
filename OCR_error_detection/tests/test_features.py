@@ -178,11 +178,11 @@ class TestTrainServeParity(unittest.TestCase):
 
     WORDS = ["ሰላም", "ቤት፡", "ዓለም", "ሐገር", "ህገር", "ነገር", "xyz", "ሰላም፣", "1234", ""]
 
-    # has_digit is the one column that reads the raw token (cleaning removes
-    # digits, so the clean surface can never answer it). For a punctuated or
-    # digit-bearing token it is therefore expected to differ from the clean
-    # form's vector; every other column must match exactly.
-    RAW_ONLY_DIFF = {"has_digit"}
+    # Every column is measured on the clean surface, so a punctuated or
+    # digit-bearing token must produce exactly the same vector as its clean
+    # form. `has_digit` used to be exempted here, which codified the
+    # train/serve skew described in features.py rule 4 instead of catching it.
+    RAW_ONLY_DIFF = set()
 
     def test_extract_frame_matches_detector(self):
         eng = _schema2(_engine())
@@ -202,16 +202,41 @@ class TestTrainServeParity(unittest.TestCase):
                 else:
                     self.assertAlmostEqual(a, b, places=9, msg=(w, df, name))
 
-    def test_has_digit_reads_the_raw_token(self):
-        """'12' cleans to '' but must still report a digit; 'ቤት፡' must not."""
+    def test_has_digit_follows_the_clean_surface(self):
+        """has_digit must describe the same surface as every other column.
+
+        Regression test for the train/serve skew in features.py rule 4: the
+        training corpus has no ASCII digits, so its has_digit=1 rows are all
+        Ethiopic-numeral words, where the numeral survives clean_surface. An
+        ASCII-digit OCR token must therefore NOT set has_digit — otherwise it
+        lands in a branch the trees learned from Ethiopic numerals and comes
+        back FLAG (measured: P 0.012 -> 0.828 for "ከ" vs "ከ20").
+        """
         eng = _schema2(_engine())
         names = list(eng.lgbm_features)
-        digit = dict(zip(names, eng._extract_lgbm_features("12", None, doc_freq=1)))
-        self.assertEqual(digit["has_digit"], 1.0)
-        self.assertEqual(digit["token_len"], 0.0)  # stripped by clean_surface
-        bare = dict(zip(names, eng._extract_lgbm_features("ቤት", None, doc_freq=1)))
-        punct = dict(zip(names, eng._extract_lgbm_features("ቤት፡", None, doc_freq=1)))
-        self.assertEqual(bare, punct)
+
+        def vec(tok):
+            return dict(zip(names, eng._extract_lgbm_features(tok, None, doc_freq=1)))
+
+        # Ethiopic numerals (U+1369-U+1371, category No) survive cleaning, so
+        # they are the population training actually saw.
+        ethiopic = vec("፬ዎቹ")
+        self.assertEqual(ethiopic["has_digit"], 1.0)
+        self.assertGreater(ethiopic["token_len"], 0.0)
+
+        # ASCII digits are removed by cleaning, so they must not set has_digit,
+        # and the vector must equal the clean form's exactly.
+        for raw, clean in [("ከ20", "ከ"), ("በ5ሺህ", "በሺህ"), ("“3ኛውን", "ኛውን")]:
+            self.assertEqual(vec(raw), vec(clean), msg=raw)
+            self.assertEqual(vec(raw)["has_digit"], 0.0, msg=raw)
+
+        # A token that is only ASCII digits cleans to nothing at all.
+        digits_only = vec("12")
+        self.assertEqual(digits_only["has_digit"], 0.0)
+        self.assertEqual(digits_only["token_len"], 0.0)
+
+        # Punctuation was already parity-safe; keep asserting it.
+        self.assertEqual(vec("ቤት"), vec("ቤት፡"))
 
     def test_training_vocab_normalization_matches_detector(self):
         """The training script's normalize_vocab must equal the detector's vocabulary."""

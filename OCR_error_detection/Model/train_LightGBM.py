@@ -599,7 +599,11 @@ def main(argv=None):
                 ["pass gate", "flag gate", "errors not passed", "clean flagged"])
 
     # ---- Save ----
-    note = (f"conf-free main_i7 freq>={args.min_freq}: {len(ctx.vocab):,} types, "
+    # Name the lexicon that was actually used. This said "main_i7" unconditionally,
+    # so a model trained from local_lexicon.txt was saved with a note claiming
+    # main_i7 provenance (reproduced with --lexicon .../local_lexicon.txt).
+    note = (f"conf-free {os.path.splitext(os.path.basename(args.lexicon))[0]} "
+            f"freq>={args.min_freq}: {len(ctx.vocab):,} types, "
             f"{prod.page.nunique():,} pages, {len(FEATURE_NAMES)} feats, "
             f"dev recall {100 * dev_metrics['recall']:.1f}% "
             f"FF {100 * dev_metrics['false_flag']:.2f}%")

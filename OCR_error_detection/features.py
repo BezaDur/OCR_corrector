@@ -11,8 +11,27 @@
 #   3. token_len / len_ratio / rare_glyph_ratio / mixed_script are measured on
 #      the clean surface (the same string the lookups use, so a punctuated
 #      token and its bare form get identical features)
-#   4. has_digit reads the RAW token: cleaning removes digits, so the clean
-#      surface can never answer "did this token contain a digit?"
+#   4. has_digit is measured on the CLEAN surface, like every other column.
+#      It used to read the raw token, on the reasoning that cleaning removes
+#      digits so the clean surface "can never answer" the question. But
+#      clean_surface only removes ASCII digits: Ethiopic numerals U+1369-U+1371
+#      are category No, so neither [^\w\s] nor \d strips them. The training
+#      corpus (Model/harmonized_corpus_jiwer.tsv) contains no ASCII digits and
+#      no punctuation at all — clean_surface(w) == w for 946,057/946,057 rows —
+#      so its only has_digit=1 rows (812, 0.086%) are Ethiopic-numeral words
+#      such as "መሆ፭ም" and "፬ዎቹ", where the numeral is part of the surface the
+#      other columns describe. Serving saw a different population: real OCR
+#      tokens carry ASCII digits ("ከ20", "በ5ሺህ", "“3ኛውን"), which cleaning
+#      removes from every other column while has_digit stayed 1, dropping them
+#      into a branch the trees learned from Ethiopic numerals. Result:
+#      P(error) 0.012 -> 0.828 for "ከ20" vs its clean form "ከ", i.e. FLAG on a
+#      clean dictionary word. 420 of the 62,479 held-out Evaluation/ tokens
+#      (0.67%) carry an ASCII digit, and they accounted for essentially all of
+#      the excess false flags: with a local_lexicon f>=10 model, FF 0.730% ->
+#      0.081% (424 -> 47 flags); with the shipped model, 0.72% -> 0.10%
+#      (419 -> 59). Reading the clean surface is bit-identical on all training
+#      rows, so no retraining is needed and no shipped model changes behaviour
+#      on any input it was trained on.
 #   5. missing context is NaN, never a magic number:
 #      doc_freq / is_doc_singleton when no page is given,
 #      char_kenlm_score when no KenLM model is loaded or the word has < 2 chars,
@@ -171,13 +190,14 @@ def cheap_signals(tok: str, ctx: FeatureContext) -> TokenSignals:
     """Signals computed on the canonical (punctuation-free) surface.
 
     Both the detector and the training pipeline use this, so membership and
-    one-flip results are identical in both places. `has_digit` is the one
-    exception: it reads the raw token, because cleaning removes digits.
+    one-flip results are identical in both places. Every column, `has_digit`
+    included, is measured on the clean surface — see rule 4 in the module
+    docstring for why reading the raw token there was a train/serve skew.
     """
     clean = clean_surface(tok)
     sig = TokenSignals(token=tok)
+    # compute_surface_signals already derives has_digit from `clean`.
     compute_surface_signals(clean, sig)
-    sig.has_digit = any(ch.isdigit() for ch in (tok or ""))
     compute_lexical_signals(clean, sig, ctx.vocab, ctx.norm,
                             ctx.symspell, ctx.verbosity_top)
     compute_one_flip_signals(clean, sig, ctx.vocab, ctx.norm,

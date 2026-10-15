@@ -51,6 +51,33 @@ def _make_detector(words=(), **kwargs):
     return eng
 
 
+def _real_model_engine(**kwargs):
+    """DetectionEngine on the real shipped payload + lexicon, or None if absent.
+
+    Used by the gate-precedence tests, which are about values stored inside
+    Model/detector_lgbm_conffree.pkl and so cannot be exercised with the tiny
+    fixture lexicons the rest of this file uses.
+    """
+    from OCR_error_detection import DetectionEngine
+
+    pkl = _HERE / "Model" / "detector_lgbm_conffree.pkl"
+    lex = _HERE / "Model" / "main_i7_frq10.txt"
+    if not pkl.exists() or not lex.exists():
+        return None
+    try:
+        import lightgbm  # noqa: F401
+        import joblib    # noqa: F401
+    except ImportError:
+        return None
+    options = dict(lgbm_model_path=str(pkl), dict_vocab_path=str(lex),
+                   dict_min_freq=500, confusion_matrix_path=CONFUSION,
+                   verbose=False)
+    options.update(kwargs)
+    with contextlib.redirect_stdout(io.StringIO()):
+        eng = DetectionEngine(**options)
+    return eng if eng.lgbm_model is not None else None
+
+
 # --------------------------------------------------------------------------- #
 # Normalizer tests
 # --------------------------------------------------------------------------- #
@@ -359,6 +386,67 @@ class TestDetectionEngine(unittest.TestCase):
         words = [("ሰላም", 5000), ("ቤት", 4000), ("ነገር", 5)]
         det = _make_detector(words, dict_min_freq=100)
         self.assertEqual(len(det.vocab), 2)
+
+    def test_missing_caller_lexicon_raises(self):
+        """An explicit dict_vocab_path that does not exist must fail loudly.
+
+        It used to fall through to the 8-word minimal vocabulary, which
+        silently invalidated in_lexicon / log_corpus_freq — ~80% of the shipped
+        model's gain — and returned plausible-looking but meaningless verdicts.
+        """
+        from OCR_error_detection import DetectionEngine
+
+        missing = os.path.join(tempfile.mkdtemp(), "main_i7_freq10.txt")  # real file is _frq10
+        with self.assertRaises(FileNotFoundError) as ctx:
+            DetectionEngine(dict_vocab_path=missing,
+                            confusion_matrix_path=CONFUSION, verbose=False)
+        self.assertIn(missing, str(ctx.exception))
+        self.assertIn("main_i7_frq10.txt", str(ctx.exception))
+
+    def test_missing_caller_lexicon_never_yields_fallback_vocab(self):
+        """The minimal fallback is for auto-resolution only, not for typos."""
+        from OCR_error_detection import DetectionEngine
+
+        missing = os.path.join(tempfile.mkdtemp(), "nope.txt")
+        try:
+            DetectionEngine(dict_vocab_path=missing,
+                            confusion_matrix_path=CONFUSION, verbose=False)
+        except FileNotFoundError:
+            return
+        self.fail("a missing caller-supplied lexicon must raise, not fall back")
+
+    def test_gates_come_from_the_model_by_default(self):
+        """The payload's thresholds win, so callers cannot retune by accident."""
+        from OCR_error_detection import DetectionEngine
+
+        det = _real_model_engine()
+        if det is None:
+            self.skipTest("shipped model not available")
+        self.assertEqual(det.pass_below, 0.10)
+        self.assertEqual(det.flag_above, 0.65)
+        # An explicit value is still overridden — that is the documented default.
+        det2 = _real_model_engine(pass_below=0.02, flag_above=0.90)
+        if det2 is None:
+            self.skipTest("shipped model not available")
+        self.assertEqual(det2.pass_below, 0.10)
+        self.assertEqual(det2.flag_above, 0.65)
+
+    def test_gates_override_model_honours_the_caller(self):
+        """gates_override_model=True is how a retuned operating point is applied.
+
+        Without it the gates baked into the pickle are unreachable, so a
+        recommendation from scripts/tune_gates.py could only be applied by
+        rewriting the model artifact.
+        """
+        from OCR_error_detection import DetectionEngine
+
+        det = _real_model_engine(pass_below=0.10, flag_above=0.85,
+                                 gates_override_model=True)
+        if det is None:
+            self.skipTest("shipped model not available")
+        self.assertEqual(det.pass_below, 0.10)
+        self.assertEqual(det.flag_above, 0.85)
+        self.assertIsNotNone(det.lgbm_model)  # override must not cost us the model
 
     def test_surface_form_preserved(self):
         words = [("ሐገር", 100), ("ሠላም", 200)]
