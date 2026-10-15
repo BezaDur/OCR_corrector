@@ -1,7 +1,7 @@
 import sys, os, io, contextlib, tempfile, math
 ROOT = '/home/user/OCR_corrector'
 sys.path.insert(0, ROOT)
-from OCR_error_detection.detector import DetectionEngine
+from error_detection.detector import DetectionEngine
 
 d = tempfile.mkdtemp()
 lex = os.path.join(d, 'w.txt')

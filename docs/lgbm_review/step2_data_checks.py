@@ -20,7 +20,7 @@ import re
 import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-OCR = os.path.join(ROOT, "OCR_error_detection")
+OCR = os.path.join(ROOT, "4_ocr_correction", "error_detection")
 TSV = os.path.join(OCR, "harmonized_corpus_jiwer.tsv")
 EVAL_GT = os.path.join(OCR, "Evaluation", "GroundTruth")
 EVAL_OCR = os.path.join(OCR, "Evaluation", "OCRed")

@@ -13,8 +13,8 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 # in-repo copies, and KenLM is pointed at explicitly.
 DATA="${DATA:-${TESSERACT_WORKSPACE:-/media/des/Tess/Tesseract2}/synthetic_eval}"
 KENLM="${KENLM:-${AMHARIC_WORD_KENLM:-/mnt/mintdata/Users/Des/Mint/Models/KenLM/word_model/amharic_5gram.binary}}"
-CONF="${CONF:-$REPO/OCR_error_detection/Model/confusion_matrix.json}"
-DICT="${DICT:-$REPO/OCR_error_detection/Model/main_i7_frq10.txt}"
+CONF="${CONF:-$REPO/4_ocr_correction/error_detection/Model/confusion_matrix.json}"
+DICT="${DICT:-$REPO/4_ocr_correction/error_detection/Model/main_i7_frq10.txt}"
 MIN_FREQ="${MIN_FREQ:-2}"
 CHAR_LM="${CHAR_LM:-}"
 CHAR_ARGS=()

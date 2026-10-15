@@ -47,11 +47,16 @@ Fixes applied across this revision history:
 import os as _os
 import sys as _sys
 _root = _os.path.dirname(_os.path.abspath(__file__))
-while _root != _os.path.dirname(_root) and not _os.path.exists(_os.path.join(_root, "repo_paths.py")):
+while _root != _os.path.dirname(_root) and not _os.path.exists(
+        _os.path.join(_root, "tools", "stage_paths.py")):
     _root = _os.path.dirname(_root)
-if _root not in _sys.path:
-    _sys.path.insert(0, _root)
-import repo_paths  # noqa: E402  (imported after the path bootstrap)
+# tools/ first so stage_paths and repo_paths resolve, then register every stage
+# folder so cross-stage imports work by bare module name. This replaces the
+# thirteen root-level shims that used to forward those imports by hand.
+_sys.path.insert(0, _os.path.join(_root, "tools"))
+import stage_paths  # noqa: E402  (imported after the path bootstrap)
+stage_paths.register(_root)
+import repo_paths  # noqa: E402
 # ----------------------------------------------------------------------------
 
 import os
@@ -332,9 +337,9 @@ class AmharicOCRCorrector:
     #: Resolved relative to this file, so the defaults work from any directory.
     _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     DEFAULT_CONFUSION_MATRIX = os.path.join(
-        _REPO, "OCR_error_detection", "Model", "confusion_matrix.json")
+        _REPO, "error_detection", "Model", "confusion_matrix.json")
     DEFAULT_DICT_VOCAB = os.path.join(
-        _REPO, "OCR_error_detection", "Model", "main_i7_frq10.txt")
+        _REPO, "error_detection", "Model", "main_i7_frq10.txt")
 
     def __init__(
         self,
@@ -580,7 +585,7 @@ class AmharicOCRCorrector:
         if self.stage1_detection:
             # Try authoritative DetectionEngine via adapter first
             try:
-                from OCR_error_detection.adapter import CorrectorDetectionAdapter
+                from error_detection.adapter import CorrectorDetectionAdapter
                 (sw, spb, sfa, clm) = self._suspicion_cfg
                 self.suspicion = CorrectorDetectionAdapter(
                     self, weights=sw, pass_below=spb, flag_above=sfa,

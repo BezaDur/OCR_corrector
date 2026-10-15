@@ -4,14 +4,14 @@ Answers one question: what share of the CORRECT words in a page set are found in
 dictionary? Ground truth is (almost entirely) correct text, so no word alignment with the
 OCR output is needed.
 
-Run this on any evaluation folder laid out like OCR_error_detection/Evaluation/:
+Run this on any evaluation folder laid out like Evaluation/:
     GroundTruth/page_NNNN.gt.txt   hand-transcribed truth
     OCRed/page_NNNN.ocr.txt        OCR output (optional, reported for reference)
 
 Usage (on the machine that has the dictionary):
     python docs/lgbm_review/check_dictionary_coverage.py \
         --dict /path/to/main_i7.txt \
-        --set  OCR_error_detection/Evaluation
+        --set  4_ocr_correction/error_detection/Evaluation
 
 Compare the result with the in-corpus evaluation set (about 94% of correct words in the
 dictionary). A clearly lower number on fresh pages means the dictionary feature is
@@ -30,8 +30,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 sys.path.insert(0, ROOT)
 
-from OCR_error_detection.normalizer import AmharicNormalizer  # noqa: E402
-from OCR_error_detection.features import clean_surface  # noqa: E402
+from error_detection.normalizer import AmharicNormalizer  # noqa: E402
+from error_detection.features import clean_surface  # noqa: E402
 
 
 def load_vocab(path, norm):

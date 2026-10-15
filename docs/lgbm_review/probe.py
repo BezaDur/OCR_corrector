@@ -1,8 +1,8 @@
 import sys, os, io, contextlib, tempfile, time
 ROOT = '/home/user/OCR_corrector'
 sys.path.insert(0, ROOT)
-sys.path.insert(0, os.path.join(ROOT, 'OCR_error_detection'))
-from OCR_error_detection.detector import DetectionEngine
+sys.path.insert(0, os.path.join(ROOT, 'error_detection'))
+from error_detection.detector import DetectionEngine
 
 
 def mk(words):

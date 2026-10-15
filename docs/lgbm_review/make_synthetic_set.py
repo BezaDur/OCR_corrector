@@ -7,7 +7,7 @@ Input text file: UTF-8. Pages are separated by a line that contains only '---'.
 Within a page, each line is a line of text; blank lines are kept as paragraph breaks.
 Long lines are wrapped to the page width.
 
-Output (same layout as OCR_error_detection/Evaluation/):
+Output (same layout as Evaluation/):
     <out>/images/page_NNNN.png
     <out>/GroundTruth/page_NNNN.gt.txt
     <out>/manifest.csv

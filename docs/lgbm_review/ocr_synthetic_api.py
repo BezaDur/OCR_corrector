@@ -1,6 +1,6 @@
 """OCR the synthetic page images with Tesseract's Python API (tesserocr).
 
-Same output as OCR_error_detection/run_ocr.py: for each image
+Same output as 4_ocr_correction/error_detection/run_ocr.py: for each image
     <out>/page_NNNN.ocr.txt    OCR text
     <out>/page_NNNN.conf.tsv   word<TAB>confidence per word
 Used where the `tesseract` command-line binary is not installed. Same engine, same

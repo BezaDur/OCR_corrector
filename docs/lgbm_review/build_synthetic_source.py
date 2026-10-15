@@ -34,8 +34,8 @@ CORPUS_FILES = [
     os.path.join(ROOT, "mined_rare_sentences.txt"),
     os.path.join(ROOT, "amh.training_text"),
 ]
-TRAIN_TSV = os.path.join(ROOT, "OCR_error_detection", "harmonized_corpus_jiwer.tsv")
-EVAL_GT = os.path.join(ROOT, "OCR_error_detection", "Evaluation", "GroundTruth")
+TRAIN_TSV = os.path.join(ROOT, "error_detection", "harmonized_corpus_jiwer.tsv")
+EVAL_GT = os.path.join(ROOT, "Evaluation", "GroundTruth")
 
 
 def clean(text):

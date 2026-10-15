@@ -27,7 +27,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-CONFUSION = str(ROOT / "OCR_error_detection" / "Model" / "confusion_matrix.json")
+CONFUSION = str(ROOT / "4_ocr_correction" / "error_detection" / "Model" / "confusion_matrix.json")
 
 
 # --------------------------------------------------------------------------- #
@@ -915,7 +915,7 @@ class TestStage1Detection(unittest.TestCase):
 
     def _mk(self, **kw):
         return self.mod.AmharicOCRCorrector(
-            kenlm_path="", confusion_matrix_path=str(ROOT / "OCR_error_detection" / "Model" / "confusion_matrix.json"),
+            kenlm_path="", confusion_matrix_path=str(ROOT / "4_ocr_correction" / "error_detection" / "Model" / "confusion_matrix.json"),
             dict_vocab_path=self.lex, lm=self.NullLM(),
             state_factory=lambda: self.NullLM.S(),
             max_lexicon_types=200, segmenter=None, **kw)

@@ -1,7 +1,7 @@
 """Check: (a) one-flip signal direction on the eval data, (b) tesseract_conf distribution in the corpus."""
 import csv, os, collections
 
-ROOT = '/home/user/OCR_corrector/OCR_error_detection'
+ROOT = '/home/user/OCR_corrector/4_ocr_correction/error_detection'
 rows = list(csv.DictReader(open(os.path.join(ROOT, 'Evaluation/analysis.tsv'), encoding='utf-8'), delimiter='\t'))
 aligned = [r for r in rows if r['is_error'] in ('0', '1')]
 

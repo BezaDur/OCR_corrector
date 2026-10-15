@@ -61,18 +61,18 @@ class TestSpacing(CharLMBase):
     """
 
     def _ctx(self, spy):
-        from OCR_error_detection.features import FeatureContext
+        from error_detection.features import FeatureContext
         return FeatureContext(vocab={}, norm=lambda w: w, reverse_sub_map={},
                               char_lm=spy, symspell=None)
 
     def test_characters_are_spaced_before_scoring(self):
-        from OCR_error_detection.features import static_features
+        from error_detection.features import static_features
         spy = SpyCharLM()
         static_features("ትምህርት", self._ctx(spy))
         self.assertIn("ት ም ህ ር ት", spy.seen)
 
     def test_score_is_per_character(self):
-        from OCR_error_detection.features import static_features
+        from error_detection.features import static_features
         spy = SpyCharLM(value=-6.0)
         feats = static_features("ትምህርት", self._ctx(spy))
         # bos + eos are scored as well, so the total is divided by len + 1.
@@ -80,7 +80,7 @@ class TestSpacing(CharLMBase):
                                -6.0 / (len("ትምህርት") + 1))
 
     def test_missing_char_lm_column_is_nan(self):
-        from OCR_error_detection.features import static_features
+        from error_detection.features import static_features
         feats = static_features("ትምህርት", self._ctx(None))
         self.assertNotEqual(feats["char_kenlm_score"], feats["char_kenlm_score"])
 

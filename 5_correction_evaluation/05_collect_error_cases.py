@@ -5,11 +5,16 @@
 import os as _os
 import sys as _sys
 _root = _os.path.dirname(_os.path.abspath(__file__))
-while _root != _os.path.dirname(_root) and not _os.path.exists(_os.path.join(_root, "repo_paths.py")):
+while _root != _os.path.dirname(_root) and not _os.path.exists(
+        _os.path.join(_root, "tools", "stage_paths.py")):
     _root = _os.path.dirname(_root)
-if _root not in _sys.path:
-    _sys.path.insert(0, _root)
-import repo_paths  # noqa: E402  (imported after the path bootstrap)
+# tools/ first so stage_paths and repo_paths resolve, then register every stage
+# folder so cross-stage imports work by bare module name. This replaces the
+# thirteen root-level shims that used to forward those imports by hand.
+_sys.path.insert(0, _os.path.join(_root, "tools"))
+import stage_paths  # noqa: E402  (imported after the path bootstrap)
+stage_paths.register(_root)
+import repo_paths  # noqa: E402
 # ----------------------------------------------------------------------------
 
 import sys as _sys
@@ -22,7 +27,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from amharic_canonical_normalizer import normalize_for_metric
-from ocr_decision_audit import DECISION_STATUSES, audit_tokens
+from audit_decision import DECISION_STATUSES, audit_tokens
 
 DATASET_DIR = Path(repo_paths.workspace("synthetic_eval"))
 

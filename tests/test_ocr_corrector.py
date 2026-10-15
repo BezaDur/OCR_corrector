@@ -77,7 +77,7 @@ class CorrectorTests(unittest.TestCase):
         self.addCleanup(folder.cleanup)
         lexicon = Path(folder.name) / 'words.txt'
         lexicon.write_text('\n'.join(f'{w} {f}' for w, f in words), encoding='utf-8')
-        options = dict(kenlm_path="unused", confusion_matrix_path=str(ROOT / 'OCR_error_detection' / 'Model' / 'confusion_matrix.json'),
+        options = dict(kenlm_path="unused", confusion_matrix_path=str(ROOT / '4_ocr_correction' / 'error_detection' / 'Model' / 'confusion_matrix.json'),
                        dict_vocab_path=str(lexicon), lm=LM(), state_factory=State, segmenter=None)
         options.update(kwargs)
         with contextlib.redirect_stdout(io.StringIO()):

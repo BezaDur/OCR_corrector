@@ -10,10 +10,10 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score, average_precision_score
 
 sys.path.insert(0, '/home/user/OCR_corrector')
-sys.path.insert(0, '/home/user/OCR_corrector/OCR_error_detection')
-from OCR_error_detection.detector import RARE_GLYPHS
+sys.path.insert(0, '/home/user/OCR_corrector/4_ocr_correction/error_detection')
+from error_detection.detector import RARE_GLYPHS
 
-ROOT = '/home/user/OCR_corrector/OCR_error_detection'
+ROOT = '/home/user/OCR_corrector/4_ocr_correction/error_detection'
 rows = list(csv.DictReader(open(os.path.join(ROOT, 'Evaluation/analysis.tsv'), encoding='utf-8'), delimiter='\t'))
 aligned = [r for r in rows if r['is_error'] in ('0', '1')]
 

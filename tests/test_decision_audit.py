@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from ocr_decision_audit import audit_tokens, DECISION_STATUSES
+from audit_decision import audit_tokens, DECISION_STATUSES
 from ocr_metrics import align_tokens
 
 ROOT = Path(__file__).resolve().parents[1]
