@@ -36,7 +36,7 @@ _ROOT = os.path.dirname(os.path.dirname(_HERE))  # repo root
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from OCR_error_detection import DetectionEngine
+from OCR_error_detection import ConfidencePolicy, DetectionEngine
 from OCR_error_detection.alignment import align_tokens
 
 GT_DIR = os.path.join(os.path.dirname(_HERE), "Evaluation", "GroundTruth")
@@ -199,6 +199,18 @@ def main(argv=None):
                     help="lexicon for --model. A model trained on local_lexicon "
                          "must be served with it, or in_lexicon / "
                          "log_corpus_freq come from the wrong vocabulary")
+    ap.add_argument("--confidence-policy", action="store_true",
+                    help="apply the post-model confidence policy layer "
+                         "(ConfidencePolicy.tuned(): promote gray->pass at "
+                         "conf>=0.82, widen gray->flag at conf<0.65 & s>=0.35). "
+                         "Off by default so this script keeps reproducing the "
+                         "baseline the other numbers in this repo were measured at.")
+    ap.add_argument("--policy-demote-pass-conf", type=float, default=None,
+                    help="also enable policy rule C (pass->gray below this "
+                         "confidence). Requires --confidence-policy. Disabled by "
+                         "default: measured at 5.8%% marginal precision, it sends "
+                         "~847 extra clean words to the corrector per 100 pages "
+                         "and lowers attention precision.")
     ap.add_argument("--min-freq", type=int, default=None,
                     help="lexicon frequency filter to apply to --lexicon")
     ap.add_argument("--min-recall", type=float, default=80.0,
@@ -223,6 +235,18 @@ def main(argv=None):
             engine_kwargs["dict_min_freq"] = args.min_freq
     elif args.min_freq:
         print("--min-freq needs --lexicon; ignored", file=sys.stderr)
+    if args.policy_demote_pass_conf is not None and not args.confidence_policy:
+        print("--policy-demote-pass-conf needs --confidence-policy; ignored",
+              file=sys.stderr)
+    if args.confidence_policy:
+        pol = ConfidencePolicy.tuned()
+        if args.policy_demote_pass_conf is not None:
+            pol.demote_pass_conf = args.policy_demote_pass_conf
+        engine_kwargs["confidence_policy"] = pol
+        print(f"  confidence policy: promote gray->pass at conf>={pol.promote_pass_conf}, "
+              f"widen gray->flag at conf<{pol.flag_below_conf} & s>={pol.flag_min_suspicion}"
+              + (f", demote pass->gray at conf<{pol.demote_pass_conf}"
+                 if pol.demote_pass_conf is not None else "  (rule C off)"))
     detector = DetectionEngine(**engine_kwargs)
     if args.model or args.lexicon:
         print(f"  model : {detector.model_path}")

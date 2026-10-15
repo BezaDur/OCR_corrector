@@ -475,6 +475,276 @@ class TestDetectionEngine(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------- #
+# Post-model confidence policy layer
+# --------------------------------------------------------------------------- #
+class TestConfidencePolicy(unittest.TestCase):
+    """ConfidencePolicy re-bands the gate output using Tesseract confidence.
+
+    The LightGBM core stays confidence-free: the layer runs strictly after the
+    model predicts and never feeds back into the features. Rule C
+    (pass -> gray) is measured at 5.8% marginal precision and is therefore off
+    by default; these tests pin that default so it cannot be switched on
+    accidentally.
+    """
+
+    def _sig(self, ocr_conf=None, in_lexicon=False, one_flip_words=()):
+        from OCR_error_detection import TokenSignals
+        return TokenSignals(token="ሙሉት", in_lexicon=in_lexicon,
+                            one_flip_words=list(one_flip_words),
+                            ocr_conf=ocr_conf)
+
+    # -- the layer is inert without confidence ----------------------------- #
+    def test_missing_confidence_is_a_noop(self):
+        from OCR_error_detection import ConfidencePolicy
+        pol = ConfidencePolicy.tuned()
+        for label in ("pass", "gray", "flag"):
+            got, note = pol.review(label, 0.5, self._sig(ocr_conf=None))
+            self.assertEqual(got, label)
+            self.assertEqual(note, "")
+
+    # -- Rule A: gray -> pass ---------------------------------------------- #
+    def test_rule_a_promotes_confident_lexicon_word(self):
+        from OCR_error_detection import ConfidencePolicy
+        pol = ConfidencePolicy.tuned()
+        sig = self._sig(ocr_conf=0.90, in_lexicon=True)
+        got, note = pol.review("gray", 0.20, sig)
+        self.assertEqual(got, "pass")
+        self.assertIn("PASS", note)
+
+    def test_rule_a_requires_the_lexicon(self):
+        from OCR_error_detection import ConfidencePolicy
+        pol = ConfidencePolicy.tuned()
+        got, note = pol.review("gray", 0.20, self._sig(ocr_conf=0.90, in_lexicon=False))
+        self.assertEqual(got, "gray")
+        self.assertEqual(note, "")
+
+    def test_rule_a_requires_no_one_flip_candidate(self):
+        """A reachable one-flip correction means there is still something to review."""
+        from OCR_error_detection import ConfidencePolicy
+        pol = ConfidencePolicy.tuned()
+        got, _ = pol.review("gray", 0.20,
+                            self._sig(ocr_conf=0.90, in_lexicon=True,
+                                      one_flip_words=["ሙሉ"]))
+        self.assertEqual(got, "gray")
+
+    def test_rule_a_respects_its_confidence_threshold(self):
+        from OCR_error_detection import ConfidencePolicy
+        pol = ConfidencePolicy.tuned()
+        got, _ = pol.review("gray", 0.20,
+                            self._sig(ocr_conf=0.81, in_lexicon=True))
+        self.assertEqual(got, "gray")
+
+    # -- Rule B: gray -> flag ---------------------------------------------- #
+    def test_rule_b_flags_low_confidence_error_leaning_gray(self):
+        from OCR_error_detection import ConfidencePolicy
+        pol = ConfidencePolicy.tuned()
+        got, note = pol.review("gray", 0.358, self._sig(ocr_conf=0.443))
+        self.assertEqual(got, "flag")
+        self.assertIn("FLAG", note)
+
+    def test_rule_b_requires_the_suspicion_floor(self):
+        """This floor is what makes rule B ~90% precise instead of ~50%.
+
+        Low Tesseract confidence alone is not enough; the model must also lean
+        toward error. Without the floor, confidence-only flagging sweeps up
+        clean words.
+        """
+        from OCR_error_detection import ConfidencePolicy
+        pol = ConfidencePolicy.tuned()
+        got, note = pol.review("gray", 0.20, self._sig(ocr_conf=0.30))
+        self.assertEqual(got, "gray")
+        self.assertEqual(note, "")
+
+    def test_rule_b_respects_its_confidence_threshold(self):
+        from OCR_error_detection import ConfidencePolicy
+        pol = ConfidencePolicy.tuned()
+        got, _ = pol.review("gray", 0.50, self._sig(ocr_conf=0.65))
+        self.assertEqual(got, "gray")
+
+    # -- Rule C: pass -> gray, off by default ------------------------------ #
+    def test_rule_c_is_off_by_default(self):
+        """A very low-confidence PASS word must stay PASS unless C is enabled."""
+        from OCR_error_detection import ConfidencePolicy
+        pol = ConfidencePolicy.tuned()
+        self.assertIsNone(pol.demote_pass_conf)
+        got, note = pol.review("pass", 0.001, self._sig(ocr_conf=0.20))
+        self.assertEqual(got, "pass")
+        self.assertEqual(note, "")
+
+    def test_rule_c_can_be_enabled_explicitly(self):
+        from OCR_error_detection import ConfidencePolicy
+        pol = ConfidencePolicy.tuned()
+        pol.demote_pass_conf = 0.45
+        got, note = pol.review("pass", 0.001, self._sig(ocr_conf=0.20))
+        self.assertEqual(got, "gray")
+        self.assertIn("GRAY", note)
+
+    # -- the layer never invents work for a hard FLAG ---------------------- #
+    def test_flag_verdicts_are_never_touched(self):
+        from OCR_error_detection import ConfidencePolicy
+        pol = ConfidencePolicy.tuned()
+        pol.demote_pass_conf = 0.45
+        for conf in (0.05, 0.50, 0.99, None):
+            got, note = pol.review("flag", 0.90, self._sig(ocr_conf=conf))
+            self.assertEqual(got, "flag")
+            self.assertEqual(note, "")
+
+    # -- construction from a model payload --------------------------------- #
+    def test_from_payload_accepts_none_policy_and_mapping(self):
+        from OCR_error_detection import ConfidencePolicy
+        self.assertIsNone(ConfidencePolicy.from_payload(None))
+        pol = ConfidencePolicy.tuned()
+        self.assertIs(ConfidencePolicy.from_payload(pol), pol)
+        built = ConfidencePolicy.from_payload(
+            {"promote_pass_conf": 0.80, "flag_below_conf": 0.60,
+             "flag_min_suspicion": 0.40, "demote_pass_conf": 0.30})
+        self.assertEqual(built.promote_pass_conf, 0.80)
+        self.assertEqual(built.flag_below_conf, 0.60)
+        self.assertEqual(built.flag_min_suspicion, 0.40)
+        self.assertEqual(built.demote_pass_conf, 0.30)
+
+    def test_from_payload_rejects_unknown_keys(self):
+        """A typo in a retrained pickle must surface, not silently disable a rule."""
+        from OCR_error_detection import ConfidencePolicy
+        with self.assertRaises(ValueError):
+            ConfidencePolicy.from_payload({"promote_pass_conf": 0.8, "flag_belo_conf": 0.6})
+
+    def test_from_payload_rejects_wrong_type(self):
+        from OCR_error_detection import ConfidencePolicy
+        with self.assertRaises(TypeError):
+            ConfidencePolicy.from_payload(0.82)
+
+    def test_tuned_matches_the_documented_operating_point(self):
+        from OCR_error_detection import ConfidencePolicy
+        pol = ConfidencePolicy.tuned()
+        self.assertEqual(pol.promote_pass_conf, 0.82)
+        self.assertEqual(pol.flag_below_conf, 0.65)
+        self.assertEqual(pol.flag_min_suspicion, 0.35)
+        self.assertIsNone(pol.demote_pass_conf)
+
+
+class TestConfidencePolicyInEngine(unittest.TestCase):
+    """End-to-end behaviour of the layer inside DetectionEngine.verdict().
+
+    These need the real shipped payload, because the rules only fire in the
+    gray band that the calibrated model actually produces.
+    """
+
+    def test_layer_is_off_unless_requested(self):
+        det = _real_model_engine()
+        if det is None:
+            self.skipTest("shipped model or lightgbm unavailable")
+        self.assertIsNone(det.confidence_policy)
+
+    def test_rule_b_moves_gray_to_flag_on_a_real_token(self):
+        """Also proves verdict() rescales Tesseract's 0-100 conf.tsv value
+        onto sig.ocr_conf before the policy reads it. Passing 44.3 on the raw
+        scale must behave as 0.443, not as a saturated 1.0.
+        """
+        from OCR_error_detection import ConfidencePolicy
+        base = _real_model_engine()
+        pol = _real_model_engine(confidence_policy=ConfidencePolicy.tuned())
+        if base is None or pol is None:
+            self.skipTest("shipped model or lightgbm unavailable")
+        vb = base.verdict("ሙሉት", [], ocr_conf=44.3)
+        vp = pol.verdict("ሙሉት", [], ocr_conf=44.3)
+        self.assertEqual(vb.label, "gray")
+        self.assertEqual(vp.label, "flag")
+        self.assertAlmostEqual(vp.signals.ocr_conf, 0.443, places=3)
+        self.assertIn("-> FLAG", vp.reason)
+
+    def test_rule_a_moves_gray_to_pass_on_a_real_token(self):
+        from OCR_error_detection import ConfidencePolicy
+        base = _real_model_engine()
+        pol = _real_model_engine(confidence_policy=ConfidencePolicy.tuned())
+        if base is None or pol is None:
+            self.skipTest("shipped model or lightgbm unavailable")
+        vb = base.verdict("የዩክሬንን", [], ocr_conf=90.0, doc_freq=2)
+        vp = pol.verdict("የዩክሬንን", [], ocr_conf=90.0, doc_freq=2)
+        self.assertEqual(vb.label, "gray")
+        self.assertEqual(vp.label, "pass")
+        self.assertIn("-> PASS", vp.reason)
+
+    def test_layer_rebands_without_changing_the_score(self):
+        """The suspicion the model produced must survive untouched, so the
+        layer cannot silently become a second scorer.
+        """
+        from OCR_error_detection import ConfidencePolicy
+        base = _real_model_engine()
+        pol = _real_model_engine(confidence_policy=ConfidencePolicy.tuned())
+        if base is None or pol is None:
+            self.skipTest("shipped model or lightgbm unavailable")
+        for tok, conf, df in (("ሙሉት", 44.3, None), ("ማእክሉ", 44.1, None),
+                              ("የዩክሬንን", 90.0, 2), ("እና", 95.0, None)):
+            vb = base.verdict(tok, [], ocr_conf=conf, doc_freq=df)
+            vp = pol.verdict(tok, [], ocr_conf=conf, doc_freq=df)
+            self.assertEqual(vb.suspicion, vp.suspicion, tok)
+
+    def test_tokens_without_confidence_are_unaffected(self):
+        from OCR_error_detection import ConfidencePolicy
+        base = _real_model_engine()
+        pol = _real_model_engine(confidence_policy=ConfidencePolicy.tuned())
+        if base is None or pol is None:
+            self.skipTest("shipped model or lightgbm unavailable")
+        for tok in ("ሙሉት", "የዩክሬንን", "ማእክሉ", "እና", "ሀገራት"):
+            self.assertEqual(base.verdict(tok, []).label,
+                             pol.verdict(tok, []).label, tok)
+
+    def test_model_core_stays_confidence_free(self):
+        """The design guarantee: confidence enters after prediction, never as
+        a feature. If ocr_conf ever reappears in the feature list, the layer
+        has stopped being a policy and become a second model input.
+        """
+        from OCR_error_detection import ConfidencePolicy
+        det = _real_model_engine(confidence_policy=ConfidencePolicy.tuned())
+        if det is None:
+            self.skipTest("shipped model or lightgbm unavailable")
+        self.assertNotIn("ocr_conf", det.lgbm_features)
+
+    def test_payload_can_carry_the_policy_and_explicit_wins(self):
+        """Thresholds are model-specific, so a retrained pickle can ship the
+        policy it was measured with; an explicitly passed policy still wins.
+        """
+        import joblib
+        from OCR_error_detection import ConfidencePolicy
+        pkl = _HERE / "Model" / "detector_lgbm_conffree.pkl"
+        lex = _HERE / "Model" / "main_i7_frq10.txt"
+        if not pkl.exists() or not lex.exists():
+            self.skipTest("shipped payload or lexicon unavailable")
+        try:
+            import lightgbm  # noqa: F401
+        except ImportError:
+            self.skipTest("lightgbm unavailable")
+        payload = dict(joblib.load(str(pkl)))
+        payload["confidence_policy"] = {"promote_pass_conf": 0.70,
+                                        "flag_below_conf": 0.50,
+                                        "flag_min_suspicion": 0.42}
+        folder = tempfile.mkdtemp()
+        try:
+            tmp = os.path.join(folder, "with_policy.pkl")
+            joblib.dump(payload, tmp)
+            with contextlib.redirect_stdout(io.StringIO()), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                from OCR_error_detection import DetectionEngine
+                carried = DetectionEngine(lgbm_model_path=tmp, dict_vocab_path=str(lex),
+                                          dict_min_freq=500,
+                                          confusion_matrix_path=CONFUSION, verbose=False)
+                explicit = DetectionEngine(lgbm_model_path=tmp, dict_vocab_path=str(lex),
+                                           dict_min_freq=500,
+                                           confusion_matrix_path=CONFUSION,
+                                           confidence_policy=ConfidencePolicy.tuned(),
+                                           verbose=False)
+            self.assertIsNotNone(carried.confidence_policy)
+            self.assertEqual(carried.confidence_policy.promote_pass_conf, 0.70)
+            self.assertEqual(carried.confidence_policy.flag_below_conf, 0.50)
+            self.assertEqual(carried.confidence_policy.flag_min_suspicion, 0.42)
+            self.assertIsNone(carried.confidence_policy.demote_pass_conf)
+            self.assertEqual(explicit.confidence_policy.promote_pass_conf, 0.82)
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
+
+
+# --------------------------------------------------------------------------- #
 # Integration with the main corrector (adapter pattern)
 # --------------------------------------------------------------------------- #
 class TestAdapterPattern(unittest.TestCase):

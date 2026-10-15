@@ -20,7 +20,8 @@ import os
 import re
 import math
 import unicodedata
-from typing import Callable, Dict, List, Mapping, Optional, Sequence
+from dataclasses import dataclass
+from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 SymSpell = Verbosity = None
 kenlm = None
@@ -145,6 +146,129 @@ def _canonical_form(word: str, normalizer: AmharicNormalizer) -> str:
     except Exception:
         return nfc
 
+@dataclass
+class ConfidencePolicy:
+    """Post-model policy layer: uses Tesseract confidence AFTER the model has
+    predicted, so the LightGBM core stays 100% confidence-free by design.
+
+    The model produces a calibrated suspicion score; the gates turn it into
+    pass/gray/flag. Those gates are a single global threshold pair, and the
+    shipped isotonic calibrator emits only 59 distinct values, so the FLAG
+    band is thin: at 0.10/0.65 only 2.65% of errors are hard-flagged, at 65.7%
+    FLAG precision. Lowering the flag gate to widen that band trades precision
+    away fast (gate 0.50 buys 344 more flagged errors but drops precision to
+    49.9%).
+
+    Confidence is an *independent* signal, so combining it beats either alone.
+    Measured on the 100 held-out pages (62,385 aligned tokens, 4,267 errors):
+
+      rule                  fires   errors   clean   precision of what moves
+      A gray->pass            202        3     199   98.5% (correctly clean)
+      B gray->flag            523      471      52   90.1%
+      C pass->gray            899       52     847    5.8%  <- disabled by default
+
+    Rule B is the win: FLAG coverage 2.65% -> 13.69% at 84.0% FLAG precision,
+    and it costs the corrector nothing, because those words were already GRAY
+    and already being processed. In the parent pipeline FLAG only removes the
+    protective extra_margin, so B routes errors into more aggressive correction.
+
+    Rule C is why `demote_pass_conf` defaults to None. It is the only rule that
+    increases the corrector's workload on clean text: +648 clean words for +49
+    errors, and the corrector damages ~4.06% of the clean tokens it touches
+    (Stage 5 benchmark), so it pays ~26 damaged words to catch 49. It also
+    *lowers* attention precision 30.05% -> 28.90%. It still lifts the
+    `recall - FF` score, because that score counts GRAY as caught while
+    ignoring clean words pushed into GRAY. Opt in deliberately, with a
+    measurement, not by default.
+
+    Thresholds are model-specific and must ride with the model artifact:
+    `loc_f10` and `m7_f1000` are already optimal at flag gate 0.65 while the
+    shipped conffree model wants 0.85. A payload may store them under the
+    `confidence_policy` key; an explicitly passed policy wins.
+
+    All confidences are on the 0-1 scale (`verdict()` rescales Tesseract's
+    0-100 conf.tsv values onto `sig.ocr_conf` before this runs). Tokens with no
+    confidence are never touched — the layer is a no-op when conf is missing,
+    which keeps the detector's behaviour unchanged for callers that do not
+    supply it.
+    """
+
+    # Rule A: gray -> pass. The lexicon already vouches for the word, there is
+    # no confusion-matrix candidate within one flip, and Tesseract is confident
+    # it read the glyphs correctly. Nothing left to review.
+    promote_pass_conf: float = 0.82
+
+    # Rule B: gray -> flag. Tesseract is unsure AND the model is not merely
+    # unsure but leans toward error. Both signals agreeing is what makes this
+    # 90% precise rather than 50%.
+    flag_below_conf: float = 0.65
+    flag_min_suspicion: float = 0.35
+
+    # Rule C: pass -> gray. Disabled by default; see the class docstring.
+    demote_pass_conf: Optional[float] = None
+
+    @classmethod
+    def tuned(cls) -> "ConfidencePolicy":
+        """The recommended operating point: A + widened B, no C.
+
+        recall 92.78%, flag-only 13.69%, FF 0.191%, FLAG precision 84.0%,
+        attention precision 30.50% (vs 30.05% baseline) on the 100 held-out
+        pages. Validated with page-level 5-fold CV: thresholds re-selected on
+        unseen pages, so the gain is not fitted to the pages being reported.
+        """
+        return cls()
+
+    @classmethod
+    def from_payload(cls, obj) -> Optional["ConfidencePolicy"]:
+        """Build a policy from a model-payload value, or return None.
+
+        Accepts a ConfidencePolicy, a Mapping, or None. Unknown keys are
+        rejected rather than silently ignored, so a typo in a retrained
+        pickle surfaces instead of quietly disabling a rule.
+        """
+        if obj is None:
+            return None
+        if isinstance(obj, ConfidencePolicy):
+            return obj
+        if isinstance(obj, Mapping):
+            known = {f for f in ("promote_pass_conf", "flag_below_conf",
+                                 "flag_min_suspicion", "demote_pass_conf")}
+            unknown = set(obj) - known
+            if unknown:
+                raise ValueError(
+                    f"confidence_policy has unknown keys: {sorted(unknown)}; "
+                    f"expected a subset of {sorted(known)}")
+            return cls(**obj)
+        raise TypeError(
+            f"confidence_policy must be a ConfidencePolicy or a Mapping, "
+            f"got {type(obj).__name__}")
+
+    def review(self, label: str, suspicion: float, sig) -> Tuple[str, str]:
+        """Apply the policy to one verdict. Returns (label, note).
+
+        `note` is empty when the policy did not move the token, so callers can
+        append it to the verdict reason for auditability.
+        """
+        conf = getattr(sig, "ocr_conf", None)
+        if conf is None:
+            return label, ""
+
+        if label == "gray":
+            if (sig.in_lexicon and not sig.one_flip_words
+                    and conf >= self.promote_pass_conf):
+                return "pass", (f" -> PASS [conf {conf:.3f} >= {self.promote_pass_conf:.2f},"
+                                f" in lexicon, no one-flip]")
+            if (conf < self.flag_below_conf
+                    and suspicion >= self.flag_min_suspicion):
+                return "flag", (f" -> FLAG [conf {conf:.3f} < {self.flag_below_conf:.2f},"
+                                f" s {suspicion:.3f} >= {self.flag_min_suspicion:.2f}]")
+        elif label == "pass":
+            if self.demote_pass_conf is not None and conf < self.demote_pass_conf:
+                return "gray", (f" -> GRAY [conf {conf:.3f} < {self.demote_pass_conf:.2f}]")
+
+        return label, ""
+
+
 class DetectionEngine:
     """Authoritative LightGBM detector — sole source of truth.
 
@@ -173,6 +297,7 @@ class DetectionEngine:
         enable_symspell: bool = False,
         legacy_impute: Optional[bool] = None,
         gates_override_model: bool = False,
+        confidence_policy: Optional[ConfidencePolicy] = None,
         verbose: bool = False,
     ):
         """pass_below / flag_above default to the README's gates (0.10 / 0.65);
@@ -188,6 +313,19 @@ class DetectionEngine:
         adapter; honouring those unconditionally would silently move the
         parent's Stage-1 operating point. Retune deliberately, then measure
         with scripts/tune_gates.py.
+
+        confidence_policy: opt-in post-model layer that uses Tesseract
+        confidence to move tokens between pass/gray/flag AFTER the model has
+        predicted (see ConfidencePolicy). Deliberately a separate switch from
+        gates_override_model, not folded into it: gates_override_model changes
+        gate *precedence*, while this adds a *layer*, and conflating them would
+        make it impossible to measure the policy at a chosen gate pair without
+        also changing which gates are in force. Default None keeps the layer
+        off, so the parent pipeline (which forwards its own gates through the
+        adapter and never passes this) is unaffected. A payload that stores a
+        `confidence_policy` key supplies the tuned thresholds for the model it
+        was measured with; an explicitly passed policy wins, matching the
+        precedence philosophy above.
 
         dict_vocab_path / dict_min_freq / max_lexicon_types apply to a
         caller-supplied lexicon. A caller-supplied path that does not exist
@@ -208,6 +346,8 @@ class DetectionEngine:
         self.max_one_flip = max_one_flip
         self.legacy_impute = legacy_impute
         self.gates_override_model = gates_override_model
+        # An explicitly passed policy wins over one stored in the payload.
+        self.confidence_policy = confidence_policy
         self.verbose = verbose
         self._stage1 = {"pass": 0, "gray": 0, "flag": 0}
 
@@ -250,11 +390,20 @@ class DetectionEngine:
                     self.pass_below = payload.get("pass_thresh", self.pass_below)
                     self.flag_above = payload.get("flag_thresh", self.flag_above)
                 self.calibrator = payload.get("calibrator") or payload.get("isotonic") or payload.get("calibration")
+                if self.confidence_policy is None:
+                    self.confidence_policy = ConfidencePolicy.from_payload(
+                        payload.get("confidence_policy"))
                 schema = payload.get("feature_schema_version", payload.get("feature_schema", 1))
                 self._legacy_model = int(schema) < NAN_SCHEMA_VERSION
                 if self.verbose:
                     cal_info = "with isotonic calibration" if self.calibrator is not None else "no calibration"
-                    print(f"  LightGBM loaded ({len(self.lgbm_features)} feats, gates {self.pass_below}/{self.flag_above}) {cal_info}", flush=True)
+                    pol_info = ""
+                    if self.confidence_policy is not None:
+                        p = self.confidence_policy
+                        pol_info = (f" +confidence policy (promote>={p.promote_pass_conf},"
+                                    f" flag<{p.flag_below_conf}&s>={p.flag_min_suspicion}"
+                                    f"{'' if p.demote_pass_conf is None else f', demote<{p.demote_pass_conf}'})")
+                    print(f"  LightGBM loaded ({len(self.lgbm_features)} feats, gates {self.pass_below}/{self.flag_above}) {cal_info}{pol_info}", flush=True)
             except Exception as e:
                 self.lgbm_model = None
                 self.lgbm_features = []
@@ -620,6 +769,16 @@ class DetectionEngine:
             # No manual floors per roadmap — trust calibrated probabilities
             # Only keep minimal OOV->gray for backward compat if model says pass but OOV
             # But per roadmap we should NOT override. We keep no overrides.
+            #
+            # The optional confidence policy is NOT such an override: it runs
+            # after the model has predicted and never feeds back into the
+            # features, so the LightGBM core stays confidence-free. It only
+            # re-bands the gate output using an independent signal. Off unless
+            # a policy was passed or the payload carries one.
+            if self.confidence_policy is not None:
+                label, note = self.confidence_policy.review(label, s, sig)
+                if note:
+                    reason += note
 
             if label == "pass":
                 self._stage1["pass"] += 1

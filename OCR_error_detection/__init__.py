@@ -10,7 +10,7 @@
 #     print(result.label, result.suspicion)
 #
 
-from OCR_error_detection.detector import DetectionEngine
+from OCR_error_detection.detector import ConfidencePolicy, DetectionEngine
 from OCR_error_detection.adapter import CorrectorDetectionAdapter
 from OCR_error_detection.signals import TokenSignals, Verdict
 from OCR_error_detection.scoring import combine_signals, DEFAULT_WEIGHTS
@@ -24,6 +24,7 @@ from OCR_error_detection.utils import (
 
 __all__ = [
     "DetectionEngine",
+    "ConfidencePolicy",
     "CorrectorDetectionAdapter",
     "TokenSignals",
     "Verdict",

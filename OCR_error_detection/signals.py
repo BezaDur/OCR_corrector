@@ -46,7 +46,11 @@ class TokenSignals:
     char_lm: Optional[float] = None   # avg log10 prob under the char LM
     lm_fit: Optional[float] = None    # logP(w|ctx) - logP_unigram(w)
     morph_ok: Optional[bool] = None   # segmenter verdict (expensive)
-    ocr_conf: Optional[float] = None  # Tesseract word confidence, 0-100
+    ocr_conf: Optional[float] = None  # Tesseract word confidence, normalized 0-1
+    # (DetectionEngine.verdict() rescales the 0-100 conf.tsv value onto this
+    # field before anything downstream reads it, so consumers must compare
+    # against 0-1 thresholds. features.feature_dict() normalizes the raw value
+    # the same way for the legacy ocr_conf feature column.)
     len_ratio: float = 1.0            # length / corpus mean (4.14)
     rare_glyph_ratio: float = 0.0
     mixed_script: bool = False
