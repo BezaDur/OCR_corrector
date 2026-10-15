@@ -7,15 +7,27 @@
    floor behaviour moves. Validated first: rows with no floor tag must reproduce recorded labels.
 """
 import csv, glob, os, re, collections
+# --- portable paths: tools/analysis/ is two levels below the repo root -------
+import os as _os, sys as _sys
+_REPO = _os.path.abspath(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", ".."))
+if _os.path.join(_REPO, "tools") not in _sys.path:
+    _sys.path.insert(0, _os.path.join(_REPO, "tools"))
+import stage_paths  # noqa: E402
+stage_paths.register(_REPO)
+DETECTOR = _os.path.join(_REPO, "4_ocr_correction", "error_detection")  # detector package
+EVAL = _os.path.join(_REPO, "Evaluation")                              # shared page corpus
+DATA = _os.path.join(_REPO, "1_data_preparation", "data")              # corpora
+# ----------------------------------------------------------------------------
 
-ROOT = '/home/user/OCR_corrector/4_ocr_correction/error_detection'
+
+
 P = re.compile(r'[^\w\s]|\d')
-rows = list(csv.DictReader(open(os.path.join(ROOT, 'Evaluation/analysis.tsv'), encoding='utf-8'), delimiter='\t'))
+rows = list(csv.DictReader(open(os.path.join(EVAL, 'analysis.tsv'), encoding='utf-8'), delimiter='\t'))
 al = [r for r in rows if r['is_error'] in ('0', '1')]
 
 # 1 + 2
 raw = {os.path.basename(f).replace('.ocr.txt', ''): open(f, encoding='utf-8').read().split()
-       for f in glob.glob(os.path.join(ROOT, 'Evaluation/OCRed/*.ocr.txt'))}
+       for f in glob.glob(os.path.join(EVAL, 'OCRed/*.ocr.txt'))}
 sel = [r for r in al if r['is_error'] == '0' and r['in_lexicon'] == '1' and 'OOV kept' in r['reason']]
 c = collections.Counter()
 for r in sel:
@@ -28,7 +40,6 @@ for r in sel:
         c['ambiguous (bare form also on page)'] += 1
 print('OOV-kept floor on in-lexicon correct words:', len(sel), dict(c))
 
-
 def label(score, in_lex, conf):
     lab = 'flag' if score >= 0.6 else ('gray' if score >= 0.15 else 'pass')
     if not in_lex and conf is not None and conf < 0.50:
@@ -38,7 +49,6 @@ def label(score, in_lex, conf):
     if conf is not None and conf < 0.60 and lab == 'pass':
         return 'gray'
     return lab
-
 
 # 3 validation: rows without a floor tag must reproduce the recorded label
 ok = bad = 0
@@ -52,7 +62,6 @@ for r in al:
         bad += 1
 print('validation, floor-free rows reproduced:', ok, 'mismatched:', bad)
 
-
 def stats(pairs):
     n0 = collections.Counter(l for y, l in pairs if y == '0')
     n1 = collections.Counter(l for y, l in pairs if y == '1')
@@ -64,7 +73,6 @@ def stats(pairs):
         'errors caught % (flag+gray)': round(100 * (n1['gray'] + n1['flag']) / nerr, 2),
         'errors pass/gray/flag': (n1['pass'], n1['gray'], n1['flag']),
     }
-
 
 before = [(r['is_error'], r['detector_verdict']) for r in al]
 after = [(r['is_error'], label(float(r['detector_score']), r['in_lexicon'] == '1',

@@ -10,7 +10,7 @@ from audit_decision import audit_tokens, DECISION_STATUSES
 from ocr_metrics import align_tokens
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('decision_cli', ROOT / '5_correction_evaluation' / '05_collect_error_cases.py')
+spec = importlib.util.spec_from_file_location('decision_cli', ROOT / '5_correction_evaluation' / '02_collect_error_cases.py')
 cli = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(cli)
 

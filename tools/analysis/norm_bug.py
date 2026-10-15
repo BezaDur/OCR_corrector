@@ -9,13 +9,23 @@ normalized lookup). If the bug drives verdicts, h_family + in_lexicon=1 should b
 mostly gray/flag, unlike plain + in_lexicon=1.
 """
 import csv, sys, os, collections
-sys.path.insert(0, '/home/user/OCR_corrector')
-sys.path.insert(0, '/home/user/OCR_corrector/4_ocr_correction/error_detection')
-from normalizer import AmharicNormalizer
+# --- portable paths: tools/analysis/ is two levels below the repo root -------
+import os as _os, sys as _sys
+_REPO = _os.path.abspath(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", ".."))
+if _os.path.join(_REPO, "tools") not in _sys.path:
+    _sys.path.insert(0, _os.path.join(_REPO, "tools"))
+import stage_paths  # noqa: E402
+stage_paths.register(_REPO)
+DETECTOR = _os.path.join(_REPO, "4_ocr_correction", "error_detection")  # detector package
+EVAL = _os.path.join(_REPO, "Evaluation")                              # shared page corpus
+DATA = _os.path.join(_REPO, "1_data_preparation", "data")              # corpora
+# ----------------------------------------------------------------------------
+
+from error_detection.normalizer import AmharicNormalizer
 from error_detection.detector import RARE_GLYPHS
 
-ROOT = '/home/user/OCR_corrector/4_ocr_correction/error_detection'
-rows = list(csv.DictReader(open(os.path.join(ROOT, 'Evaluation/analysis.tsv'), encoding='utf-8'), delimiter='\t'))
+
+rows = list(csv.DictReader(open(os.path.join(EVAL, 'analysis.tsv'), encoding='utf-8'), delimiter='\t'))
 aligned = [r for r in rows if r['is_error'] in ('0', '1')]
 norm = AmharicNormalizer()
 

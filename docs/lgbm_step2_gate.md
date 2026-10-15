@@ -1,7 +1,7 @@
 # Step 2: data checks (go / no-go gate)
 
 Date: 2026-10-13. Branch: `arena/3ca31a9a-ocr-corrector`.
-Script: `docs/lgbm_review/step2_data_checks.py`. Output: `docs/lgbm_review/step2_results.txt`.
+Script: `tools/analysis/step2_data_checks.py`. Output: `tools/analysis/step2_results.txt`.
 
 ## Correction to my earlier report
 

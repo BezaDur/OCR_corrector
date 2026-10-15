@@ -1,7 +1,7 @@
 """Step 15: which Stage 1 signals separate errors from clean tokens, and does a
 learned score beat the hand-set one?
 
-Input: the <page>.verdicts.jsonl files from 04_evaluate_full_corrector.py
+Input: the <page>.verdicts.jsonl files from 01_evaluate_full_corrector.py
 (--verdict-dir). Each row needs its features (logged by the corrector).
 
 Output:
@@ -10,7 +10,7 @@ Output:
   3. the same for a logistic regression trained on all pages except one,
      applied to that page (leave-one-page-out, so no page scores itself)
 
-Usage: python3 15_fit_stage1_scores.py VERDICT_DIR [--target 0.85]
+Usage: python3 05_fit_stage1_scores.py VERDICT_DIR [--target 0.85]
 """
 import argparse
 import glob

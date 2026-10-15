@@ -2,16 +2,16 @@
 """
 Step 11b: Benchmark EXISTING OCR output against ground truth. No re-OCR.
 
-This is the scoring half of 11_benchmark_new_model.py with the Tesseract call
+This is the scoring half of 02_benchmark_new_model.py with the Tesseract call
 removed. Use it when the OCR text is already on disk and re-recognising the
 pages would cost hours for no new information.
 
 Typical question it answers:
     "step 11 told me 98% but step 04 reports 34.39% CER. Which is real?"
-    ->  python 11b_benchmark_existing_ocr.py --compare-all
+    ->  python 03_benchmark_existing_ocr.py --compare-all
 
 Metrics are the CANONICAL ones from ocr_metrics.py, so the numbers are
-directly comparable with 04_evaluate_full_corrector.py:
+directly comparable with 01_evaluate_full_corrector.py:
     CER = edit_distance(''.join(gold.split()), ''.join(ocr.split())) / len(gold_chars)
     WER = align_tokens(gold_words, ocr_words).distance / len(gold_words)
 Note CER is measured on the WHITESPACE-STRIPPED stream -- not on the raw text.
@@ -33,15 +33,15 @@ installed, with a silent fallback to the pure-Python path:
 Usage
 -----
     # compare every OCR dir under the dataset (the usual case)
-    python 11b_benchmark_existing_ocr.py --compare-all
+    python 03_benchmark_existing_ocr.py --compare-all
 
     # or name them explicitly
-    python 11b_benchmark_existing_ocr.py \\
+    python 03_benchmark_existing_ocr.py \\
         --ocr pred=/media/des/Tess/Tesseract2/synthetic_eval/ocr_pred \\
         --ocr new=/media/des/Tess/Tesseract2/synthetic_eval/ocr_new_model
 
     # quick look on the first 100 pages
-    python 11b_benchmark_existing_ocr.py --compare-all --limit 100
+    python 03_benchmark_existing_ocr.py --compare-all --limit 100
 """
 # --- make repo_paths importable from any working directory -------------------
 import os as _os

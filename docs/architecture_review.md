@@ -10,8 +10,8 @@ Specific bugs and per-decision tuning are deliberately left for a later pass.
 > review asks whether the design is sound; that one is a status map.
 
 Method: static reading of `amharic_ocr_corrector.py` (HEAD),
-`amharic_ocr_corrector (copy).py`, `normalizer.py`, `04_evaluate_full_corrector.py`,
-`05_collect_error_cases.py`, `tests/`, `docs/`, plus the checked-in artifacts
+`amharic_ocr_corrector (copy).py`, `normalizer.py`, `01_evaluate_full_corrector.py`,
+`02_collect_error_cases.py`, `tests/`, `docs/`, plus the checked-in artifacts
 (`benchmark_full_symspell.json`, `correction_patterns_report.txt`,
 `confusion_report.txt`). Some numbers come from micro-benchmarks run here
 against the **real** `confusion_matrix.json` and a **real** 236,662-type
@@ -56,7 +56,7 @@ a `bool`. That single fact drives most of what follows.
 Before any algorithm work, this has to be fixed because it means **nothing in
 this repository can currently measure anything**.
 
-`04_evaluate_full_corrector.py`, `tests/test_ocr_corrector.py`,
+`01_evaluate_full_corrector.py`, `tests/test_ocr_corrector.py`,
 `tests/test_evaluator.py`, `tests/test_phase_a.py`, `docs/corrector_usage.md`
 and `docs/two_phase_benchmark.md` all describe a corrector with a much richer
 API. The `AmharicOCRCorrector` at HEAD has none of it:
@@ -76,7 +76,7 @@ HEAD hard-codes `kenlm.Model(kenlm_path)`, imports `segmenter` at module scope
 from hard-coded `/mnt/mintdata/...` paths, and exposes none of the above. So:
 
 * `python -m unittest discover -s tests` → `TypeError` on the first `make()`.
-* `python 5_correction_evaluation/04_evaluate_full_corrector.py ...` → `TypeError` in `build_corrector()`.
+* `python 5_correction_evaluation/01_evaluate_full_corrector.py ...` → `TypeError` in `build_corrector()`.
 * `benchmark_full_symspell.json` was produced by the **lost** version. It is not
   a measurement of the code at HEAD.
 
@@ -509,7 +509,7 @@ at all, which is why this was invisible until now.
 
 Morphology-on vs morphology-off is therefore the single most valuable
 experiment available, and it is now a one-flag change: `--no-morphology` /
-`--require-morphology` on `04_evaluate_full_corrector.py`, or `use_morphology=`
+`--require-morphology` on `01_evaluate_full_corrector.py`, or `use_morphology=`
 in the constructor.
 
 ### 6.4 What to do with SymSpell
@@ -541,7 +541,7 @@ Demote it from primary generator to a **bounded fallback**, or drop it:
 * **Calibration inversion.** 15.6 % of documented substitutions cost more than
   `default_sub = 4.5`, so a *rare but observed* confusion is punished more than
   an *unseen* one. Smooth, and store counts alongside costs in
-  `03_build_confusion_matrix.py`.
+  `01_build_confusion_matrix.py`.
 * **Normalization destroys content.** `normalize_sentence_text` turns `12:30`
   into `12 30`; `DIACRITICS_REGEX` strips U+135D–135F and combining marks from
   the emitted token; `_to_surface` silently rewrites the author's orthography
@@ -581,7 +581,7 @@ Done in the tree (see the git diff on branch `arena/5c6a9ff6-tess`):
   lazy `kenlm`/`symspellpy` so the module imports and is testable without them;
   `max_candidates`, `score_eos`, `indel_cost_cap`, `morphology_cache_size`,
   `require_morphemes_json`, `verbose`. Enum-safe POS
-  (`str(POS.UNKNOWN).rsplit(".", 1)[-1]`). `04_evaluate_full_corrector.py`
+  (`str(POS.UNKNOWN).rsplit(".", 1)[-1]`). `01_evaluate_full_corrector.py`
   updated to stop passing removed options and to record `morphology_stats()`.
   `tests/test_head_contract.py` — 59 tests, all passing, no external assets.
   The three files that tested the deleted architecture
@@ -636,8 +636,8 @@ I would not touch thresholds or weights yet. The order I'd propose:
    experiment available and it is a single flag:
 
    ```
-   04_evaluate_full_corrector.py --no-morphology       # analyzer off
-   04_evaluate_full_corrector.py --require-morphology  # analyzer on (current)
+   01_evaluate_full_corrector.py --no-morphology       # analyzer off
+   01_evaluate_full_corrector.py --require-morphology  # analyzer on (current)
    ```
 
    §6.3 explains why: the analyzer flips 56 % of OOV tokens to *verified*, and

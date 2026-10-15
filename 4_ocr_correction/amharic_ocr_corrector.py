@@ -128,10 +128,17 @@ def _vendored_segmenter_path():
     which meant a fresh checkout could not import it at all -- the corrector
     silently ran with morphology disabled and the whole ``lambda_morph`` term
     cancelled out. Vendoring a frozen copy makes the integration reproducible.
+
+    BUG FIXED: this used ``dirname(__file__)`` once, which resolves to
+    ``4_ocr_correction/`` and produced ``4_ocr_correction/vendor/segmenter`` --
+    a path that has never existed, since ``vendor/`` sits at the repository
+    root. The guard returned None, the vendored copy was never used, and the
+    corrector ran with morphology silently disabled: exactly the failure mode
+    this function was written to prevent. ``repo_paths`` already knows where the
+    vendored data lives, so defer to it instead of recomputing the root.
     """
     try:
-        p = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                         "vendor", "segmenter")
+        p = os.path.dirname(repo_paths.VENDORED_SEGMENTER_DATA)
         return p if os.path.isfile(os.path.join(p, "segmenter.py")) else None
     except Exception:
         return None
@@ -1293,7 +1300,7 @@ class AmharicOCRCorrector:
         return result
 
     # --- backwards-compatible aliases -----------------------------------
-    # 04_evaluate_full_corrector.py and tests/ call these and inspect
+    # 01_evaluate_full_corrector.py and tests/ call these and inspect
     # .cache_info(); keep them working, backed by the bounded caches.
     @property
     def _generate_candidates_cached(self):

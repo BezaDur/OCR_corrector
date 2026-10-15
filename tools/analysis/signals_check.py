@@ -1,8 +1,20 @@
 """Check: (a) one-flip signal direction on the eval data, (b) tesseract_conf distribution in the corpus."""
 import csv, os, collections
+# --- portable paths: tools/analysis/ is two levels below the repo root -------
+import os as _os, sys as _sys
+_REPO = _os.path.abspath(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", ".."))
+if _os.path.join(_REPO, "tools") not in _sys.path:
+    _sys.path.insert(0, _os.path.join(_REPO, "tools"))
+import stage_paths  # noqa: E402
+stage_paths.register(_REPO)
+DETECTOR = _os.path.join(_REPO, "4_ocr_correction", "error_detection")  # detector package
+EVAL = _os.path.join(_REPO, "Evaluation")                              # shared page corpus
+DATA = _os.path.join(_REPO, "1_data_preparation", "data")              # corpora
+# ----------------------------------------------------------------------------
 
-ROOT = '/home/user/OCR_corrector/4_ocr_correction/error_detection'
-rows = list(csv.DictReader(open(os.path.join(ROOT, 'Evaluation/analysis.tsv'), encoding='utf-8'), delimiter='\t'))
+
+
+rows = list(csv.DictReader(open(os.path.join(EVAL, 'analysis.tsv'), encoding='utf-8'), delimiter='\t'))
 aligned = [r for r in rows if r['is_error'] in ('0', '1')]
 
 print('== one-flip hits vs error rate (eval, in-sample labels) ==')
@@ -16,7 +28,7 @@ for k in sorted(tab):
     print('in_lexicon=%s %-7s n=%6d  error_rate=%.4f' % (k[0], k[1], n, e / max(n, 1)))
 
 print('\n== tesseract_conf distribution in harmonized corpus (first 300k rows) ==')
-H = os.path.join(ROOT, 'harmonized_corpus_jiwer.tsv')
+H = os.path.join(DETECTOR, 'Model', 'harmonized_corpus_jiwer.tsv')
 vals = collections.Counter()
 errs = collections.defaultdict(lambda: [0, 0])
 n = 0

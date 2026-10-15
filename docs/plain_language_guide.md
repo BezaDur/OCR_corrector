@@ -102,7 +102,7 @@ this project exists:
   that `ሰረ` makes no sense in that sentence.
 
 This is exactly what the repository's own analysis script
-(`3_training_evaluation/09_analyze_error_composition.py`) was written to measure: *what
+(`3_training_evaluation/05_analyze_error_composition.py`) was written to measure: *what
 fraction of errors are non-words, and what fraction are real words?* Because the answer
 determines whether a dictionary is enough, or whether you need something that reads the
 sentence for meaning.
@@ -180,7 +180,7 @@ damage. It is large, slow, and powerful.
 
 ## The child project: the triage nurse
 
-Folder `OCR_error_detection`.
+Folder `error_detection`.
 
 This is one small, self-contained component with one job: **look at each word and decide
 whether it is worth touching.** It does not fix anything. It answers one question per word
@@ -215,7 +215,7 @@ This was a deliberate design decision, and it has real consequences:
   from the parent.
 - You can therefore run, test, and evaluate the child **without any of the parent's
   heavyweight dependencies** — no Tesseract, no KenLM, no external hard drives.
-- The parent talks to the child through exactly one file, `OCR_error_detection/adapter.py`,
+- The parent talks to the child through exactly one file, `4_ocr_correction/error_detection/adapter.py`,
   which is a translator between the two.
 
 **This matters practically:** in the environment this guide was written in, the child runs
@@ -272,7 +272,7 @@ and improved on its own.
    └───────────────────────────────────────────┘   │
                                                    │
    ┌───────────────────────────────────────────────┴─────────────────────┐
-   │  THE CHILD   OCR_error_detection                                    │
+   │  THE CHILD   error_detection                                    │
    │  "Is this word worth touching?"                                     │
    │  Self-contained. Own model, own dictionaries, own tests, own        │
    │  evaluation data. Answers pass / gray / flag in ~0.3 ms per word.   │
@@ -281,26 +281,26 @@ and improved on its own.
 
 ## About the script numbers — this confuses everyone
 
-Scripts are named with numbers: `01_generate_eval_pages.py`, `02_run_ocr_eval.py`,
-`03_build_confusion_matrix.py`, … up to `15_fit_stage1_scores.py`.
+Scripts are named with numbers: `07_generate_eval_pages.py`, `01_run_ocr_eval.py`,
+`01_build_confusion_matrix.py`, … up to `05_fit_stage1_scores.py`.
 
 **These numbers are the order the work was originally done in, not the order the folders
 are arranged in.** They do not match. For example:
 
 | Step number | Script | Lives in folder |
 |---|---|---|
-| 01 | `01_generate_eval_pages.py` | Stage 1 |
-| 02 | `02_run_ocr_eval.py` | **Stage 3** |
-| 03 | `03_build_confusion_matrix.py` | **Stage 4** |
-| 04 | `04_evaluate_full_corrector.py` | **Stage 5** |
-| 05 | `05_collect_error_cases.py` | **Stage 5** |
-| 06 | `06_diagnose_ocr_engine.py` | **Stage 3** |
-| 07 | `07_generate_training_boxes.py` | **Stage 1** |
-| 08 | `08_compile_lstmf_and_split.py` | **Stage 1** |
-| 09 | `09_train_epochs.sh` | **Stage 2** |
-| 09 | `09_analyze_error_composition.py` | **Stage 3** (a different step 09!) |
-| 10 | `10_package_best_and_fast.sh` | **Stage 2** |
-| 10 | `10_compare_ocr_outputs.py` | **Stage 3** (a different step 10!) |
+| 01 | `07_generate_eval_pages.py` | Stage 1 |
+| 02 | `01_run_ocr_eval.py` | **Stage 3** |
+| 03 | `01_build_confusion_matrix.py` | **Stage 4** |
+| 04 | `01_evaluate_full_corrector.py` | **Stage 5** |
+| 05 | `02_collect_error_cases.py` | **Stage 5** |
+| 06 | `07_diagnose_ocr_engine.py` | **Stage 3** |
+| 07 | `05_generate_training_boxes.py` | **Stage 1** |
+| 08 | `06_compile_lstmf_and_split.py` | **Stage 1** |
+| 09 | `01_train_epochs.sh` | **Stage 2** |
+| 09 | `05_analyze_error_composition.py` | **Stage 3** (a different step 09!) |
+| 10 | `03_package_best_and_fast.sh` | **Stage 2** |
+| 10 | `04_compare_ocr_outputs.py` | **Stage 3** (a different step 10!) |
 | 11, 11b, 12 | benchmarks and audits | **Stage 3** |
 | 13, 14, 15 | decision audits | **Stage 5** |
 
@@ -341,13 +341,13 @@ This is called **synthetic data**, and it is standard practice in OCR research.
 
 | Script | What it does |
 |---|---|
-| **`01_generate_eval_pages.py`** (360 lines) | The main document-synthesis engine. Renders real Amharic text into page images using OpenCV and Pillow, with *targeted font fallback* so a missing character never becomes a hollow box, and physically-modelled degradation: spine curvature, ink bleed, non-uniform lighting, sensor noise. |
-| **`build_final_training_data.py`** (174) | Builds the master list of characters the OCR engine must learn, and extracts 150,000 clean lines of training text. Notable rule: **zero Latin letters (A–Z, a–z)**, because including them teaches the engine to confuse `T` with `ፕ`. |
-| **`discover_character_inventory.py`** (108) | Scans the raw text corpus to discover which Amharic characters *actually occur* in real writing, rather than guessing from a chart. Categorises every character found. |
-| **`rare_character_miner.py`** (120) | Searches a 4.9 GB corpus for every authentic sentence containing an under-represented character — the rare ones, the labiovelars (consonants with a "w" sound built in), Ethiopic numerals, and publication symbols. Rare characters get ignored by training unless you deliberately over-sample them. |
-| **`assemble_balanced_training_data.py`** (110) | Combines the mined rare sentences with ordinary prose to produce a **70,000-line** training set with *balanced* character representation, and compiles the final character inventory file (`amh.unicharset`). |
-| **`07_generate_training_boxes.py`** (247) | Generates the "answer key" for training. Tesseract needs, for each training image, a `.box` file saying exactly which character is at which pixel. This uses 20 curated fonts and verifies one-to-one that **zero glyphs were dropped**. |
-| **`08_compile_lstmf_and_split.py`** (138) | Converts the image/box pairs into `.lstmf` tensor files (the format Tesseract's neural network actually reads), using 4 CPU cores in parallel, then splits them 90/10 into training and evaluation lists. |
+| **`07_generate_eval_pages.py`** (360 lines) | The main document-synthesis engine. Renders real Amharic text into page images using OpenCV and Pillow, with *targeted font fallback* so a missing character never becomes a hollow box, and physically-modelled degradation: spine curvature, ink bleed, non-uniform lighting, sensor noise. |
+| **`03_build_final_training_data.py`** (174) | Builds the master list of characters the OCR engine must learn, and extracts 150,000 clean lines of training text. Notable rule: **zero Latin letters (A–Z, a–z)**, because including them teaches the engine to confuse `T` with `ፕ`. |
+| **`01_discover_character_inventory.py`** (108) | Scans the raw text corpus to discover which Amharic characters *actually occur* in real writing, rather than guessing from a chart. Categorises every character found. |
+| **`02_rare_character_miner.py`** (120) | Searches a 4.9 GB corpus for every authentic sentence containing an under-represented character — the rare ones, the labiovelars (consonants with a "w" sound built in), Ethiopic numerals, and publication symbols. Rare characters get ignored by training unless you deliberately over-sample them. |
+| **`04_assemble_balanced_training_data.py`** (110) | Combines the mined rare sentences with ordinary prose to produce a **70,000-line** training set with *balanced* character representation, and compiles the final character inventory file (`amh.unicharset`). |
+| **`05_generate_training_boxes.py`** (247) | Generates the "answer key" for training. Tesseract needs, for each training image, a `.box` file saying exactly which character is at which pixel. This uses 20 curated fonts and verifies one-to-one that **zero glyphs were dropped**. |
+| **`06_compile_lstmf_and_split.py`** (138) | Converts the image/box pairs into `.lstmf` tensor files (the format Tesseract's neural network actually reads), using 4 CPU cores in parallel, then splits them 90/10 into training and evaluation lists. |
 | **`audit_training_text.py`** (105) | Quality check: finds characters the engine is expected to know that **never appear** in the training text (a "zero-shot blind spot" — it will never learn them), counts occurrences of critical rare characters, and checks line-length distribution. |
 | **`audit_rare_glyphs.py`** (94) | Quality check: counts exact frequencies of rare characters, labiovelars, numerals, and publication symbols. |
 | **`inspect_and_install_fonts.py`** (126) | Installs the fonts into the operating system, rebuilds the font cache, then **tests each font directly** to confirm the rendering system can actually find it. Catches the classic failure where a font is present but unusable. |
@@ -355,8 +355,8 @@ This is called **synthetic data**, and it is standard practice in OCR research.
 | **`diagnose_font_cmaps.py`** (64) | Inspects each font's internal character map to find fonts that *lack* Arabic digits, quotes, colons, or Ethiopic punctuation. A font missing those silently produces blank or box characters. |
 | **`diagnose_font_accuracy.py`** (97) | Tests Google's official Amharic model **font by font**, revealing which font families Google trained on and which ones cause it to fail. This is how the project knew a custom model was worth building. |
 | **`check_pango_names.py`** (38) | Small helper: lists the names the rendering system (Pango) knows each font by, which often differ from the filename. |
-| **`generate_eval_dataset.py`** (200) | An *alternative* evaluation-set builder: instead of rendering images, it corrupts text directly using the real confusion matrix, with realistic "burstiness" (errors cluster, they don't spread evenly). Faster, no images. |
-| **`generate_eval_pages.py`** (176) | Older/simpler version of `01_generate_eval_pages.py`. |
+| **`generate_eval_dataset_simulated.py`** (200) | An *alternative* evaluation-set builder: instead of rendering images, it corrupts text directly using the real confusion matrix, with realistic "burstiness" (errors cluster, they don't spread evenly). Faster, no images. |
+| **`generate_eval_pages_simple.py`** (176) | Older/simpler version of `07_generate_eval_pages.py`. |
 
 ### What Stage 1 leaves behind in the repository
 
@@ -392,9 +392,9 @@ not Python programs.
 
 | Script | What it does |
 |---|---|
-| **`09_train_epochs.sh`** | Runs five sequential training epochs, saving a checkpoint after each so training can resume if interrupted. |
-| **`09_run_epoch2.sh`** | A "fail-safe" runner for epoch 2 specifically, targeting sub-1% character error and convergence on two particular difficult characters (`ቯ` and `ጰ`). Exists because that epoch kept failing. |
-| **`10_package_best_and_fast.sh`** | Finds the checkpoint with the lowest error rate and packages it into two finished OCR models: a **"best"** one (most accurate) and a **"fast"** one (smaller, quicker, slightly less accurate). |
+| **`01_train_epochs.sh`** | Runs five sequential training epochs, saving a checkpoint after each so training can resume if interrupted. |
+| **`02_run_epoch2.sh`** | A "fail-safe" runner for epoch 2 specifically, targeting sub-1% character error and convergence on two particular difficult characters (`ቯ` and `ጰ`). Exists because that epoch kept failing. |
+| **`03_package_best_and_fast.sh`** | Finds the checkpoint with the lowest error rate and packages it into two finished OCR models: a **"best"** one (most accurate) and a **"fast"** one (smaller, quicker, slightly less accurate). |
 | **`diagnose_job_failure.py`** (86) | A debugging helper: when a training run dies, this reads the logs and explains why. |
 
 ### What Stage 2 leaves behind
@@ -413,7 +413,7 @@ not Python programs.
 > | File | Size |
 > |---|---|
 > | `2_training/config/confusion_matrix.json` | 65,839 bytes |
-> | `OCR_error_detection/Model/confusion_matrix.json` | 47,847 bytes ← **the one the detector uses** |
+> | `4_ocr_correction/error_detection/Model/confusion_matrix.json` | 47,847 bytes ← **the one the detector uses** |
 > | `4_ocr_correction/confusion_matrix_patch.json` | 33,843 bytes |
 >
 > The root README claims "single source, no duplicates." That is not accurate, and it is
@@ -425,8 +425,8 @@ The two packaged models are in the **top-level `models/` folder**, not here:
 
 | File | Size | What it is |
 |---|---|---|
-| `models/amh_best.traineddata` | **4.87 MB** ✅ | The accurate model |
-| `models/amh_fast.traineddata` | **658 KB** ✅ | The fast model |
+| `2_training/models/packaged/amh_best.traineddata` | **4.87 MB** ✅ | The accurate model |
+| `2_training/models/packaged/amh_fast.traineddata` | **658 KB** ✅ | The fast model |
 
 These **are** in the repository. What is missing is the `tesseract` program itself, which is
 what loads them (see Part 7).
@@ -459,14 +459,14 @@ scanner is known to make**?" That is a vastly shorter, vastly more reliable list
 
 | Script | What it does |
 |---|---|
-| **`02_run_ocr_eval.py`** (129) | Runs the trained Tesseract over all the synthetic evaluation pages, using multiple CPU processes at once for speed. Produces the raw OCR text that everything else grades. |
-| **`03_build_confusion_matrix.py`** (244) | *(lives in Stage 4's folder, but is conceptually Stage 3's output)* Aligns the OCR text against the known-correct text character by character, computes the error rates, and **exports the optical substitution costs to `confusion_matrix.json`**. This is the single most important script in the pipeline. |
-| **`09_analyze_error_composition.py`** (317) | The strategic analysis. Answers the two questions from Part 1: **what fraction of errors produce a non-word** (easy to catch with a dictionary) versus **a real word** (invisible to a dictionary), and **what fraction of errors are even reachable** by a one-edit correction. Its own docstring says it plainly: if the second number is low, *"no amount of detection tuning will help — the generator cannot reach the answer."* |
-| **`06_diagnose_ocr_engine.py`** (149) | Audits the raw OCR output *before* any correction, to pinpoint three specific failure modes: wrong spacing (words split or fused), the sadis/ge'ez order erosion, and dropped abbreviation punctuation. |
-| **`10_compare_ocr_outputs.py`** (137) | Compares several OCR outputs against ground truth. Needs no model, no GPU, no images — text files only, so it runs anywhere. Its docstring contains an important warning: the pipeline is only ever evaluated against *one* OCR output, and if that output came from a bad model, every conclusion of the form "the corrector makes things worse" really means "we measured against bad input." |
-| **`11_benchmark_new_model.py`** (137) | Full benchmark of the newly trained model over 150 stress-tested pages. Re-runs the OCR. |
-| **`11b_benchmark_existing_ocr.py`** (286) | The *scoring half* of `11`, with the OCR step removed. Use when the OCR text already exists and re-recognising would cost hours for no new information. Written to answer a specific contradiction its author hit: *"step 11 told me 98% but step 04 reports 34.39% CER. Which is real?"* |
-| **`12_audit_raw_ocr_sentences.py`** (114) | Robust word-level alignment and failure-case extraction. Uses global dynamic-programming alignment so that line wraps and blank lines **never** cause the comparison to slip out of step — a subtle bug that silently corrupts results. |
+| **`01_run_ocr_eval.py`** (129) | Runs the trained Tesseract over all the synthetic evaluation pages, using multiple CPU processes at once for speed. Produces the raw OCR text that everything else grades. |
+| **`01_build_confusion_matrix.py`** (244) | *(lives in Stage 4's folder, but is conceptually Stage 3's output)* Aligns the OCR text against the known-correct text character by character, computes the error rates, and **exports the optical substitution costs to `confusion_matrix.json`**. This is the single most important script in the pipeline. |
+| **`05_analyze_error_composition.py`** (317) | The strategic analysis. Answers the two questions from Part 1: **what fraction of errors produce a non-word** (easy to catch with a dictionary) versus **a real word** (invisible to a dictionary), and **what fraction of errors are even reachable** by a one-edit correction. Its own docstring says it plainly: if the second number is low, *"no amount of detection tuning will help — the generator cannot reach the answer."* |
+| **`07_diagnose_ocr_engine.py`** (149) | Audits the raw OCR output *before* any correction, to pinpoint three specific failure modes: wrong spacing (words split or fused), the sadis/ge'ez order erosion, and dropped abbreviation punctuation. |
+| **`04_compare_ocr_outputs.py`** (137) | Compares several OCR outputs against ground truth. Needs no model, no GPU, no images — text files only, so it runs anywhere. Its docstring contains an important warning: the pipeline is only ever evaluated against *one* OCR output, and if that output came from a bad model, every conclusion of the form "the corrector makes things worse" really means "we measured against bad input." |
+| **`02_benchmark_new_model.py`** (137) | Full benchmark of the newly trained model over 150 stress-tested pages. Re-runs the OCR. |
+| **`03_benchmark_existing_ocr.py`** (286) | The *scoring half* of `11`, with the OCR step removed. Use when the OCR text already exists and re-recognising would cost hours for no new information. Written to answer a specific contradiction its author hit: *"step 11 told me 98% but step 04 reports 34.39% CER. Which is real?"* |
+| **`06_audit_raw_ocr_sentences.py`** (114) | Robust word-level alignment and failure-case extraction. Uses global dynamic-programming alignment so that line wraps and blank lines **never** cause the comparison to slip out of step — a subtle bug that silently corrupts results. |
 
 ### The measurement modules (shared by Stages 3, 4 and 5)
 
@@ -586,7 +586,7 @@ only one that reads the *sentence* rather than the word.
 
 | File | What it does |
 |---|---|
-| **`03_build_confusion_matrix.py`** (244) | Described in Stage 3. Builds the confusion matrix from OCR-vs-truth alignment. |
+| **`01_build_confusion_matrix.py`** (244) | Described in Stage 3. Builds the confusion matrix from OCR-vs-truth alignment. |
 | **`confusion_matrix_coverage_audit.py`** (132) | Quality check on the confusion matrix. Audits coverage of the "same consonant, different order" confusions (`ር`/`ሮ`, `ሁ`/`ሆ`, `ለ`/`ሎ`) — the single most common class of Amharic OCR error — and reports which families are missing. |
 | **`confusion_matrix_patch.json`** | Manual additions to the confusion matrix. |
 | **`normalizer.py`** (311) | The parent's normaliser. Larger than the child's: it also handles punctuation, numerals, and abbreviations. |
@@ -609,11 +609,11 @@ whose result is least reflected in the repository's promotional documents.
 
 | Script | What it does |
 |---|---|
-| **`04_evaluate_full_corrector.py`** (420) | The end-to-end benchmark. Runs the complete corrector over the evaluation pages and measures the result. Can also emit a per-word verdict log (`--verdict-dir`) recording what the detector thought about each token — the input for scripts 14 and 15. |
-| **`05_collect_error_cases.py`** (133) | Extracts the failure cases. Needs no KenLM and no morphology — it works purely from alignment, so it runs even when the full corrector cannot. |
-| **`13_audit_correction_decisions.py`** (170) | The most important script in this stage. Compares three versions of every word — **ground truth**, **raw OCR**, **corrected output** — and sorts every decision the corrector made into four categories: **TRUE_POSITIVE** (a legitimate repair), **FALSE_POSITIVE** (damage to a word that was already correct), **FALSE_NEGATIVE** (an error left unrepaired), **SUBOPTIMAL_FLIP** (changed, but to the wrong word). Exports a side-by-side table and prints the most common failure patterns. |
-| **`14_stage1_precision.py`** (64) | Measures the detector's precision: of the words it flagged, how many were really errors? Sweeps thresholds and reports the lowest one that reaches a target precision. |
-| **`15_fit_stage1_scores.py`** (84) | Asks whether a *learned* score beats the *hand-tuned* one. Reports how well each individual signal separates errors from clean words (0.5 = useless, 1.0 = perfect), then trains a simple model on all pages but one and tests it on the held-out page — so no page ever scores itself. This script is essentially the research that led to the child project's LightGBM model. |
+| **`01_evaluate_full_corrector.py`** (420) | The end-to-end benchmark. Runs the complete corrector over the evaluation pages and measures the result. Can also emit a per-word verdict log (`--verdict-dir`) recording what the detector thought about each token — the input for scripts 14 and 15. |
+| **`02_collect_error_cases.py`** (133) | Extracts the failure cases. Needs no KenLM and no morphology — it works purely from alignment, so it runs even when the full corrector cannot. |
+| **`03_audit_correction_decisions.py`** (170) | The most important script in this stage. Compares three versions of every word — **ground truth**, **raw OCR**, **corrected output** — and sorts every decision the corrector made into four categories: **TRUE_POSITIVE** (a legitimate repair), **FALSE_POSITIVE** (damage to a word that was already correct), **FALSE_NEGATIVE** (an error left unrepaired), **SUBOPTIMAL_FLIP** (changed, but to the wrong word). Exports a side-by-side table and prints the most common failure patterns. |
+| **`04_stage1_precision.py`** (64) | Measures the detector's precision: of the words it flagged, how many were really errors? Sweeps thresholds and reports the lowest one that reaches a target precision. |
+| **`05_fit_stage1_scores.py`** (84) | Asks whether a *learned* score beats the *hand-tuned* one. Reports how well each individual signal separates errors from clean words (0.5 = useless, 1.0 = perfect), then trains a simple model on all pages but one and tests it on the held-out page — so no page ever scores itself. This script is essentially the research that led to the child project's LightGBM model. |
 
 ### The shared libraries
 
@@ -655,7 +655,7 @@ rest of this guide pays so much attention to it.
 
 Two important caveats, both from the repository's own scripts:
 
-1. `10_compare_ocr_outputs.py` warns that if the OCR output being corrected came from a weak
+1. `04_compare_ocr_outputs.py` warns that if the OCR output being corrected came from a weak
    model, "the corrector is net-negative" may really mean "we measured against bad input."
 2. The corrector cannot currently run at all without KenLM (Part 7), so this benchmark
    reflects a specific earlier configuration.
@@ -664,7 +664,7 @@ Two important caveats, both from the repository's own scripts:
 
 # Part 5: The child project, in depth
 
-Folder: `OCR_error_detection`. This is the part of the repository that **fully works today**
+Folder: `error_detection`. This is the part of the repository that **fully works today**
 and the part this guide can describe most precisely, because every number below was measured
 by running it.
 
@@ -751,7 +751,7 @@ dictionary file a hard error instead of a silent downgrade.
 | **`alignment.py`** | 72 | The word-alignment engine. Given two sequences of words, finds the best way to line them up, and — importantly — tracks *every* equally-good alignment, so it can tell you which positions are certain and which are genuinely ambiguous. |
 | **`adapter.py`** | 265 | **The only connection between the two projects.** Translates between the parent corrector's interface and the child's, and lets the child *reuse the dictionary the parent already loaded* instead of loading a second copy (which would double memory use). If anything goes wrong it falls back to the rule-based scorer and records why. |
 | **`run_ocr.py`** | 153 | Runs Tesseract over the 100 evaluation images to produce the OCR text and per-word confidence files. One-time setup step; needs Tesseract installed. |
-| **`__init__.py`** | 42 | Decides what `from OCR_error_detection import ...` gives you. Exports `DetectionEngine`, `CorrectorDetectionAdapter`, `TokenSignals`, `Verdict`, `ConfusionMatrix`, `AmharicNormalizer`, and the scoring helpers. |
+| **`__init__.py`** | 42 | Decides what `from error_detection import ...` gives you. Exports `DetectionEngine`, `CorrectorDetectionAdapter`, `TokenSignals`, `Verdict`, `ConfusionMatrix`, `AmharicNormalizer`, and the scoring helpers. |
 
 ## The data folder — `Model/`
 
@@ -766,7 +766,7 @@ dictionary file a hard error instead of a silent downgrade.
 | **`train_final.py`** | — | A convenience wrapper: "train the exact recipe the README calls authoritative," in one command. |
 | **`train_sweep_report.json`** | — | A saved report from a comparison run (explained below). |
 
-> ⚠️ `OCR_error_detection/main_i7_frq10.txt` (in the child's root, not in `Model/`) is a
+> ⚠️ `4_ocr_correction/error_detection/main_i7_frq10.txt` (in the child's root, not in `Model/`) is a
 > **byte-for-byte duplicate** of the one in `Model/` — 15 MB stored twice. Only one fallback
 > code path references it.
 
@@ -1048,7 +1048,7 @@ when a script cannot find its data. It also provides `require()`, which produces
 You will notice the repository root contains files with the same names as files inside the
 stage folders: `amharic_ocr_corrector.py`, `normalizer.py`, `suspicion.py`, `ocr_metrics.py`,
 `stage1_fit.py`, `stage1_labels.py`, `tsv_confidence.py`, `tsv_gt.py`, `tsv_gt_stats.py`,
-`generate_eval_dataset.py`, `generate_eval_pages.py`, `amharic_canonical_normalizer.py`,
+`generate_eval_dataset_simulated.py`, `generate_eval_pages_simple.py`, `amharic_canonical_normalizer.py`,
 `ocr_decision_audit.py`.
 
 **These are all tiny compatibility shims, 10–20 lines each.** The real code moved into the
@@ -1140,7 +1140,7 @@ configuration was shipped.
 
 | File | What it is |
 |---|---|
-| `telegram_c4.txt` | **40 MB** of real Amharic text, scraped from Telegram channels and the C4 corpus. Raw source material. Referenced only by `docs/lgbm_review/build_synthetic_source.py` and `docs/new_test_set_plan.md`. |
+| `telegram_c4.txt` | **40 MB** of real Amharic text, scraped from Telegram channels and the C4 corpus. Raw source material. Referenced only by `tools/analysis/build_synthetic_source.py` and `docs/new_test_set_plan.md`. |
 | `requirements.txt` | The dependency list. ⚠️ **Incomplete — missing `pydantic`.** |
 | `README.md` | The main entry point. ⚠️ Contains unreproduced figures and two examples that fail. |
 | `.gitignore` | Tells git which files not to track (virtual environments, caches, etc.). |
@@ -1164,13 +1164,13 @@ python3 -m venv .venv
 
 | What | Command | Result |
 |---|---|---|
-| The whole child detector | `from OCR_error_detection import DetectionEngine` | Loads in ~2–3 s, answers in ~0.3 ms/word |
-| Child tests | `python -m pytest OCR_error_detection/tests/ -q` | **60 passed** |
+| The whole child detector | `from error_detection import DetectionEngine` | Loads in ~2–3 s, answers in ~0.3 ms/word |
+| Child tests | `python -m pytest 4_ocr_correction/error_detection/tests/ -q` | **60 passed** |
 | Parent tests | `python -m unittest discover -s tests -p 'test_*.py'` | **159 passed, 24 skipped** |
-| Held-out evaluation | `python OCR_error_detection/scripts/evaluate_child.py` | 92.9% recall, 0.10% false alarms, ~85 s |
-| Configuration comparison | `python OCR_error_detection/scripts/compare_lexicon_configs.py` | Ranked table |
-| Threshold tuning | `python OCR_error_detection/scripts/tune_gates.py` | Trade-off curves + cross-validated recommendation |
-| Retraining the detector | `python OCR_error_detection/Model/train_LightGBM.py --sweep-freqs 10,100,500,1000` | Reproduces the committed report **to the digit** ✅ |
+| Held-out evaluation | `python 4_ocr_correction/error_detection/scripts/evaluate_child.py` | 92.9% recall, 0.10% false alarms, ~85 s |
+| Configuration comparison | `python 4_ocr_correction/error_detection/scripts/compare_lexicon_configs.py` | Ranked table |
+| Threshold tuning | `python 4_ocr_correction/error_detection/scripts/tune_gates.py` | Trade-off curves + cross-validated recommendation |
+| Retraining the detector | `python 4_ocr_correction/error_detection/Model/train_LightGBM.py --sweep-freqs 10,100,500,1000` | Reproduces the committed report **to the digit** ✅ |
 | Path diagnostics | `python repo_paths.py` | Prints resolved locations |
 
 **The child project is fully self-sufficient.** This is the payoff of the separation
@@ -1185,7 +1185,7 @@ described in Part 2.
 | Stage 1 scripts | `PermissionError: [Errno 13] Permission denied: '/media/des'` | External drives not mounted; and no `tesseract` binary |
 | Stage 2 shell scripts | fail immediately | Need the Tesseract training toolchain and the external workspace |
 | Stage 3 scripts | fail | Need the `tesseract` binary — **not installed** |
-| Stage 5 (`04_evaluate_full_corrector.py`) | fails | Needs KenLM *and* `/media/des` |
+| Stage 5 (`01_evaluate_full_corrector.py`) | fails | Needs KenLM *and* `/media/des` |
 | `run_ocr.py` | fails | Needs the `tesseract` binary |
 
 Three of these are fixable by the user in minutes if the data exists elsewhere:
@@ -1203,12 +1203,12 @@ from what is here. Training one requires the `kenlm` toolchain and a large Amhar
 
 | Document | Problem |
 |---|---|
-| `README.md` and `OCR_error_detection/README.md` | The headline "94.2% recall, 0.01% false alarms" does not reproduce. Verified: **92.9% and 0.10%**. |
+| `README.md` and `4_ocr_correction/error_detection/README.md` | The headline "94.2% recall, 0.01% false alarms" does not reproduce. Verified: **92.9% and 0.10%**. |
 | Both "How to use" examples | The child example prints `gray 0.154`, not the documented `FLAG 0.85`. The parent example raises an exception. |
 | `Evaluation/analysis.tsv` | A third, different set of numbers for the same 100 pages (60.4% flag rate). No current model reproduces it. Should be regenerated or retired. |
 | `docs/components_guide.md` | Shows a worked example whose printed clue vector produces `gray 0.31`, not the documented `flag 0.85`. Also shows dictionary frequencies that do not match the real file. |
 | `4_ocr_correction/README.md` | Calls the corrector "80K lines"; it is **1,817 lines** (87 KB). |
-| `OCR_error_detection/README.md` | Documents a dictionary filename that does not exist (`main_i7_freq10.txt` for `main_i7_frq10.txt`), and says "top 150k (freq>=3)" where the real count is 162,893. |
+| `4_ocr_correction/error_detection/README.md` | Documents a dictionary filename that does not exist (`main_i7_freq10.txt` for `main_i7_frq10.txt`), and says "top 150k (freq>=3)" where the real count is 162,893. |
 | The shipped model file itself | Its internal note reads `"...BEST FF 0.01%"` — the unreproduced claim is baked into the artifact. |
 
 ## The three sets of numbers for the same 100 pages
@@ -1282,7 +1282,7 @@ which filters out junk. Measured: the main dictionary has **737,106 lines**, of 
 Tesseract to read lines of text.
 
 **`.lstmf`** — the compiled tensor format Tesseract's LSTM reads during training. Produced
-by `08_compile_lstmf_and_split.py`.
+by `06_compile_lstmf_and_split.py`.
 
 **Morphology / morpheme** — the structure of words. A **morpheme** is the smallest
 meaningful piece: `በመሄድ` ("by going") is three morphemes. Morphological analysis breaks a
@@ -1353,7 +1353,7 @@ python3 -m venv .venv
 
 # 2. Does the detector work at all?
 .venv/bin/python -c "
-from OCR_error_detection import DetectionEngine
+from error_detection import DetectionEngine
 d = DetectionEngine()
 r = d.verdict('በሸታ', doc_freq=2)
 print(r.label, round(r.suspicion, 4))"
@@ -1361,22 +1361,22 @@ print(r.label, round(r.suspicion, 4))"
 # (the README claims "FLAG 0.85" — it does not reproduce)
 
 # 3. Run the child's tests
-.venv/bin/python -m pytest OCR_error_detection/tests/ -q          # 60 passed
+.venv/bin/python -m pytest 4_ocr_correction/error_detection/tests/ -q          # 60 passed
 
 # 4. Measure the detector on the 100 held-out pages (~85 seconds)
-.venv/bin/python OCR_error_detection/scripts/evaluate_child.py
+.venv/bin/python 4_ocr_correction/error_detection/scripts/evaluate_child.py
 
 # 5. Reproduce the dictionary comparison table the README prints
-.venv/bin/python OCR_error_detection/Model/train_LightGBM.py \
+.venv/bin/python 4_ocr_correction/error_detection/Model/train_LightGBM.py \
     --sweep-freqs 10,100,500,1000 --report /tmp/sweep.json
-# then compare /tmp/sweep.json against OCR_error_detection/Model/train_sweep_report.json
+# then compare /tmp/sweep.json against 4_ocr_correction/error_detection/Model/train_sweep_report.json
 # — they match to the digit
 
 # 6. Compare configurations on held-out pages instead
-.venv/bin/python OCR_error_detection/scripts/compare_lexicon_configs.py
+.venv/bin/python 4_ocr_correction/error_detection/scripts/compare_lexicon_configs.py
 
 # 7. See the threshold trade-offs and the cross-validated recommendation
-.venv/bin/python OCR_error_detection/scripts/tune_gates.py
+.venv/bin/python 4_ocr_correction/error_detection/scripts/tune_gates.py
 
 # 8. Confirm what the corrector cannot do
 .venv/bin/python -c "

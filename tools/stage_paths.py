@@ -56,7 +56,7 @@ STAGE_DIRS = (
 # Folders that hold importable code but are not pipeline stages.
 #
 # The detector's scripts/ folder is here because stage 5 imports
-# `audit_decision` from it: 05_collect_error_cases.py audits the detector's
+# `audit_decision` from it: 02_collect_error_cases.py audits the detector's
 # pass/gray/flag decisions, so that one module is genuinely cross-stage rather
 # than private to the detector. Everything else in scripts/ is a CLI entry
 # point and is meant to be run, not imported.

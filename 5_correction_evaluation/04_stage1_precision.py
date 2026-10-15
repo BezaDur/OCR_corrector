@@ -1,6 +1,6 @@
 """Step 14: precision of Stage 1's flagged set, from per-token verdict files.
 
-Reads the <page>.verdicts.jsonl files written by 04_evaluate_full_corrector.py
+Reads the <page>.verdicts.jsonl files written by 01_evaluate_full_corrector.py
 (--verdict-dir). Each row is one token with its Stage 1 label, its suspicion
 score, and whether it is a true error, a clean token, or ambiguous.
 
@@ -9,7 +9,7 @@ Prints:
   - a threshold sweep on suspicion: precision, error recall, clean tokens flagged
   - the lowest threshold whose precision reaches the target
 
-Usage: python3 14_stage1_precision.py VERDICT_DIR [--target 0.85]
+Usage: python3 04_stage1_precision.py VERDICT_DIR [--target 0.85]
 """
 import argparse
 import glob

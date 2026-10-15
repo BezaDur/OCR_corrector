@@ -3,10 +3,10 @@
 **Parent project, step 4: OCR correction.**
 
 ## What it does
-- Build confusion matrix (03_build_confusion_matrix.py) from OCR errors → confusion_matrix.json
+- Build confusion matrix (01_build_confusion_matrix.py) from OCR errors → confusion_matrix.json
 - Main corrector: amharic_ocr_corrector.py (80K lines, production CPU-based)
   - EthiopicPunctuationManager, AmharicNormalizer, SymSpell + reverse optical mapping, MorphologicalSegmenter, KenLM 5-gram Viterbi
-- Uses child project OCR_error_detection via adapter for suspicion (PASS/GRAY/FLAG)
+- Uses child project error_detection via adapter for suspicion (PASS/GRAY/FLAG)
 
 ## Files (moved from root)
 - amharic_ocr_corrector.py — main corrector (moved from root)
@@ -20,7 +20,7 @@
 ```python
 # In amharic_ocr_corrector.py
 try:
-    from OCR_error_detection.adapter import CorrectorDetectionAdapter
+    from error_detection.adapter import CorrectorDetectionAdapter
     self.suspicion = CorrectorDetectionAdapter(self)  # reuses vocab, no double load
     # LightGBM authoritative
 except Exception as e:
@@ -32,11 +32,11 @@ except Exception as e:
 
 ## How to run
 ```bash
-python 03_build_confusion_matrix.py --ocr-dir .../ocr_pred --out confusion_matrix.json
+python 01_build_confusion_matrix.py --ocr-dir .../ocr_pred --out confusion_matrix.json
 python -m 4_ocr_correction.test_corrector
 ```
 
 ## Output
-- confusion_matrix.json (single source now in OCR_error_detection/Model/, no symlinks)
+- confusion_matrix.json (single source now in 4_ocr_correction/error_detection/Model/, no symlinks)
 - Corrected text
 - Input to 5_correction_evaluation

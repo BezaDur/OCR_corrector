@@ -143,7 +143,7 @@ Tested on 1267 pages (883k rows, 1200 train / 67 val):
 **How to use:**
 ```python
 # Default — uses main_i7, 50k types, fast, no crash (2.9s init, 0.56 ms/word)
-from OCR_error_detection import DetectionEngine
+from error_detection import DetectionEngine
 det = DetectionEngine()  # auto-finds Model/main_i7_frq10.txt
 
 # Full 737k types — slower but more coverage
@@ -475,7 +475,7 @@ det = DetectionEngine(dict_vocab_path="/path/to/main_i7.txt", dict_min_freq=100)
 **How:**
 ```python
 # Inside AmharicOCRCorrector.__init__:
-from OCR_error_detection.adapter import CorrectorDetectionAdapter
+from error_detection.adapter import CorrectorDetectionAdapter
 self.suspicion = CorrectorDetectionAdapter(self)  # reuses self.vocab etc.
 
 # Inside corrector loop:
@@ -497,7 +497,7 @@ verdict = self.suspicion.verdict(word, context, ocr_conf=conf, doc_freq=df)
 
 ```python
 # Default — uses main_i7, 50k types, fast, no crash, best for PC
-from OCR_error_detection import DetectionEngine
+from error_detection import DetectionEngine
 det = DetectionEngine()  # auto-finds Model/main_i7_frq10.txt, 50k types, no SymSpell, 2.9s init
 
 # Best accuracy — freq>=500, 54k types, lowest FF 0.01%

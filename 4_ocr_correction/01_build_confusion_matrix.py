@@ -36,7 +36,7 @@ GT_DIR = os.path.join(DATASET_DIR, "ground_truth")
 # that model's errors (3.75 wrong chars per bad word), not your engine's
 # (1.06). Rebuild from the engine you actually run:
 #
-#   python 03_build_confusion_matrix.py --ocr-dir .../ocr_pred \
+#   python 01_build_confusion_matrix.py --ocr-dir .../ocr_pred \
 #          --out /media/des/Tess/Tesseract2/confusion_matrix_pred.json
 OCR_DIR = os.path.join(DATASET_DIR, "ocr_new_model")
 

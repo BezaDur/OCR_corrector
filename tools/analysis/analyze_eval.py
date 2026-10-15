@@ -1,15 +1,24 @@
 """Quantify the LightGBM detector on the saved Evaluation/analysis.tsv (in-sample caveat applies)."""
 import csv, sys, os, collections
-sys.path.insert(0, '/home/user/OCR_corrector')
-sys.path.insert(0, '/home/user/OCR_corrector/4_ocr_correction/error_detection')
-from normalizer import AmharicNormalizer
+# --- portable paths: tools/analysis/ is two levels below the repo root -------
+import os as _os, sys as _sys
+_REPO = _os.path.abspath(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", ".."))
+if _os.path.join(_REPO, "tools") not in _sys.path:
+    _sys.path.insert(0, _os.path.join(_REPO, "tools"))
+import stage_paths  # noqa: E402
+stage_paths.register(_REPO)
+DETECTOR = _os.path.join(_REPO, "4_ocr_correction", "error_detection")  # detector package
+EVAL = _os.path.join(_REPO, "Evaluation")                              # shared page corpus
+DATA = _os.path.join(_REPO, "1_data_preparation", "data")              # corpora
+# ----------------------------------------------------------------------------
 
-ROOT = '/home/user/OCR_corrector/4_ocr_correction/error_detection'
-rows = list(csv.DictReader(open(os.path.join(ROOT, 'Evaluation/analysis.tsv'), encoding='utf-8'), delimiter='\t'))
+from error_detection.normalizer import AmharicNormalizer
+
+
+rows = list(csv.DictReader(open(os.path.join(EVAL, 'analysis.tsv'), encoding='utf-8'), delimiter='\t'))
 # substitution errors + correct words only (exclude INSERTION=2 / DELETION=3 rows)
 aligned = [r for r in rows if r['is_error'] in ('0', '1')]
 print('aligned substitution/correct rows:', len(aligned))
-
 
 def auc(scores, labels):
     pairs = sorted(zip(scores, labels))
@@ -28,7 +37,6 @@ def auc(scores, labels):
     sum_pos = sum(r for r, (_, l) in zip(ranks, pairs) if l == 1)
     return (sum_pos - pos * (pos + 1) / 2) / (pos * neg)
 
-
 def ap(scores, labels):
     # average precision (step-wise)
     order = sorted(range(len(scores)), key=lambda k: -scores[k])
@@ -37,7 +45,6 @@ def ap(scores, labels):
         if labels[k]:
             tp += 1; s += tp / n
     return s / total_pos
-
 
 y = [int(r['is_error']) for r in aligned]
 det = [float(r['detector_score']) for r in aligned]

@@ -37,7 +37,7 @@ Why freq>=500 best for main_i7?
 ## How to use
 
 ```python
-from OCR_error_detection import DetectionEngine
+from error_detection import DetectionEngine
 
 detector = DetectionEngine()  # auto-finds main_i7 model
 result = detector.verdict("በሸታ", doc_freq=2)

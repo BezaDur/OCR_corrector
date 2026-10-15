@@ -13,7 +13,7 @@ Output (same layout as Evaluation/):
     <out>/manifest.csv
 
 Usage (on any machine with Pillow and an Ethiopic font):
-    python docs/lgbm_review/make_synthetic_set.py \
+    python tools/analysis/make_synthetic_set.py \
         --text new_source.txt --font /path/a.ttf /path/b.ttf ... \
         --out fresh_eval --source "publisher / title" --collected 2026-10 \
         --size 36 --dpi 300 --width 2480 --height 3508

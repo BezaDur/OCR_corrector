@@ -8,7 +8,7 @@ Produces two files per image in Evaluation/OCRed/:
 
 One-time setup: symlink the model into system tessdata so Tesseract
 finds it AND its config files (tsv, hocr) in the same place:
-    sudo ln -s ${TESSERACT_WORKSPACE:-/media/des/Tess/Tesseract2}/training/models/amh_fast.traineddata \
+    sudo ln -s ${TESSERACT_WORKSPACE:-/media/des/Tess/Tesseract2}/training/2_training/models/packaged/amh_fast.traineddata \
                /usr/share/tesseract-ocr/5/tessdata/amh_fast.traineddata
 
 Usage:

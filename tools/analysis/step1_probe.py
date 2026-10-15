@@ -1,6 +1,17 @@
 import sys, os, io, contextlib, tempfile, math
-ROOT = '/home/user/OCR_corrector'
-sys.path.insert(0, ROOT)
+# --- portable paths: tools/analysis/ is two levels below the repo root -------
+import os as _os, sys as _sys
+_REPO = _os.path.abspath(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", ".."))
+if _os.path.join(_REPO, "tools") not in _sys.path:
+    _sys.path.insert(0, _os.path.join(_REPO, "tools"))
+import stage_paths  # noqa: E402
+stage_paths.register(_REPO)
+DETECTOR = _os.path.join(_REPO, "4_ocr_correction", "error_detection")  # detector package
+EVAL = _os.path.join(_REPO, "Evaluation")                              # shared page corpus
+DATA = _os.path.join(_REPO, "1_data_preparation", "data")              # corpora
+# ----------------------------------------------------------------------------
+ROOT = DETECTOR
+
 from error_detection.detector import DetectionEngine
 
 d = tempfile.mkdtemp()
@@ -10,7 +21,7 @@ with open(lex, 'w', encoding='utf-8') as fh:
                  ("ዓለም", 9000), ("ሀገር", 8000)]:
         fh.write(f'{w} {f}\n')
 with contextlib.redirect_stdout(io.StringIO()):
-    e = DetectionEngine(dict_vocab_path=lex, confusion_matrix_path=ROOT + '/confusion_matrix.json',
+    e = DetectionEngine(dict_vocab_path=lex, confusion_matrix_path=os.path.join(DETECTOR, 'Model', 'confusion_matrix.json'),
                         char_lm_path=None, verbose=False)
 print('model loaded:', e.lgbm_model is not None, '| legacy schema:', e._legacy_model)
 for tok in ["ቤት", "ቤት፡", "ዓለም", "ሐገር", "ሰላም።"]:

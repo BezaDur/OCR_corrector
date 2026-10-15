@@ -10,7 +10,7 @@ Runs on the repository only (no dictionary or KenLM needed). Checks:
   C7  training-internal overlap and page groups for grouped cross-validation
   C8  punctuation and digits: absent from the harmonized training rows
 
-Usage:  python3 docs/lgbm_review/step2_data_checks.py
+Usage:  python3 tools/analysis/step2_data_checks.py
 """
 import collections
 import csv

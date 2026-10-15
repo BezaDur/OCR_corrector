@@ -106,7 +106,7 @@ disappears when the model is retrained.
 **Problem.** Training and the detector each had their own code for computing features.
 Any difference between the two was a silent error.
 
-**Change.** A new file, `OCR_error_detection/features.py`, holds the only definition
+**Change.** A new file, `4_ocr_correction/error_detection/features.py`, holds the only definition
 of the features. Training and the detector both call it. A new set of tests checks
 that the two produce identical numbers for the same word.
 
@@ -121,7 +121,7 @@ treated as the old version, and the detector warns about it.
 
 ### 2.8 The package could not be imported from the repository root
 
-**Problem.** `from OCR_error_detection import DetectionEngine` failed unless the
+**Problem.** `from error_detection import DetectionEngine` failed unless the
 package folder itself was on the Python path.
 
 **Change.** Internal imports were made to use full package names.
@@ -131,10 +131,10 @@ later step, but the new shared feature file needs it.
 
 ## 3. Tests
 
-- `OCR_error_detection/tests/test_features.py`: 15 tests, all passing. They check
+- `4_ocr_correction/error_detection/tests/test_features.py`: 15 tests, all passing. They check
   the confusion table, the normalized lookups, punctuation handling, unknown values,
   the old-version handling, and that training and the detector produce the same numbers.
-- `OCR_error_detection/tests/test_detector.py`: the same 40 tests as before. Five of
+- `4_ocr_correction/error_detection/tests/test_detector.py`: the same 40 tests as before. Five of
   them call methods that do not exist yet (`verdict_batch`, `signals`,
   `reset_counters`, `detection_stats`), and one checks an old behaviour that step 2
   will change. These are scheduled for step 4 and were not changed in step 1.
@@ -240,7 +240,7 @@ Next:
 
 3. **Step 2 (data checks)** starts with the dictionary-coverage comparison: the share
    of correct words in the dictionary on the new pages, against 94.2% on the current
-   pages. The check script is `docs/lgbm_review/check_dictionary_coverage.py`. It has to
+   pages. The check script is `tools/analysis/check_dictionary_coverage.py`. It has to
    run where the dictionary file lives. Step 2 also reviews the confidence thresholds
    on the development set.
 4. **Waiting on you:** sources for the new pages, who transcribes them, and confirmation
@@ -251,18 +251,18 @@ Next:
 
 | File | Change |
 |---|---|
-| `OCR_error_detection/features.py` | new: the only definition of the features |
-| `OCR_error_detection/detector.py` | uses the shared features; missing values are unknown, not fixed numbers; checks the model's feature version |
-| `OCR_error_detection/signals.py` | full-package import |
-| `OCR_error_detection/Model/train_LightGBM.py` | uses the shared features; reads the confusion table under the right name; normalizes the dictionary; records the feature version; can train without the character model |
-| `OCR_error_detection/tests/test_features.py` | new: 15 tests |
+| `4_ocr_correction/error_detection/features.py` | new: the only definition of the features |
+| `4_ocr_correction/error_detection/detector.py` | uses the shared features; missing values are unknown, not fixed numbers; checks the model's feature version |
+| `4_ocr_correction/error_detection/signals.py` | full-package import |
+| `4_ocr_correction/error_detection/Model/train_LightGBM.py` | uses the shared features; reads the confusion table under the right name; normalizes the dictionary; records the feature version; can train without the character model |
+| `4_ocr_correction/error_detection/tests/test_features.py` | new: 15 tests |
 | `docs/lgbm_detector_review.md` | the review (the earlier confidence recommendation is superseded by this note) |
 | `docs/lgbm_step1_changes.md` | this note |
-| `docs/lgbm_review/` | scripts used for the measurements in this note |
+| `tools/analysis/` | scripts used for the measurements in this note |
 
 The retraining command, once the dictionary and character model are available:
 
 ```
-python OCR_error_detection/Model/train_LightGBM.py
-python OCR_error_detection/Model/train_LightGBM.py --no-char-lm   # without the character model
+python 4_ocr_correction/error_detection/Model/train_LightGBM.py
+python 4_ocr_correction/error_detection/Model/train_LightGBM.py --no-char-lm   # without the character model
 ```

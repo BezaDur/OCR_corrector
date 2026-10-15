@@ -15,37 +15,47 @@ Output:
   <out>/selection.csv       page, first and last source line number in the new text
 
 Usage:
-  python docs/lgbm_review/build_synthetic_source.py --source telegram_c4.txt \
+  python tools/analysis/build_synthetic_source.py --source 1_data_preparation/data/telegram_c4.txt \
       --out synthetic_eval --pages 100 --lines-per-page 35 --seed 7
 """
 import argparse
+# --- portable paths: tools/analysis/ is two levels below the repo root -------
+import os as _os, sys as _sys
+_REPO = _os.path.abspath(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", ".."))
+if _os.path.join(_REPO, "tools") not in _sys.path:
+    _sys.path.insert(0, _os.path.join(_REPO, "tools"))
+import stage_paths  # noqa: E402
+stage_paths.register(_REPO)
+DETECTOR = _os.path.join(_REPO, "4_ocr_correction", "error_detection")  # detector package
+EVAL = _os.path.join(_REPO, "Evaluation")                              # shared page corpus
+DATA = _os.path.join(_REPO, "1_data_preparation", "data")              # corpora
+# ----------------------------------------------------------------------------
+
 import csv
 import glob
 import os
 import random
 import re
 
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 PUNCT = re.compile(r"[^\w\s]|\d")
 ETHIOPIC = re.compile(r"[\u1200-\u137F]")
 
 CORPUS_FILES = [
-    os.path.join(ROOT, "amh_final_training_text.txt"),
-    os.path.join(ROOT, "mined_rare_sentences.txt"),
-    os.path.join(ROOT, "amh.training_text"),
+    os.path.join(DATA, "amh_final_training_text.txt"),
+    os.path.join(DATA, "mined_rare_sentences.txt"),
+    os.path.join(DATA, "amh.training_text"),
 ]
-TRAIN_TSV = os.path.join(ROOT, "error_detection", "harmonized_corpus_jiwer.tsv")
-EVAL_GT = os.path.join(ROOT, "Evaluation", "GroundTruth")
-
+TRAIN_TSV = os.path.join(DETECTOR, "Model", "harmonized_corpus_jiwer.tsv")
+EVAL_GT = os.path.join(EVAL, "GroundTruth")
 
 def clean(text):
     return " ".join(w for w in (PUNCT.sub("", t).strip() for t in text.split()) if w)
 
-
 def grams(text, n=5):
     w = text.split()
     return {" ".join(w[i:i + n]) for i in range(len(w) - n + 1)}
-
 
 def corpus_grams():
     """All word 5-grams (cleaned) of the existing corpora, as hashes to save memory."""
@@ -69,7 +79,6 @@ def corpus_grams():
         with open(path, encoding="utf-8", errors="ignore") as f:
             seen.update(hash(g) for g in grams(clean(f.read())))
     return seen
-
 
 def main():
     ap = argparse.ArgumentParser()
@@ -125,7 +134,6 @@ def main():
             first, last = blocks[b][0][0], blocks[b][-1][0]
             w.writerow([f"page_{j:04d}", first, last])
     print(f"wrote {args.pages} pages ({args.pages * k} lines) to {args.out}")
-
 
 if __name__ == "__main__":
     main()

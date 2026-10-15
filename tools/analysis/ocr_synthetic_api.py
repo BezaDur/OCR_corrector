@@ -8,7 +8,7 @@ language model (amh_fast), same page segmentation mode (3). Check it on one page
 the command-line output before trusting it (see the note in the plan document).
 
 Usage:
-    python docs/lgbm_review/ocr_synthetic_api.py \
+    python tools/analysis/ocr_synthetic_api.py \
         --images synthetic_eval/images --out synthetic_eval/OCRed \
         --models models --lang amh_fast --psm 3
 """

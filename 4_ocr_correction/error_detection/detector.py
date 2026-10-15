@@ -127,7 +127,7 @@ CANDIDATE_CHAR_LM_PATHS = [
 PUNCT_RE = re.compile(r'[^\w\s]|\d')
 ETHIOPIC_PUNCT_RE = re.compile(r'[፡።፣፤፥፦፧፨]')
 # One definition, in utils.py, re-exported here for the analysis scripts in
-# docs/lgbm_review/ that import it from this module.
+# tools/analysis/ that import it from this module.
 RARE_GLYPHS = set(_MODEL_RARE_GLYPHS)
 
 def _resolve_first_existing(candidates: List[str]) -> Optional[str]:

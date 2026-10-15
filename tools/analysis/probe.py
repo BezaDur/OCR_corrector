@@ -1,8 +1,18 @@
 import sys, os, io, contextlib, tempfile, time
-ROOT = '/home/user/OCR_corrector'
-sys.path.insert(0, ROOT)
-sys.path.insert(0, os.path.join(ROOT, 'error_detection'))
+# --- portable paths: tools/analysis/ is two levels below the repo root -------
+import os as _os, sys as _sys
+_REPO = _os.path.abspath(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", ".."))
+if _os.path.join(_REPO, "tools") not in _sys.path:
+    _sys.path.insert(0, _os.path.join(_REPO, "tools"))
+import stage_paths  # noqa: E402
+stage_paths.register(_REPO)
+DETECTOR = _os.path.join(_REPO, "4_ocr_correction", "error_detection")  # detector package
+EVAL = _os.path.join(_REPO, "Evaluation")                              # shared page corpus
+DATA = _os.path.join(_REPO, "1_data_preparation", "data")              # corpora
+# ----------------------------------------------------------------------------
+
 from error_detection.detector import DetectionEngine
+
 
 
 def mk(words):
@@ -13,10 +23,9 @@ def mk(words):
             fh.write(f'{w} {f}\n')
     with contextlib.redirect_stdout(io.StringIO()):
         e = DetectionEngine(dict_vocab_path=p,
-                            confusion_matrix_path=os.path.join(ROOT, 'confusion_matrix.json'),
+                            confusion_matrix_path=os.path.join(DETECTOR, 'Model', 'confusion_matrix.json'),
                             char_lm_path=None, verbose=False)
     return e
-
 
 W = [("ሰላም", 5000), ("ቤት", 4000), ("ነገር", 3000), ("ትምህርት", 2000), ("ወርቅ", 1000),
      ("ዓለም", 9000), ("ሀገር", 8000)]
@@ -24,7 +33,6 @@ e = mk(W)
 print('model loaded:', e.lgbm_model is not None)
 print('features:', e.lgbm_features)
 print('vocab keys containing normalized forms:', [k for k in e.vocab if k in ('አለም', 'ዓለም', 'ሀገር', 'ሐገር')])
-
 
 def show(tok, doc_freq=1):
     sig = e._cheap_signals(tok)
@@ -36,7 +44,6 @@ def show(tok, doc_freq=1):
           f"in_lex_feat={d['in_lexicon']} logf={d['log_corpus_freq']:.2f} "
           f"singleton={d['is_doc_singleton']} kenlm={d['char_kenlm_score']} "
           f"one_flip_cnt={d['one_flip_count']}")
-
 
 print('--- clean in-lexicon words, no KenLM, default doc_freq')
 for tok in ["ቤት", "ሰላም", "ነገር", "ትምህርት", "ወርቅ"]:

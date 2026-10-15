@@ -84,7 +84,7 @@ RARE_GLYPH_CLASSES = (
 # precedence, and this only fills what that matrix is missing.
 #
 # It is missing a lot. confusion_matrix.json was built by
-# 03_build_confusion_matrix.py against synthetic_eval/ocr_new_model -- the
+# 01_build_confusion_matrix.py against synthetic_eval/ocr_new_model -- the
 # output of amh_epoch1_fast, which scores 26.65% CER against the stock
 # engine's 2.05%. The cross-series pairs below (notably AIN/PHHARYA,
 # the one both external reviews singled out) do not appear there at all,

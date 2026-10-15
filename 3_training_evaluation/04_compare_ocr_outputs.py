@@ -19,7 +19,7 @@ conclude.
 Usage
 -----
     # the question that matters
-    python 10_compare_ocr_outputs.py \\
+    python 04_compare_ocr_outputs.py \\
         --gt /media/des/Tess/Tesseract2/synthetic_eval/ground_truth \\
         --ocr pred=/media/des/Tess/Tesseract2/synthetic_eval/ocr_pred \\
         --ocr new=/media/des/Tess/Tesseract2/synthetic_eval/ocr_new_model

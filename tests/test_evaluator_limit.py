@@ -1,4 +1,4 @@
-"""Smoke-run option for 04_evaluate_full_corrector.py: --limit-pages.
+"""Smoke-run option for 01_evaluate_full_corrector.py: --limit-pages.
 
 Uses a stub corrector, so it runs without kenlm, symspellpy or the dataset.
 Run: python -m unittest discover -s tests -p 'test_evaluator_limit.py'
@@ -15,7 +15,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location("evaluator_limit", ROOT / "5_correction_evaluation" / "04_evaluate_full_corrector.py")
+spec = importlib.util.spec_from_file_location("evaluator_limit", ROOT / "5_correction_evaluation" / "01_evaluate_full_corrector.py")
 evaluator = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(evaluator)
 

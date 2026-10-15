@@ -8,7 +8,7 @@ No Tesseract binary, no KenLM model, no `/media/des` or `/mnt/mintdata` trees.
 
 **Bottom line:** the pipeline code is largely sound and the *training* scripts reproduce
 their own saved artifacts exactly. It is the **headline numbers in `README.md`,
-`OCR_error_detection/README.md`, `docs/components_guide.md`, `docs/architecture.md` and
+`4_ocr_correction/error_detection/README.md`, `docs/components_guide.md`, `docs/architecture.md` and
 `docs/project_structure.md` that do not reproduce** — and both runnable "How to use"
 examples in the root README fail. Nothing below is a guess: every number was re-derived
 by running the repo's own scripts.
@@ -35,7 +35,7 @@ by running the repo's own scripts.
 The documented way to produce that table is
 
 ```bash
-python OCR_error_detection/Model/train_LightGBM.py --sweep-freqs 10,100,500,1000
+python 4_ocr_correction/error_detection/Model/train_LightGBM.py --sweep-freqs 10,100,500,1000
 ```
 
 (which is exactly what `Model/train_sweep_report.json` records under `args`). Re-running it
@@ -76,7 +76,7 @@ the FINAL winner.
 ### A3. On the held-out `Evaluation/` set, FF is 0.72%, not 0.01%
 
 ```bash
-python OCR_error_detection/scripts/evaluate_child.py
+python 4_ocr_correction/error_detection/scripts/evaluate_child.py
 ```
 
 ```
@@ -116,7 +116,7 @@ Recall is unchanged (92.9%); false flags fall 419 → 59.
 
 | Source | recall (flag+gray) | recall (flag only) | false flag |
 |---|---|---|---|
-| `README.md` / `OCR_error_detection/README.md` | 94.2% | — | **0.01%** |
+| `README.md` / `4_ocr_correction/error_detection/README.md` | 94.2% | — | **0.01%** |
 | committed `Evaluation/analysis.tsv` (62,521 rows) | 95.64% | 60.37% | **1.194%** |
 | current code re-run (above) | 92.9% | **3.3%** | **0.72%** |
 
@@ -216,17 +216,17 @@ dependency reinstates it. The README still advertises the corrector as
 TESSERACT_WORKSPACE …". These documented commands bypass it and die with a raw
 `PermissionError: [Errno 13] Permission denied: '/media/des'`:
 
-* `python 04_evaluate_full_corrector.py` — documented in `5_correction_evaluation/README.md`
+* `python 01_evaluate_full_corrector.py` — documented in `5_correction_evaluation/README.md`
   (lines 120/151, `CORRECTED_OUT_DIR`)
-* `3_training_evaluation/11_benchmark_new_model.py:93`
-* `1_data_preparation/01_generate_eval_pages.py:291`
+* `3_training_evaluation/02_benchmark_new_model.py:93`
+* `1_data_preparation/07_generate_eval_pages.py:291`
 
 `bash smoke_eval.sh` and the `2_training/*.sh` scripts at least read
 `${TESSERACT_WORKSPACE:-…}`, but still default to a path that does not exist.
 
 ### C3. A typo'd dictionary path degrades silently to 8 words
 
-`OCR_error_detection/README.md` documents:
+`4_ocr_correction/error_detection/README.md` documents:
 
 ```python
 DetectionEngine(dict_vocab_path="main_i7_freq10.txt", max_lexicon_types=None)
@@ -271,7 +271,7 @@ READMEs are not.
 
 | Location | Claim | Actual |
 |---|---|---|
-| `README.md`, `OCR_error_detection/README.md` | "Tests: 40 OK for child" | 56 pass (child); parent 159 pass / 24 skipped |
+| `README.md`, `4_ocr_correction/error_detection/README.md` | "Tests: 40 OK for child" | 56 pass (child); parent 159 pass / 24 skipped |
 | `4_ocr_correction/README.md` | `amharic_ocr_corrector.py` "(80K lines)" | 1,817 lines (87 KB) |
 | `docs/components_guide.md` | dict lines `በሸታ 0`, `በሽታ 1234` | real file: `በሸታ 263`, `በሽታ 64452` |
 | `README.md` | local_lexicon "top 150k (freq>=3)" | 162,893 canonical types at freq>=3 |
@@ -313,7 +313,7 @@ Claims that reproduce exactly, and should be kept:
 **Reproducibility**
 * `train_LightGBM.py --sweep-freqs …` is deterministic and matched the committed
   `train_sweep_report.json` exactly on a re-run ✓
-* `pytest OCR_error_detection/tests/` → **56 passed** ✓
+* `pytest 4_ocr_correction/error_detection/tests/` → **56 passed** ✓
 * `python -m unittest discover -s tests -p 'test_*.py'` → **Ran 159 tests … OK (skipped=24)** ✓
 
 ---
@@ -360,7 +360,7 @@ digit from every other column while `has_digit` stays 1:
 ### The fix
 
 Measure `has_digit` on the clean surface, like every other column
-(`OCR_error_detection/features.py`, `cheap_signals`). This is **provably a no-op on
+(`4_ocr_correction/error_detection/features.py`, `cheap_signals`). This is **provably a no-op on
 training data** — `clean_surface(w) == w` for all 946,057 corpus rows, so both definitions
 yield `has_digit = 1` for exactly the same 812 rows. No retraining, and no shipped model
 changes behaviour on any input it was trained on.
@@ -449,7 +449,7 @@ Numbers below are **after** the §G fix.
 
 ## I. Gate tuning: a defensible PASS / FLAG pair
 
-New tool: `OCR_error_detection/scripts/tune_gates.py`. It collects the calibrated
+New tool: `4_ocr_correction/error_detection/scripts/tune_gates.py`. It collects the calibrated
 P(error) for every aligned token on the 100 held-out pages once, then sweeps gates
 exactly in memory.
 
@@ -578,7 +578,7 @@ gates impossible to retune without rewriting the pickle. `DetectionEngine` now t
 `gates_override_model=True` to make caller-supplied gates authoritative:
 
 ```python
-from OCR_error_detection import DetectionEngine
+from error_detection import DetectionEngine
 det = DetectionEngine(pass_below=0.10, flag_above=0.85, gates_override_model=True)
 ```
 
@@ -625,7 +625,7 @@ deliberately left alone.
    in `Model/train_sweep_report.json` and both READMEs are stale. Regenerate with
    `--sweep-freqs`, then replace the 94.2% / 0.01% / 0.942 row (and the derived "7× /
    85× / 100× better", "1 in 10,000" claims in `README.md`,
-   `OCR_error_detection/README.md`, `docs/architecture.md`, `docs/components_guide.md`,
+   `4_ocr_correction/error_detection/README.md`, `docs/architecture.md`, `docs/components_guide.md`,
    `docs/project_structure.md`) with the held-out §H figures. **Keep main_i7 f>=500** —
    §H shows it wins on held-out data; only the justification needs rewriting.
 8. **Fix or replace the `score` metric** (§H). Ranking models by `recall(flag+gray) ×
@@ -642,8 +642,8 @@ deliberately left alone.
 11. **Refresh or retire `Evaluation/analysis.tsv`** so there is one authoritative record
     per evaluation set (§A4 — it currently disagrees with both the README and a fresh
     run).
-12. **Remove the duplicate lexicon.** `OCR_error_detection/main_i7_frq10.txt` is
-    byte-identical (md5 `df11e6cb…`) to `OCR_error_detection/Model/main_i7_frq10.txt` —
+12. **Remove the duplicate lexicon.** `4_ocr_correction/error_detection/main_i7_frq10.txt` is
+    byte-identical (md5 `df11e6cb…`) to `4_ocr_correction/error_detection/Model/main_i7_frq10.txt` —
     15 MB tracked twice, contradicting the README's "no duplicates, single source". Only
     `detector.py`'s `CANDIDATE_LEXICON_PATHS` fallback references it, after the `Model/`
     entry, so deleting it is safe.
@@ -658,8 +658,8 @@ deliberately left alone.
 * **[parent]** `requirements.txt` omits `pydantic`, so the vendored segmenter stays
   unimportable and `lambda_morph` silently cancels out (§C1).
 * **[parent]** `os.makedirs` on hardcoded `/media/des` paths instead of
-  `repo_paths.makedirs()` in `04_evaluate_full_corrector.py`, `11_benchmark_new_model.py`,
-  `01_generate_eval_pages.py` (§C2).
+  `repo_paths.makedirs()` in `01_evaluate_full_corrector.py`, `02_benchmark_new_model.py`,
+  `07_generate_eval_pages.py` (§C2).
 * **[parent]** The committed stage-5 benchmark shows net harm (§D).
 
 ## Reproduction commands
@@ -669,50 +669,50 @@ python3 -m venv .venv
 .venv/bin/pip install numpy joblib lightgbm scikit-learn symspellpy==6.10.0 pandas pytest
 
 # A1/A2 — the README dictionary table (deterministic; matches Model/train_sweep_report.json)
-.venv/bin/python OCR_error_detection/Model/train_LightGBM.py \
+.venv/bin/python 4_ocr_correction/error_detection/Model/train_LightGBM.py \
     --sweep-freqs 10,100,500,1000 --report /tmp/sweep.json
-.venv/bin/python OCR_error_detection/Model/train_LightGBM.py \
-    --lexicon OCR_error_detection/Model/local_lexicon.txt \
+.venv/bin/python 4_ocr_correction/error_detection/Model/train_LightGBM.py \
+    --lexicon 4_ocr_correction/error_detection/Model/local_lexicon.txt \
     --sweep-freqs 1,3,10 --report /tmp/sweep_local.json
 
 # A3 — held-out 100-page evaluation with the documented gate script
-.venv/bin/python OCR_error_detection/scripts/evaluate_child.py
+.venv/bin/python 4_ocr_correction/error_detection/scripts/evaluate_child.py
 
 # G — the has_digit skew, in one line
 .venv/bin/python -c "
 import sys; sys.path.insert(0,'.')
-from OCR_error_detection import DetectionEngine as D
+from error_detection import DetectionEngine as D
 e=D(lgbm_model_path='/tmp/det_cmp/loc_f10.pkl',
-    dict_vocab_path='OCR_error_detection/Model/local_lexicon.txt', dict_min_freq=10)
+    dict_vocab_path='4_ocr_correction/error_detection/Model/local_lexicon.txt', dict_min_freq=10)
 print([ (w, round(e.verdict(w,doc_freq=1).suspicion,4), e.verdict(w,doc_freq=1).label) for w in ('ከ','ከ20') ])"
 
 # H — train the candidates, then compare them all on the held-out pages
 for cfg in "main_i7_frq10.txt 500 m7_f500" "main_i7_frq10.txt 1000 m7_f1000" \
            "local_lexicon.txt 10 loc_f10" "local_lexicon.txt 3 loc_f3"; do
   set -- $cfg
-  .venv/bin/python OCR_error_detection/Model/train_LightGBM.py \
-      --lexicon "OCR_error_detection/Model/$1" --min-freq "$2" \
+  .venv/bin/python 4_ocr_correction/error_detection/Model/train_LightGBM.py \
+      --lexicon "4_ocr_correction/error_detection/Model/$1" --min-freq "$2" \
       --out "/tmp/det_cmp/$3.pkl" --report "/tmp/det_cmp/$3.report.json"
 done
-.venv/bin/python OCR_error_detection/scripts/compare_lexicon_configs.py \
+.venv/bin/python 4_ocr_correction/error_detection/scripts/compare_lexicon_configs.py \
     --json-report /tmp/det_cmp/heldout.json
 
 # I — gate tuning on the held-out pages (cache the probabilities, then sweep for free)
-.venv/bin/python OCR_error_detection/scripts/tune_gates.py \
+.venv/bin/python 4_ocr_correction/error_detection/scripts/tune_gates.py \
     --dump-probs /tmp/probs_shipped.npz --json-report /tmp/gates_shipped.json
-.venv/bin/python OCR_error_detection/scripts/tune_gates.py \
+.venv/bin/python 4_ocr_correction/error_detection/scripts/tune_gates.py \
     --load-probs /tmp/probs_shipped.npz \
     --miss-budget 7.5 --ff-budget 0.06 --min-precision 75 --folds 5
 # per-model, served with the lexicon it was trained on
-.venv/bin/python OCR_error_detection/scripts/tune_gates.py \
+.venv/bin/python 4_ocr_correction/error_detection/scripts/tune_gates.py \
     --model /tmp/det_cmp/m7_f1000.pkl \
-    --lexicon OCR_error_detection/Model/main_i7_frq10.txt --min-freq 1000
+    --lexicon 4_ocr_correction/error_detection/Model/main_i7_frq10.txt --min-freq 1000
 
 # B1 — the child "How to use" example
-.venv/bin/python -c "from OCR_error_detection import DetectionEngine; d=DetectionEngine(); r=d.verdict('በሸታ', doc_freq=2); print(r.label, r.suspicion)"
+.venv/bin/python -c "from error_detection import DetectionEngine; d=DetectionEngine(); r=d.verdict('በሸታ', doc_freq=2); print(r.label, r.suspicion)"
 
 # F/G — test suites (child 58, parent 159 + 24 skipped)
-.venv/bin/python -m pytest OCR_error_detection/tests/ -q
+.venv/bin/python -m pytest 4_ocr_correction/error_detection/tests/ -q
 .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
 ```
 

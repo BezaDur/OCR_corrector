@@ -9,7 +9,7 @@ Run this on any evaluation folder laid out like Evaluation/:
     OCRed/page_NNNN.ocr.txt        OCR output (optional, reported for reference)
 
 Usage (on the machine that has the dictionary):
-    python docs/lgbm_review/check_dictionary_coverage.py \
+    python tools/analysis/check_dictionary_coverage.py \
         --dict /path/to/main_i7.txt \
         --set  4_ocr_correction/error_detection/Evaluation
 
@@ -24,15 +24,26 @@ import argparse
 import glob
 import os
 import sys
+# --- portable paths: tools/analysis/ is two levels below the repo root -------
+import os as _os, sys as _sys
+_REPO = _os.path.abspath(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", ".."))
+if _os.path.join(_REPO, "tools") not in _sys.path:
+    _sys.path.insert(0, _os.path.join(_REPO, "tools"))
+import stage_paths  # noqa: E402
+stage_paths.register(_REPO)
+DETECTOR = _os.path.join(_REPO, "4_ocr_correction", "error_detection")  # detector package
+EVAL = _os.path.join(_REPO, "Evaluation")                              # shared page corpus
+DATA = _os.path.join(_REPO, "1_data_preparation", "data")              # corpora
+# ----------------------------------------------------------------------------
+
 from collections import Counter
+
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
-sys.path.insert(0, ROOT)
 
 from error_detection.normalizer import AmharicNormalizer  # noqa: E402
 from error_detection.features import clean_surface  # noqa: E402
-
 
 def load_vocab(path, norm):
     vocab = {}
@@ -46,12 +57,10 @@ def load_vocab(path, norm):
             vocab[key] = max(vocab.get(key, 0), freq)
     return vocab
 
-
 def tokens(folder, pattern):
     for path in sorted(glob.glob(os.path.join(folder, pattern))):
         with open(path, encoding="utf-8", errors="ignore") as f:
             yield os.path.basename(path), f.read().split()
-
 
 def main():
     ap = argparse.ArgumentParser()
@@ -97,7 +106,6 @@ def main():
     if ocr_total:
         print(f"OCR tokens found in dictionary (reference, includes errors): "
               f"{ocr_hit:,}/{ocr_total:,} ({100 * ocr_hit / ocr_total:.1f}%)")
-
 
 if __name__ == "__main__":
     main()

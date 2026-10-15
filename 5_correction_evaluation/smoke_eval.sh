@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fast smoke run of 04_evaluate_full_corrector.py on the first N pages.
+# Fast smoke run of 01_evaluate_full_corrector.py on the first N pages.
 # Builds a small subset by copying files, so it works with any evaluator version.
 # Usage: ./smoke_eval.sh [N]        (default N=10)
 # Override paths with environment variables, e.g. DATA=/other/path ./smoke_eval.sh 5
@@ -39,7 +39,7 @@ done
 echo "Subset: $count pages in $SUB"
 
 cd "$REPO"
-nohup nice -n 19 python3 "$HERE/04_evaluate_full_corrector.py" \
+nohup nice -n 19 python3 "$HERE/01_evaluate_full_corrector.py" \
   --gt-dir "$SUB/gt" --raw-dir "$SUB/raw" --output-dir "$SUB/out" \
   --kenlm "$KENLM" --confusion "$CONF" --dictionary "$DICT" \
   --dict-min-freq "$MIN_FREQ" "${CHAR_ARGS[@]}" \
