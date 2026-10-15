@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-BASE_DIR="/media/des/Tess/Tesseract2"
+BASE_DIR="${TESSERACT_WORKSPACE:-/media/des/Tess/Tesseract2}"
 CHECKPOINTS_DIR="${BASE_DIR}/training/checkpoints"
 OUTPUT_MODELS_DIR="${BASE_DIR}/training/models"
 TRAINEDDATA_PROTO="${BASE_DIR}/training/amh/amh.traineddata"

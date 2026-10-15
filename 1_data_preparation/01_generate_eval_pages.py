@@ -8,6 +8,17 @@ Features:
     non-uniform lighting gradients, and sensor noise.
 """
 
+# --- make repo_paths importable from any working directory -------------------
+import os as _os
+import sys as _sys
+_root = _os.path.dirname(_os.path.abspath(__file__))
+while _root != _os.path.dirname(_root) and not _os.path.exists(_os.path.join(_root, "repo_paths.py")):
+    _root = _os.path.dirname(_root)
+if _root not in _sys.path:
+    _sys.path.insert(0, _root)
+import repo_paths  # noqa: E402  (imported after the path bootstrap)
+# ----------------------------------------------------------------------------
+
 import os
 import sys
 import random
@@ -17,9 +28,9 @@ from PIL import Image, ImageDraw, ImageFont
 from fontTools.ttLib import TTFont
 
 # ----------------- Configuration -----------------
-FONTS_DIR = "/media/des/Tess/Tesseract/TessTraining/Fonts"
-GT_SOURCE_FILE = "/media/des/Tess/Tesseract2/ground_truth/merged.txt"
-OUTPUT_DIR = "/media/des/Tess/Tesseract2/synthetic_eval"
+FONTS_DIR = repo_paths.fonts()
+GT_SOURCE_FILE = repo_paths.workspace("ground_truth/merged.txt")
+OUTPUT_DIR = repo_paths.workspace("synthetic_eval")
 
 # Explicit typographic pairings for fonts with incomplete cmaps
 FALLBACK_PAIRS = {
@@ -253,7 +264,28 @@ def load_available_fonts(fonts_path):
     return fonts
 
 
-def main():
+def _parse_args(argv=None):
+    import argparse
+    ap = argparse.ArgumentParser(description="Generate synthetic evaluation pages (fonts → degraded page images + ground truth).",
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--fonts-dir", default=FONTS_DIR,
+                    help="directory with the Ethiopic fonts")
+    ap.add_argument("--gt-source", default=GT_SOURCE_FILE,
+                    help="merged ground-truth text to draw paragraphs from")
+    ap.add_argument("--out-dir", default=OUTPUT_DIR,
+                    help="where to write the pages + ground truth")
+    ap.add_argument("--pages", type=int, default=NUM_PAGES_TO_GENERATE,
+                    help="how many pages to generate (default %(default)s)")
+    ap.add_argument("-v", "--verbose", action="store_true", help="more output")
+    return ap.parse_args(argv)
+
+
+def main(argv=None):
+    global FONTS_DIR, GT_SOURCE_FILE, OUTPUT_DIR, NUM_PAGES_TO_GENERATE
+    args = _parse_args(argv)
+    FONTS_DIR, GT_SOURCE_FILE = args.fonts_dir, args.gt_source
+    OUTPUT_DIR, NUM_PAGES_TO_GENERATE = args.out_dir, args.pages
+
     images_out = os.path.join(OUTPUT_DIR, "images")
     gt_out = os.path.join(OUTPUT_DIR, "ground_truth")
     os.makedirs(images_out, exist_ok=True)

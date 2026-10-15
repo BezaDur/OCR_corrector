@@ -10,6 +10,17 @@ Exports full side-by-side TSV and prints top failure patterns.
 """
 
 # Make the repo-root shared modules importable from this subfolder.
+# --- make repo_paths importable from any working directory -------------------
+import os as _os
+import sys as _sys
+_root = _os.path.dirname(_os.path.abspath(__file__))
+while _root != _os.path.dirname(_root) and not _os.path.exists(_os.path.join(_root, "repo_paths.py")):
+    _root = _os.path.dirname(_root)
+if _root not in _sys.path:
+    _sys.path.insert(0, _root)
+import repo_paths  # noqa: E402  (imported after the path bootstrap)
+# ----------------------------------------------------------------------------
+
 import sys as _sys
 from pathlib import Path as _Path
 _sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
@@ -19,13 +30,13 @@ import difflib
 import collections
 from amharic_canonical_normalizer import canonicalize_amharic_punctuation
 
-DATASET_DIR = "/media/des/Tess/Tesseract2/synthetic_eval"
+DATASET_DIR = repo_paths.workspace("synthetic_eval")
 GT_DIR = os.path.join(DATASET_DIR, "ground_truth")
 RAW_OCR_DIR = os.path.join(DATASET_DIR, "ocr_new_model")
 CORR_DIR = os.path.join(DATASET_DIR, "ocr_corrected")
 
-OUTPUT_TSV = "/media/des/Tess/Tesseract2/correction_decisions.tsv"
-OUTPUT_SUMMARY = "/media/des/Tess/Tesseract2/correction_patterns_report.txt"
+OUTPUT_TSV = repo_paths.workspace("correction_decisions.tsv")
+OUTPUT_SUMMARY = repo_paths.workspace("correction_patterns_report.txt")
 
 
 def align_three_way(gt_tokens, raw_tokens, corr_tokens):

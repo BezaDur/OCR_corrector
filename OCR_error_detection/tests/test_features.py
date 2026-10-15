@@ -178,19 +178,40 @@ class TestTrainServeParity(unittest.TestCase):
 
     WORDS = ["ሰላም", "ቤት፡", "ዓለም", "ሐገር", "ህገር", "ነገር", "xyz", "ሰላም፣", "1234", ""]
 
+    # has_digit is the one column that reads the raw token (cleaning removes
+    # digits, so the clean surface can never answer it). For a punctuated or
+    # digit-bearing token it is therefore expected to differ from the clean
+    # form's vector; every other column must match exactly.
+    RAW_ONLY_DIFF = {"has_digit"}
+
     def test_extract_frame_matches_detector(self):
         eng = _schema2(_engine())
+        names = list(eng.lgbm_features)
         pairs = [(w, df) for w in self.WORDS for df in (None, 1, 4)]
         # training path: words are clean in the corpus, so give it the clean form
         training_pairs = [(clean_surface(w), df) for w, df in pairs]
         train_rows = extract_frame(training_pairs, eng._ctx)
         for (w, df), train_row in zip(pairs, train_rows):
             serve_row = eng._extract_lgbm_features(w, eng._cheap_signals(w), doc_freq=df)
-            for a, b in zip(train_row, serve_row):
+            dirty = clean_surface(w) != w
+            for name, a, b in zip(names, train_row, serve_row):
+                if dirty and name in self.RAW_ONLY_DIFF:
+                    continue
                 if math.isnan(a):
-                    self.assertTrue(math.isnan(b), (w, df))
+                    self.assertTrue(math.isnan(b), (w, df, name))
                 else:
-                    self.assertAlmostEqual(a, b, places=9, msg=(w, df))
+                    self.assertAlmostEqual(a, b, places=9, msg=(w, df, name))
+
+    def test_has_digit_reads_the_raw_token(self):
+        """'12' cleans to '' but must still report a digit; 'ቤት፡' must not."""
+        eng = _schema2(_engine())
+        names = list(eng.lgbm_features)
+        digit = dict(zip(names, eng._extract_lgbm_features("12", None, doc_freq=1)))
+        self.assertEqual(digit["has_digit"], 1.0)
+        self.assertEqual(digit["token_len"], 0.0)  # stripped by clean_surface
+        bare = dict(zip(names, eng._extract_lgbm_features("ቤት", None, doc_freq=1)))
+        punct = dict(zip(names, eng._extract_lgbm_features("ቤት፡", None, doc_freq=1)))
+        self.assertEqual(bare, punct)
 
     def test_training_vocab_normalization_matches_detector(self):
         """The training script's normalize_vocab must equal the detector's vocabulary."""

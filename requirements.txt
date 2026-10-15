@@ -1,5 +1,21 @@
-symspellpy==6.10.0
+# Runtime dependencies of the parent pipeline and the child detector.
+#
+#   pip install -r requirements.txt
+#
+# Grouped by what needs them:
+#   - detector / corrector:  numpy, joblib, lightgbm, scikit-learn, symspellpy
+#   - training + evaluation:  pandas
+#   - page synthesis / OCR:   opencv-python, Pillow, fonttools
+#   - KenLM:  not on PyPI. Install "kenlm" itself (pip install kenlm, or the
+#     https://github.com/kpu/kenlm build) and supply a model file; the corrector
+#     needs a word 5-gram, the detector's char-LM column is optional.
+numpy
+joblib
 lightgbm
-pandas
 scikit-learn
-symspellpy
+symspellpy==6.10.0
+pandas
+opencv-python
+Pillow
+fonttools
+# tesseract-ocr itself is a system package, not a pip one.

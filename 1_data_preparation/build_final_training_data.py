@@ -11,12 +11,23 @@ Rules:
   - Extracts 150,000 clean lines into /media/des/Tess/Tesseract2/amh.training_text.
 """
 
+# --- make repo_paths importable from any working directory -------------------
+import os as _os
+import sys as _sys
+_root = _os.path.dirname(_os.path.abspath(__file__))
+while _root != _os.path.dirname(_root) and not _os.path.exists(_os.path.join(_root, "repo_paths.py")):
+    _root = _os.path.dirname(_root)
+if _root not in _sys.path:
+    _sys.path.insert(0, _root)
+import repo_paths  # noqa: E402  (imported after the path bootstrap)
+# ----------------------------------------------------------------------------
+
 import os
 import glob
 import collections
 
-DATASET_DIR = "/mnt/mintdata/Users/Des/Mint/2_Dataset_text/04_OCR_tess_word_defrag"
-OUTPUT_DIR = "/media/des/Tess/Tesseract2"
+DATASET_DIR = repo_paths.WORD_DATASET
+OUTPUT_DIR = repo_paths.TESSERACT_WORKSPACE
 TARGET_LINE_COUNT = 150000
 
 # Minimum occurrence threshold from census

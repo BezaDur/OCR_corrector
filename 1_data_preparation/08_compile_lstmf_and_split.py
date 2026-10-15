@@ -6,6 +6,17 @@ Features:
   - Generates 90/10 Train/Eval lists with deterministic shuffling.
 """
 
+# --- make repo_paths importable from any working directory -------------------
+import os as _os
+import sys as _sys
+_root = _os.path.dirname(_os.path.abspath(__file__))
+while _root != _os.path.dirname(_root) and not _os.path.exists(_os.path.join(_root, "repo_paths.py")):
+    _root = _os.path.dirname(_root)
+if _root not in _sys.path:
+    _sys.path.insert(0, _root)
+import repo_paths  # noqa: E402  (imported after the path bootstrap)
+# ----------------------------------------------------------------------------
+
 import os
 import glob
 import random
@@ -13,8 +24,8 @@ import subprocess
 from concurrent.futures import ProcessPoolExecutor
 
 # ----------------- Configuration -----------------
-GT_DIR = "/media/des/Tess/Tesseract2/training_ground_truth"
-LISTS_DIR = "/media/des/Tess/Tesseract2/training/lists"
+GT_DIR = repo_paths.workspace("training_ground_truth")
+LISTS_DIR = repo_paths.workspace("training/lists")
 NUM_WORKERS = 4
 TRAIN_RATIO = 0.90
 BASE_SEED = 42
@@ -50,8 +61,24 @@ def compile_single_lstmf(tif_path):
         return None
 
 
-def main():
-    os.makedirs(LISTS_DIR, exist_ok=True)
+def _parse_args(argv=None):
+    import argparse
+    ap = argparse.ArgumentParser(description="Compile training images into .lstmf files and write the train/eval lists.",
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--gt-dir", default=GT_DIR,
+                    help="directory with the generated .tif/.box/.gt.txt triples")
+    ap.add_argument("--lists-dir", default=LISTS_DIR,
+                    help="where to write list.train / list.eval")
+    ap.add_argument("-v", "--verbose", action="store_true", help="more output")
+    return ap.parse_args(argv)
+
+
+def main(argv=None):
+    global GT_DIR, LISTS_DIR
+    args = _parse_args(argv)
+    GT_DIR, LISTS_DIR = args.gt_dir, args.lists_dir
+
+    repo_paths.makedirs(LISTS_DIR, "the lstmf list directory")
 
     tif_files = sorted(glob.glob(os.path.join(GT_DIR, "*.tif")))
     total_files = len(tif_files)

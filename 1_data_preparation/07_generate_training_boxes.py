@@ -9,6 +9,17 @@ Features:
   - Strictly underscore-delimited basenames.
 """
 
+# --- make repo_paths importable from any working directory -------------------
+import os as _os
+import sys as _sys
+_root = _os.path.dirname(_os.path.abspath(__file__))
+while _root != _os.path.dirname(_root) and not _os.path.exists(_os.path.join(_root, "repo_paths.py")):
+    _root = _os.path.dirname(_root)
+if _root not in _sys.path:
+    _sys.path.insert(0, _root)
+import repo_paths  # noqa: E402  (imported after the path bootstrap)
+# ----------------------------------------------------------------------------
+
 import os
 import sys
 import random
@@ -18,9 +29,9 @@ import subprocess
 from concurrent.futures import ProcessPoolExecutor
 
 # ----------------- Configuration -----------------
-FONTS_DIR = "/media/des/Tess/Tesseract2/fonts"
-TRAINING_TEXT = "/media/des/Tess/Tesseract2/amh_final_training_text.txt"
-OUTPUT_DIR = "/media/des/Tess/Tesseract2/training_ground_truth"
+FONTS_DIR = repo_paths.workspace("fonts")
+TRAINING_TEXT = repo_paths.workspace("amh_final_training_text.txt")
+OUTPUT_DIR = repo_paths.workspace("training_ground_truth")
 
 TARGET_LINE_COUNT = 100000
 NUM_WORKERS = 4
@@ -156,8 +167,27 @@ def render_single_line(job):
         return False
 
 
-def main():
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+def _parse_args(argv=None):
+    import argparse
+    ap = argparse.ArgumentParser(description="Generate Tesseract training boxes + images from the final training text.",
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--fonts-dir", default=FONTS_DIR, help="font directory")
+    ap.add_argument("--training-text", default=TRAINING_TEXT,
+                    help="final training text (one line per training line)")
+    ap.add_argument("--out-dir", default=OUTPUT_DIR, help="box/gt output directory")
+    ap.add_argument("--lines", type=int, default=TARGET_LINE_COUNT,
+                    help="how many training lines to render (default %(default)s)")
+    ap.add_argument("-v", "--verbose", action="store_true", help="more output")
+    return ap.parse_args(argv)
+
+
+def main(argv=None):
+    global FONTS_DIR, TRAINING_TEXT, OUTPUT_DIR, TARGET_LINE_COUNT
+    args = _parse_args(argv)
+    FONTS_DIR, TRAINING_TEXT = args.fonts_dir, args.training_text
+    OUTPUT_DIR, TARGET_LINE_COUNT = args.out_dir, args.lines
+
+    repo_paths.makedirs(OUTPUT_DIR, "the box output directory")
 
     print(f"Reading training lines from {TRAINING_TEXT}...")
     lines = []

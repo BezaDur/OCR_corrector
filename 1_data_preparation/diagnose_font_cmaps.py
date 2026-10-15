@@ -4,11 +4,22 @@ Inspects the binary CMAP tables of all fonts to find which ones lack
 Arabic digits, quotes, colons, or Ethiopic punctuation.
 """
 
+# --- make repo_paths importable from any working directory -------------------
+import os as _os
+import sys as _sys
+_root = _os.path.dirname(_os.path.abspath(__file__))
+while _root != _os.path.dirname(_root) and not _os.path.exists(_os.path.join(_root, "repo_paths.py")):
+    _root = _os.path.dirname(_root)
+if _root not in _sys.path:
+    _sys.path.insert(0, _root)
+import repo_paths  # noqa: E402  (imported after the path bootstrap)
+# ----------------------------------------------------------------------------
+
 import os
 import glob
 from fontTools.ttLib import TTFont
 
-FONTS_DIR = "/media/des/Tess/Tesseract/TessTraining/Fonts"
+FONTS_DIR = repo_paths.fonts()
 
 TEST_SETS = {
     "Digits (0-9)": "0123456789",

@@ -4,6 +4,17 @@ Step 3: Robust Two-Tier Alignment & Optical Confusion Matrix Extraction.
 Computes CER/WER and exports optical substitution costs to confusion_matrix.json.
 """
 
+# --- make repo_paths importable from any working directory -------------------
+import os as _os
+import sys as _sys
+_root = _os.path.dirname(_os.path.abspath(__file__))
+while _root != _os.path.dirname(_root) and not _os.path.exists(_os.path.join(_root, "repo_paths.py")):
+    _root = _os.path.dirname(_root)
+if _root not in _sys.path:
+    _sys.path.insert(0, _root)
+import repo_paths  # noqa: E402  (imported after the path bootstrap)
+# ----------------------------------------------------------------------------
+
 import os
 import glob
 import json
@@ -12,7 +23,7 @@ import collections
 import difflib
 
 # ----------------- Configuration -----------------
-DATASET_DIR = "/media/des/Tess/Tesseract2/synthetic_eval"
+DATASET_DIR = repo_paths.workspace("synthetic_eval")
 GT_DIR = os.path.join(DATASET_DIR, "ground_truth")
 # Defaults to ocr_new_model for historical reasons, but that directory holds
 # the output of amh_epoch1_fast -- measured at 26.65% CER against the stock
@@ -24,8 +35,8 @@ GT_DIR = os.path.join(DATASET_DIR, "ground_truth")
 #          --out /media/des/Tess/Tesseract2/confusion_matrix_pred.json
 OCR_DIR = os.path.join(DATASET_DIR, "ocr_new_model")
 
-OUTPUT_MATRIX_JSON = "/media/des/Tess/Tesseract2/confusion_matrix.json"
-OUTPUT_REPORT_TXT = "/media/des/Tess/Tesseract2/confusion_report.txt"
+OUTPUT_MATRIX_JSON = repo_paths.confusion_matrix()
+OUTPUT_REPORT_TXT = repo_paths.workspace("confusion_report.txt")
 # -------------------------------------------------
 
 

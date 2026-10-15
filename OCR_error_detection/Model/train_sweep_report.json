@@ -1,0 +1,60 @@
+{
+  "sweep": [
+    {
+      "min_freq": 10,
+      "types": 735644,
+      "auc": "0.9529",
+      "recall": "90.90%",
+      "false_flag": "0.16%",
+      "score": "0.907"
+    },
+    {
+      "min_freq": 100,
+      "types": 163891,
+      "auc": "0.9418",
+      "recall": "91.40%",
+      "false_flag": "0.04%",
+      "score": "0.914"
+    },
+    {
+      "min_freq": 500,
+      "types": 54057,
+      "auc": "0.9246",
+      "recall": "92.64%",
+      "false_flag": "0.06%",
+      "score": "0.926"
+    },
+    {
+      "min_freq": 1000,
+      "types": 32402,
+      "auc": "0.9115",
+      "recall": "93.24%",
+      "false_flag": "0.05%",
+      "score": "0.932"
+    }
+  ],
+  "args": {
+    "lexicon": "/home/user/OCR_corrector/OCR_error_detection/Model/main_i7_frq10.txt",
+    "corpus": "/home/user/OCR_corrector/OCR_error_detection/Model/harmonized_corpus_jiwer.tsv",
+    "min_freq": 500,
+    "max_types": null,
+    "char_lm": "/mnt/mintdata/Users/Des/Mint/Models/KenLM/character_model/amharic_char_model.klm",
+    "no_char_lm": false,
+    "out": "/home/user/OCR_corrector/OCR_error_detection/Model/detector_lgbm_conffree.pkl",
+    "report": null,
+    "pass_thresh": 0.1,
+    "flag_thresh": 0.65,
+    "folds": 5,
+    "rounds": 500,
+    "early_stopping": 50,
+    "group_by": "text",
+    "dev_pages": 100,
+    "sweep_freqs": "10,100,500,1000",
+    "val_pages": 67,
+    "tune_thresholds": false,
+    "ff_target": 0.0001,
+    "seed": 42,
+    "quick": false,
+    "quick_pages": 60
+  }
+}

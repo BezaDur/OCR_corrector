@@ -7,9 +7,13 @@ import contextlib
 import io
 import os
 import shutil
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))          # tests/
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))            # repo root
 
 from test_head_contract import CONFUSION, FakeLM, State  # noqa: E402  (tests/ on sys.path)
 from amharic_ocr_corrector import AmharicOCRCorrector  # noqa: E402
@@ -46,18 +50,39 @@ class CharLMBase(unittest.TestCase):
 
 
 class TestSpacing(CharLMBase):
+    """The char-LM column: spaced characters, score per character.
+
+    The conf-free model takes the char LM as a FEATURE column
+    (features.FeatureContext.char_lm_score -> char_kenlm_score) that the
+    training script and the detector share. The Stage-1 *signal* attribute
+    (sig.char_lm) only exists in the deprecated rule-based fallback, so it is
+    not what these tests can pin down any more. KenLM is off for the shipped
+    model ("KenLM OFF (gain 0)"), which is why this column is usually NaN.
+    """
+
+    def _ctx(self, spy):
+        from OCR_error_detection.features import FeatureContext
+        return FeatureContext(vocab={}, norm=lambda w: w, reverse_sub_map={},
+                              char_lm=spy, symspell=None)
+
     def test_characters_are_spaced_before_scoring(self):
+        from OCR_error_detection.features import static_features
         spy = SpyCharLM()
-        c = self.make(char_lm=spy)
-        c.suspicion.signals("ትምህርት", [])
+        static_features("ትምህርት", self._ctx(spy))
         self.assertIn("ት ም ህ ር ት", spy.seen)
 
     def test_score_is_per_character(self):
+        from OCR_error_detection.features import static_features
         spy = SpyCharLM(value=-6.0)
-        c = self.make(char_lm=spy)
-        sig = c.suspicion.signals("ትምህርት", [])
-        # ትምህርት has len() characters; the LM total is divided by that count.
-        self.assertAlmostEqual(sig.char_lm, -6.0 / len("ትምህርት"))
+        feats = static_features("ትምህርት", self._ctx(spy))
+        # bos + eos are scored as well, so the total is divided by len + 1.
+        self.assertAlmostEqual(feats["char_kenlm_score"],
+                               -6.0 / (len("ትምህርት") + 1))
+
+    def test_missing_char_lm_column_is_nan(self):
+        from OCR_error_detection.features import static_features
+        feats = static_features("ትምህርት", self._ctx(None))
+        self.assertNotEqual(feats["char_kenlm_score"], feats["char_kenlm_score"])
 
 
 class TestLoading(CharLMBase):

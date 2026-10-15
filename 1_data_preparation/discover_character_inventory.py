@@ -5,13 +5,24 @@ Scans the non-MC4 dataset to extract the true, empirical Amharic character set.
 Categorizes every discovered character to define the final, clean target unicharset.
 """
 
+# --- make repo_paths importable from any working directory -------------------
+import os as _os
+import sys as _sys
+_root = _os.path.dirname(_os.path.abspath(__file__))
+while _root != _os.path.dirname(_root) and not _os.path.exists(_os.path.join(_root, "repo_paths.py")):
+    _root = _os.path.dirname(_root)
+if _root not in _sys.path:
+    _sys.path.insert(0, _root)
+import repo_paths  # noqa: E402  (imported after the path bootstrap)
+# ----------------------------------------------------------------------------
+
 import os
 import glob
 import unicodedata
 import collections
 
-DATASET_DIR = "/mnt/mintdata/Users/Des/Mint/2_Dataset_text/04_OCR_tess_word_defrag"
-OUTPUT_REPORT = "/media/des/Tess/Tesseract2/discovered_character_inventory.txt"
+DATASET_DIR = repo_paths.WORD_DATASET
+OUTPUT_REPORT = repo_paths.workspace("discovered_character_inventory.txt")
 
 def categorize_character(ch):
     cp = ord(ch)

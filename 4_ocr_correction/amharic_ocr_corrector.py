@@ -43,6 +43,17 @@ Fixes applied across this revision history:
   - Added debug_generation_stats() for diagnosing search-space explosion.
 """
 
+# --- make repo_paths importable from any working directory -------------------
+import os as _os
+import sys as _sys
+_root = _os.path.dirname(_os.path.abspath(__file__))
+while _root != _os.path.dirname(_root) and not _os.path.exists(_os.path.join(_root, "repo_paths.py")):
+    _root = _os.path.dirname(_root)
+if _root not in _sys.path:
+    _sys.path.insert(0, _root)
+import repo_paths  # noqa: E402  (imported after the path bootstrap)
+# ----------------------------------------------------------------------------
+
 import os
 import sys
 import re
@@ -69,6 +80,22 @@ def _load_kenlm():
         import kenlm as _kenlm
         kenlm = _kenlm
     return kenlm
+
+
+def _resolve_kenlm_path():
+    """Where the word KenLM binary lives, or None if it cannot be found.
+
+    repo_paths resolves it from `AMHARIC_WORD_KENLM`, else `AMHARIC_DATA_ROOT`
+    plus the standard filename. Returns None (rather than a path that does not
+    exist) so the constructor can stay lazy: the error is raised on first
+    correction, with the variable to set.
+    """
+    try:
+        import repo_paths
+    except ImportError:
+        return None
+    path = repo_paths.word_kenlm()
+    return path if path and os.path.exists(path) else None
 
 
 def _load_symspell():
@@ -113,8 +140,8 @@ def _vendored_segmenter_path():
 _DEFAULT_MORPH_PATHS = [
     p for p in [_vendored_segmenter_path()] if p
 ] + [
-    "/mnt/mintdata/Users/Des/Mint/4_Dataset_wo/Projects/p16_morpheme_analysis",
-    "/mnt/mintdata/Users/Des/Mint/4_Dataset_wo/Projects/p16_morpheme_segmenter",
+    repo_paths.data("4_Dataset_wo/Projects/p16_morpheme_analysis"),
+    repo_paths.data("4_Dataset_wo/Projects/p16_morpheme_segmenter"),
 ]
 _env_morph_paths = os.environ.get("AMHARIC_MORPH_PATHS", "")
 MORPH_PATHS = [p for p in _env_morph_paths.split(os.pathsep) if p] or _DEFAULT_MORPH_PATHS
@@ -148,7 +175,7 @@ REPORT_EVERY = 500_000
 # membership test -- see _analysis_is_unknown).
 UNKNOWN_POS_VALUES = ("", "UN", "UNKNOWN", "UNK", "NONE", "NULL")
 
-_DEFAULT_MORPHEMES_JSON = "/mnt/mintdata/Users/Des/Mint/4_Dataset_wo/Projects/p16_morpheme_analysis/data/morphemes.json"
+_DEFAULT_MORPHEMES_JSON = repo_paths.morphemes_json()
 
 
 class _BoundedCache:
@@ -285,11 +312,35 @@ class EthiopicPunctuationManager:
 
 
 class AmharicOCRCorrector:
+    """Main Amharic OCR corrector.
+
+    The documented one-liner works from a clean checkout:
+
+        corrector = AmharicOCRCorrector()
+        print(corrector.correct_text("ሰላም በሸታ"))
+
+    The confusion matrix and the dictionary default to the copies in this
+    repository; the word KenLM is resolved by `repo_paths.py`
+    (`AMHARIC_WORD_KENLM`, else `AMHARIC_DATA_ROOT`). KenLM is still required:
+    the Viterbi stage scores every candidate with the n-gram model, and
+    correcting without one would silently change the output — so it is an
+    error, raised on the first correction, not on construction. Pass
+    `kenlm_path=...` explicitly, or inject your own object with the same
+    BeginSentenceWrite/BaseScore interface via `lm=`.
+    """
+
+    #: Resolved relative to this file, so the defaults work from any directory.
+    _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    DEFAULT_CONFUSION_MATRIX = os.path.join(
+        _REPO, "OCR_error_detection", "Model", "confusion_matrix.json")
+    DEFAULT_DICT_VOCAB = os.path.join(
+        _REPO, "OCR_error_detection", "Model", "main_i7_frq10.txt")
+
     def __init__(
         self,
-        kenlm_path: str,
-        confusion_matrix_path: str,
-        dict_vocab_path: str,
+        kenlm_path: str = None,
+        confusion_matrix_path: str = None,
+        dict_vocab_path: str = None,
         morphemes_json_path: str = None,
         # SymSpell's maximum edit distance. 1 is the default and the only
         # safe value at scale: the index grows steeply with distance, and at
@@ -361,6 +412,31 @@ class AmharicOCRCorrector:
         require_morphemes_json: bool = False,
         verbose: bool = True,
     ):
+        # --- resolve the documented defaults --------------------------------
+        # The data files have in-repo copies; KenLM does not, so it must be
+        # given explicitly (directly, or as an injected lm= object).
+        if confusion_matrix_path is None:
+            confusion_matrix_path = self.DEFAULT_CONFUSION_MATRIX
+        if dict_vocab_path is None:
+            dict_vocab_path = self.DEFAULT_DICT_VOCAB
+        if kenlm_path is None and lm is None and state_factory is None:
+            # Documented default: the corrector finds the word KenLM itself.
+            # repo_paths resolves it from AMHARIC_WORD_KENLM (or AMHARIC_DATA_ROOT
+            # + the standard filename); see `python repo_paths.py`.
+            kenlm_path = _resolve_kenlm_path()
+        # A path that will actually be opened has to exist; kenlm_path is only
+        # opened when no lm= object was injected, and tests inject a double.
+        checks = [("confusion_matrix_path", confusion_matrix_path),
+                  ("dict_vocab_path", dict_vocab_path)]
+        if lm is None:
+            checks.append(("kenlm_path", kenlm_path))
+        for label, path in checks:
+            if path and not os.path.exists(path):
+                raise FileNotFoundError(
+                    f"{label}={path!r} does not exist. The repo copies are:\n"
+                    f"  confusion_matrix_path={self.DEFAULT_CONFUSION_MATRIX}\n"
+                    f"  dict_vocab_path={self.DEFAULT_DICT_VOCAB}"
+                )
         self.beam_width = beam_width
         self.max_optical_cost = max_optical_cost
         self.max_candidates = max_candidates
@@ -420,15 +496,15 @@ class AmharicOCRCorrector:
         self._suspicion_cfg = (suspicion_weights, suspicion_pass_below,
                                suspicion_flag_above, char_lm)
 
-        # --- Language model (injectable) ------------------------------------
-        if lm is not None:
-            self.lm = lm
-        else:
-            _kenlm = _load_kenlm()
-            if self.verbose:
-                print(f"Loading KenLM Language Model: {kenlm_path}...", flush=True)
-            self.lm = _kenlm.Model(kenlm_path)
-
+        # --- Language model (injectable, opened on first use) ---------------
+        # The documented one-liner is `AmharicOCRCorrector()`. The KenLM binary
+        # is tens of MB and not in this repo, so the path is resolved here but
+        # the model is opened by _ensure_lm() the first time a correction needs
+        # it. That keeps construction cheap (and possible on a machine without
+        # kenlm installed) while still failing loudly before any correction is
+        # produced without an LM.
+        self._kenlm_path = kenlm_path
+        self.lm = lm
         if state_factory is not None:
             self._state_factory = state_factory
         elif lm is not None and getattr(lm, "State", None) is not None:
@@ -438,7 +514,8 @@ class AmharicOCRCorrector:
             # candidate-only deployments and for unit tests.
             self._state_factory = lm.State
         else:
-            self._state_factory = _load_kenlm().State
+            # Resolved together with the model in _ensure_lm().
+            self._state_factory = None
 
         if self.verbose:
             print(f"Loading Optical Confusion Matrix: {confusion_matrix_path}...", flush=True)
@@ -1358,6 +1435,42 @@ class AmharicOCRCorrector:
             "reserved_pairwise_slots": self.reserved_pairwise_slots,
         }
 
+    def _ensure_lm(self):
+        """Open the KenLM model on first use, or raise the documented error.
+
+        The Viterbi stage scores every candidate with the n-gram model, so
+        correcting without one would silently change the output — it is an
+        error, not a fallback. It is raised here (first use) rather than in the
+        constructor so the documented `AmharicOCRCorrector()` one-liner works on
+        a machine where the model is found by repo_paths.
+        """
+        if self.lm is not None:
+            return self.lm
+        if not self._kenlm_path:
+            raise ValueError(
+                "AmharicOCRCorrector needs a KenLM language model: the Viterbi "
+                "stage scores every candidate with it. Pass "
+                "kenlm_path='/path/to/amharic_5gram.binary', set "
+                "AMHARIC_WORD_KENLM (or AMHARIC_DATA_ROOT) so repo_paths.py "
+                "finds it, or inject an object with the same "
+                "BeginSentenceWrite/BaseScore interface via lm=.\n"
+                f"Data files default to this repo:\n"
+                f"  confusion_matrix_path={self.DEFAULT_CONFUSION_MATRIX}\n"
+                f"  dict_vocab_path={self.DEFAULT_DICT_VOCAB}")
+        if not os.path.exists(self._kenlm_path):
+            raise FileNotFoundError(
+                f"kenlm_path={self._kenlm_path!r} does not exist. Set "
+                "AMHARIC_WORD_KENLM (or AMHARIC_DATA_ROOT) to the directory "
+                "holding the word KenLM binary; `python repo_paths.py` shows "
+                "what is currently resolved.")
+        _kenlm = _load_kenlm()
+        if self.verbose:
+            print(f"Loading KenLM Language Model: {self._kenlm_path}...", flush=True)
+        self.lm = _kenlm.Model(self._kenlm_path)
+        if self._state_factory is None:
+            self._state_factory = _kenlm.State
+        return self.lm
+
     def _morphology_score(self, word: str, cand_word: str, is_orig_verified: bool) -> float:
         """
         The morphological legitimacy bonus for `cand_word` replacing `word`.
@@ -1459,6 +1572,7 @@ class AmharicOCRCorrector:
         return out
 
     def correct_sentence(self, sentence: str, confidences=None) -> str:
+        self._ensure_lm()
         """Correct one line.
 
         `confidences` (optional) are Tesseract word confidences on a 0-100 scale,
@@ -1625,12 +1739,25 @@ class AmharicOCRCorrector:
 
         return " ".join(reconstructed_tokens)
 
+    def correct_text(self, text: str, confidences=None) -> str:
+        """The documented top-level entry point: correct a piece of text.
+
+        One line goes to `correct_sentence`; a multi-line string is corrected
+        line by line (the Viterbi LM state does not carry across lines).
+        """
+        if text is None:
+            return ""
+        if "\n" in text or "\r" in text:
+            return self.correct_text_block(text)
+        return self.correct_sentence(text, confidences=confidences)
+
     def correct_text_block(self, text: str, line_confidences=None) -> str:
         """Correct a multi-line block.
 
         `line_confidences` (optional): one entry per line, each a list of word
         confidences (0-100) or None. Entries are passed to correct_sentence.
         """
+        self._ensure_lm()
         lines = text.splitlines()
         if line_confidences is None:
             line_confidences = [None] * len(lines)

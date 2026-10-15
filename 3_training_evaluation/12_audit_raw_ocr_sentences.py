@@ -6,6 +6,17 @@ that line wraps and blank lines NEVER cause off-by-one desynchronization.
 """
 
 # Make the repo-root shared modules importable from this subfolder.
+# --- make repo_paths importable from any working directory -------------------
+import os as _os
+import sys as _sys
+_root = _os.path.dirname(_os.path.abspath(__file__))
+while _root != _os.path.dirname(_root) and not _os.path.exists(_os.path.join(_root, "repo_paths.py")):
+    _root = _os.path.dirname(_root)
+if _root not in _sys.path:
+    _sys.path.insert(0, _root)
+import repo_paths  # noqa: E402  (imported after the path bootstrap)
+# ----------------------------------------------------------------------------
+
 import sys as _sys
 from pathlib import Path as _Path
 _sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
@@ -14,10 +25,10 @@ import glob
 import difflib
 from amharic_canonical_normalizer import canonicalize_amharic_punctuation
 
-DATASET_DIR = "/media/des/Tess/Tesseract2/synthetic_eval"
+DATASET_DIR = repo_paths.workspace("synthetic_eval")
 GT_DIR = os.path.join(DATASET_DIR, "ground_truth")
 RAW_OCR_DIR = os.path.join(DATASET_DIR, "ocr_new_model")
-OUTPUT_REPORT = "/media/des/Tess/Tesseract2/sentence_ocr_failures.txt"
+OUTPUT_REPORT = repo_paths.workspace("sentence_ocr_failures.txt")
 
 
 def align_page_words(gt_words, ocr_words):

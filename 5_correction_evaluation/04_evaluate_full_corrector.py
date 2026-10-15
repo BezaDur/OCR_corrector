@@ -3,6 +3,17 @@
 Step 6: End-to-end evaluation benchmark.
 """
 # Make the repo-root shared modules importable from this subfolder.
+# --- make repo_paths importable from any working directory -------------------
+import os as _os
+import sys as _sys
+_root = _os.path.dirname(_os.path.abspath(__file__))
+while _root != _os.path.dirname(_root) and not _os.path.exists(_os.path.join(_root, "repo_paths.py")):
+    _root = _os.path.dirname(_root)
+if _root not in _sys.path:
+    _sys.path.insert(0, _root)
+import repo_paths  # noqa: E402  (imported after the path bootstrap)
+# ----------------------------------------------------------------------------
+
 import sys as _sys
 from pathlib import Path as _Path
 _sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
@@ -20,13 +31,13 @@ from tsv_confidence import align_confidences
 from stage1_labels import label_verdicts
 
 MORPHEMES_JSON = None
-DATASET_DIR = "/media/des/Tess/Tesseract2/synthetic_eval"
+DATASET_DIR = repo_paths.workspace("synthetic_eval")
 GT_DIR = os.path.join(DATASET_DIR, "ground_truth")
 RAW_OCR_DIR = os.path.join(DATASET_DIR, "ocr_new_model")
 CORRECTED_OUT_DIR = os.path.join(DATASET_DIR, "ocr_corrected")
-KENLM_BIN = "/mnt/mintdata/Users/Des/Mint/Models/KenLM/word_model/amharic_5gram.binary"
-CONFUSION_JSON = "/media/des/Tess/Tesseract2/confusion_matrix.json"
-DICT_FILE = "/mnt/mintdata/Users/Des/Mint/4_Dataset_wo/Projects/p16_morpheme_analysis/data/main_i7.txt"
+KENLM_BIN = repo_paths.word_kenlm()
+CONFUSION_JSON = repo_paths.confusion_matrix()
+DICT_FILE = repo_paths.main_i7_dict()
 
 # Old machine: start sequential. Each worker loads KenLM + 5M vocab (~1GB+).
 USE_MP = False

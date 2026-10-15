@@ -1,11 +1,24 @@
 #!/usr/bin/env python3
+# --- make repo_paths importable from any working directory -------------------
+import os as _os
+import sys as _sys
+_root = _os.path.dirname(_os.path.abspath(__file__))
+while _root != _os.path.dirname(_root) and not _os.path.exists(_os.path.join(_root, "repo_paths.py")):
+    _root = _os.path.dirname(_root)
+if _root not in _sys.path:
+    _sys.path.insert(0, _root)
+import repo_paths  # noqa: E402  (imported after the path bootstrap)
+# ----------------------------------------------------------------------------
+
 import random
 import subprocess
 import os
 
-TRAINING_TEXT = "/media/des/Tess/Tesseract2/amh.training_text"
-UNICHARSET_FILE = "/media/des/Tess/Tesseract2/amh.unicharset"
-FONTS_DIR = "/media/des/Tess/Tesseract/TessTraining/Fonts"
+TRAINING_TEXT = repo_paths.require(repo_paths.workspace("amh.training_text"),
+                                  "the Tesseract training text")
+UNICHARSET_FILE = repo_paths.require(repo_paths.workspace("amh.unicharset"),
+                                    "amh.unicharset")
+FONTS_DIR = repo_paths.require(repo_paths.fonts(), "the training font directory")
 
 FONTS_WHITELIST = [
     "Abyssinica SIL",

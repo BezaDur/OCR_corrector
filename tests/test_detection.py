@@ -5,11 +5,19 @@ import shutil
 import tempfile
 import unittest
 
-from detection.detector import ErrorDetector
-from detection.evaluate import evaluate, sweep
-from detection.examples import check, read_examples, scored, write_examples
-from detection.train import train
-from detection.adapters import plain_words, tesseract_tsv, verdicts
+# The `detection` package (logistic-regression detector) was archived to
+# archive/detection_old/ and the README points at OCR_error_detection instead.
+# These tests only run when someone deliberately adds it back on sys.path.
+try:
+    from detection.detector import ErrorDetector
+    from detection.evaluate import evaluate, sweep
+    from detection.examples import check, read_examples, scored, write_examples
+    from detection.train import train
+    from detection.adapters import plain_words, tesseract_tsv, verdicts
+    HAVE_DETECTION = True
+except ModuleNotFoundError:
+    HAVE_DETECTION = False
+
 
 HEADER = "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext"
 
@@ -26,6 +34,7 @@ def synthetic(n_docs=3, n=200, seed=0):
     return out
 
 
+@unittest.skipUnless(HAVE_DETECTION, "archived 'detection' package not available (deprecated; use OCR_error_detection)")
 class TestExamples(unittest.TestCase):
     def test_round_trip_and_checks(self):
         d = tempfile.mkdtemp()
@@ -50,6 +59,7 @@ class TestExamples(unittest.TestCase):
         self.assertEqual([e["label"] for e in scored(ex)], ["clean", "error"])
 
 
+@unittest.skipUnless(HAVE_DETECTION, "archived 'detection' package not available (deprecated; use OCR_error_detection)")
 class TestAdapters(unittest.TestCase):
     def test_plain_words_gives_conf_feature_only_when_present(self):
         out = plain_words.to_examples([dict(doc="a", text="ሰላም", conf=90.0),
@@ -100,6 +110,7 @@ class TestAdapters(unittest.TestCase):
         self.assertEqual(ex[1]["features"], {"x": 2.0})
 
 
+@unittest.skipUnless(HAVE_DETECTION, "archived 'detection' package not available (deprecated; use OCR_error_detection)")
 class TestEvaluate(unittest.TestCase):
     def test_sweep_counts(self):
         res = {r["threshold"]: r for r in sweep([0.9, 0.8, 0.1], [1, 0, 1], [0.5])}
@@ -122,6 +133,7 @@ class TestEvaluate(unittest.TestCase):
             evaluate([dict(doc="a", text="x", label=None, features={"x": 1.0})], det)
 
 
+@unittest.skipUnless(HAVE_DETECTION, "archived 'detection' package not available (deprecated; use OCR_error_detection)")
 class TestTrain(unittest.TestCase):
     def test_train_reports_out_of_sample_and_drops_conf_when_asked(self):
         ex = synthetic(n_docs=3, n=150)
@@ -140,6 +152,7 @@ class TestTrain(unittest.TestCase):
         self.assertIn("ocr_conf", det.names)
 
 
+@unittest.skipUnless(HAVE_DETECTION, "archived 'detection' package not available (deprecated; use OCR_error_detection)")
 class TestDetectorIO(unittest.TestCase):
     def test_save_load_and_score(self):
         det = ErrorDetector(["x"], [0.0], [1.0], [2.0], -1.0, threshold=0.4)
@@ -157,6 +170,7 @@ if __name__ == "__main__":
     unittest.main()
 
 
+@unittest.skipUnless(HAVE_DETECTION, "archived 'detection' package not available (deprecated; use OCR_error_detection)")
 class TestBuildExamples(unittest.TestCase):
     def test_tsv_folder_with_gt_labels_each_page(self):
         from detection.build_examples import from_tsv_dir
