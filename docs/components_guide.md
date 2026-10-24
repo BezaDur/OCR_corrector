@@ -98,8 +98,8 @@ Example lines from `main_i7_frq10.txt` (737k types, all freq>=10):
 እና    4065980
 ላይ    3984351
 ሰላም  201671    ← common
-በሽታ  1234      ← appears 1234 times, real word, log_freq=3.09
-በሸታ  0         ← not in dict, error, in_lexicon=0, log_freq=0
+በሽታ  64452     ← real word, log_freq=log10(64453)=4.81
+በሸታ  263       ← attested, but below the loader's freq>=500 cut → in_lexicon=0, log_freq=0
 ```
 
 **How we filter for training (for speed and cleanliness):**
@@ -114,7 +114,9 @@ Full file: 737k types (freq 10 to 5.6M)
    ↓ filter freq>=1000 → 32,402 types
 ```
 
-Tested on 1267 pages (883k rows, 1200 train / 67 val):
+Tested on 1267 pages (883k rows, 1200 train / 67 val). This is **validation**,
+not a held-out test: the 100 pages in `Evaluation/` are part of the same corpus
+(see `docs/current_state.md` §5.4).
 
 | Dictionary | Filter | Types | Val AUC | Recall | Pass | False Flag | Score |
 |------------|--------|-------|---------|--------|------|------------|-------|
@@ -142,7 +144,8 @@ Tested on 1267 pages (883k rows, 1200 train / 67 val):
 
 **How to use:**
 ```python
-# Default — uses main_i7, 50k types, fast, no crash (2.9s init, 0.56 ms/word)
+# Default — main_i7 filtered to freq>=500 → 54,057 types, no SymSpell
+# (measured 2026-10-24: 3.7 s init, 0.48 ms/word; see docs/current_state.md)
 from OCR_error_detection import DetectionEngine
 det = DetectionEngine()  # auto-finds Model/main_i7_frq10.txt
 
@@ -270,14 +273,18 @@ Word "ሰላም" (in dict, correct):
 **Why OFF now:**
 - Training set `n_neighbors=0` for speed (we set to 0, skipped SymSpell during training)
 - LightGBM learned gain **0** for `n_neighbors` — doesn't use it
-- Tested OFF vs ON on 2000 sample from 100 eval pages:
+- Tested OFF vs ON on 2000 sample from 100 eval pages (author's machine):
   - OFF: init 2.79s, 0.56 ms/word, recall 94.5% pass 83.1% FF 0.00%, n_neighbors=0 for all
   - ON: init 2.30s + build, 0.58 ms/word, recall 94.5% pass 83.1% FF 0.00%, n_neighbors computed (ሰላም=1, በሸታ=13) but same verdict
 - **Same quality, no loss**
 
+The absolute times above were measured on the author's machine; the default
+configuration is unchanged. The verification sandbox measured 3.7 s init and
+0.48 ms/word with SymSpell off (`docs/current_state.md` §2).
+
 **Enable if needed:**
 ```python
-det = DetectionEngine(enable_symspell=True)  # builds index 50k types → 2 sec, computes n_neighbors
+det = DetectionEngine(enable_symspell=True)  # builds the index for the loaded lexicon, computes n_neighbors
 ```
 
 **Future:** If we retrain with `n_neighbors` computed, might give +0.5% recall, but currently 0 gain.
@@ -425,26 +432,26 @@ So conf-free gives same verdict for conf=95 vs 20 — correct behavior.
 
 **Default performance (after fix for PC crash):**
 ```python
-det = DetectionEngine()  # default: max_lexicon_types=50000, dict_min_freq=10, enable_symspell=False
-# Loads: main_i7_frq10.txt → top 50k frequent (freq>=10) → 50k types
+det = DetectionEngine()  # default: dict_min_freq=500, max_lexicon_types=None, enable_symspell=False
+# Loads: main_i7_frq10.txt → types with freq>=500 → 54,057 types
 # No SymSpell build
-# Init: 2.9s, vocab 50k, symspell False
-# Verdict: 0.56 ms/word → 10k words/page → 5.6 sec/page
+# Measured 2026-10-24: init 3.7 s, 0.48 ms/word, 0.0 s SymSpell
+# 10k words/page → ~4.8 s/page
 ```
 
 **Full options:**
 ```python
 # Full 737k types (15MB) — slower but more coverage, still no SymSpell
 det = DetectionEngine(dict_vocab_path="Model/main_i7_frq10.txt", max_lexicon_types=None, dict_min_freq=10)
-# Init: 2.0s, vocab 719k, 0.56 ms/word
+# vocab 735,644 types; slower to load, ~same per-word time
 
 # Best tradeoff — freq>=500, 54k types, lowest FF 0.01%
 det = DetectionEngine(dict_vocab_path="Model/main_i7_frq10.txt", dict_min_freq=500, max_lexicon_types=None)
-# Init: 1.88s, vocab 50k (capped) or 54k if no cap
+# vocab 54,057 types -- the same lexicon the default resolves to
 
 # With SymSpell (only if you need n_neighbors, currently gain 0)
 det = DetectionEngine(enable_symspell=True)
-# Init: 2.30s + SymSpell build 50k types → 2 sec extra, 0.58 ms/word, same quality
+# Init: build the index for the loaded lexicon (54,057 types by default), same quality
 
 # Full 5M dict (main_i7.txt, 4.9M types, ~100MB) — very slow, 60-90s, 2-3GB RAM, GitHub limit
 det = DetectionEngine(dict_vocab_path="/path/to/main_i7.txt", dict_min_freq=100)
@@ -496,11 +503,11 @@ verdict = self.suspicion.verdict(word, context, ocr_conf=conf, doc_freq=df)
 **You have `main_i7_frq10.txt` (737k types, 15MB, from bigger data, freq>=10 already, max freq 5.6M, cleaner):**
 
 ```python
-# Default — uses main_i7, 50k types, fast, no crash, best for PC
+# Default — uses main_i7 with freq>=500 → 54,057 types, no SymSpell
 from OCR_error_detection import DetectionEngine
-det = DetectionEngine()  # auto-finds Model/main_i7_frq10.txt, 50k types, no SymSpell, 2.9s init
+det = DetectionEngine()  # auto-finds Model/main_i7_frq10.txt (54,057 types after the filter)
 
-# Best accuracy — freq>=500, 54k types, lowest FF 0.01%
+# Explicit form of the default (freq>=500, 54,057 types, lowest FF 0.01%)
 det = DetectionEngine(dict_vocab_path="Model/main_i7_frq10.txt", dict_min_freq=500, max_lexicon_types=None)
 # Val: recall 94.2% FF 0.01% score 0.942, model 3.5MB, 1267 pages
 
@@ -526,8 +533,8 @@ det = DetectionEngine(dict_vocab_path="/path/to/main_i7.txt", dict_min_freq=100)
 | Surface | `signals.py` | — | Length, rare glyphs, digits, mixed script | "ሰላም123" has_digit=1 → FLAG | token_len 91k, rare 28k, digit 15k | Always ON |
 | SymSpell | `symspellpy` library | — | Similar dict words within 1 edit → n_neighbors | "በሸታ"→13 neighbors | **0** | **OFF by default, no quality loss, for speed, was crashing PC** |
 | KenLM | `kenlm` library | — | Char LM score, does word look like Amharic? | "ሰላም" -0.5 likely, "xyz" -3.0 unlikely | **0** | **OFF, NaN** |
-| LightGBM | `detector_lgbm_conffree.pkl` | 2.1-3.5MB | Brain, combines 14 feats → P(error) → PASS/GRAY/FLAG | [5.3,1,5,0,3,0.72,0,0,NaN,0,0,0,0,1]→P=0.001 PASS | **Does major work now, 90%** | **Authoritative** |
-| DetectionEngine | `detector.py` | 22K | Manager, loads all, decides | Steps 1-8 above | — | Main API |
-| Adapter | `adapter.py` | 8.7K | For corrector, reuses vocab | `CorrectorDetectionAdapter(self)` | — | For corrector |
+| LightGBM | `detector_lgbm_conffree.pkl` | 3.5MB | Brain, combines 14 feats → P(error) → PASS/GRAY/FLAG | [5.3,1,5,0,3,0.72,0,0,NaN,0,0,0,0,1]→P=0.001 PASS | **Does major work now, 90%** | **Authoritative** |
+| DetectionEngine | `detector.py` | 27K | Manager, loads all, decides | Steps 1-8 above | — | Main API |
+| Adapter | `adapter.py` | 11.5K | For corrector, reuses vocab | `CorrectorDetectionAdapter(self)` | — | For corrector |
 
-**LightGBM is authoritative, others are feature providers. Conf-free (no Tesseract conf) is better because conf unreliable (19% errors conf>85). SymSpell OFF no quality loss because trained with n_neighbors=0 gain 0, tested OFF vs ON same recall 94.5%. Default 50k types freq>=10 no SymSpell → 2.9s init, 0.56 ms/word, won't crash PC.**
+**LightGBM is authoritative, others are feature providers. Conf-free (no Tesseract conf) is better because conf unreliable (19% errors conf>85). SymSpell OFF no quality loss because trained with n_neighbors=0 gain 0, tested OFF vs ON same recall 94.5%. Default: main_i7 filtered to freq>=500 → 54,057 types, no SymSpell (3.7 s init, 0.48 ms/word measured 2026-10-24).**

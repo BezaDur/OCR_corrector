@@ -1,5 +1,23 @@
 # Architectural review — Amharic post-OCR corrector
 
+> **Status (2026-10-24): the blocking finding in §2 is fixed.** Dependency
+> injection (`lm=`, `state_factory=`, `segmenter=`), `morphology_stats()` and
+> `clear_caches()` are in the tree; the module imports without `kenlm`; the
+> contract suite is `tests/test_head_contract.py`; and both suites are green
+> (56 child tests, 142 root tests + 52 documented skips — see
+> `docs/current_state.md` §6). §8 is the work log of what landed.
+>
+> What has **not** changed: there is still no benchmark of HEAD. §2.1's table is
+> the last committed measurement of the *older* revision, so it says nothing
+> about the current code — see `docs/current_state.md` §5.1. The measured
+> vocabulary/init numbers quoted below come from the author's machine and from
+> that older revision.
+>
+> The "Limits" paragraph below is out of date on availability: the morphological
+> suite, `morphemes.json`, `main_i7_frq10.txt`, `confusion_matrix.json` and the
+> 100 evaluation pages are now in the repository. Only `kenlm` + the 5-gram
+> binary and the Tesseract workspace remain external.
+
 Scope: the *general architecture* and workflow, with emphasis on the question
 "is SymSpell integrated properly with the morphological analyzer (segmenter)?"
 Specific bugs and per-decision tuning are deliberately left for a later pass.

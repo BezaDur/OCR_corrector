@@ -7,8 +7,10 @@
    floor behaviour moves. Validated first: rows with no floor tag must reproduce recorded labels.
 """
 import csv, glob, os, re, collections
+_HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.abspath(os.path.join(_HERE, '..', '..'))
+ROOT = os.path.join(REPO, 'OCR_error_detection')
 
-ROOT = '/home/user/OCR_corrector/OCR_error_detection'
 P = re.compile(r'[^\w\s]|\d')
 rows = list(csv.DictReader(open(os.path.join(ROOT, 'Evaluation/analysis.tsv'), encoding='utf-8'), delimiter='\t'))
 al = [r for r in rows if r['is_error'] in ('0', '1')]

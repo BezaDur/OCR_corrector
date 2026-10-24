@@ -1,36 +1,17 @@
-# OCR Error Detection — Plain Guide (FINAL with main_i7)
+# OCR Error Detection — the child project
 
-**One job:** Look at each OCR word and decide: keep it, or fix it.
+> Verified numbers for everything on this page: `docs/current_state.md` §2 and §5.
 
-- **pass** = word is fine
-- **gray** = not sure
-- **flag** = wrong, fix it
+**One job:** look at each OCR word and decide whether to keep it or fix it.
 
----
+* `pass` — the word is fine (P(error) < 0.10)
+* `gray` — not sure (0.10 ≤ P(error) < 0.65); the parent still tries candidates
+* `flag` — wrong (P(error) ≥ 0.65)
 
-## Final Model — main_i7 with freq filter
-
-**Pulled from branch `arena/3ca31a9a-ocr-corrector`: `main_i7_frq10.txt` — 737,106 types, 15MB, frequencies from bigger data (max freq 5.6M vs 60k in local_lexicon), already cleaned freq 9 and lower removed (min freq 10).**
-
-Tested different freq thresholds on same 1267 pages (1200 train / 67 val):
-
-| Dictionary | Filter | Types | Val AUC | Recall | False Flag | Score |
-|------------|--------|-------|---------|--------|------------|-------|
-| local_lexicon | freq>=1 (full 750k) | 719k | 0.9593 | 92.1% | 0.10% | 0.919 |
-| local_lexicon | top 150k (freq>=3) | 150k | 0.9485 | 94.2% | 0.04% | 0.941 |
-| local_lexicon | **freq>=10 — prev best** | 52k | 0.9346 | **94.8%** | 0.07% | **0.946** |
-| **main_i7** | freq>=10 (all) | 735k | 0.9512 | 90.7% | 0.13% | 0.904 |
-| main_i7 | freq>=100 | 163k | 0.9423 | 93.5% | 0.11% | 0.913 |
-| **main_i7 — FINAL** | **freq>=500 — 54k types** | **54,057** | 0.9242 | 94.2% | **0.01%** | 0.942 |
-| main_i7 | freq>=1000 | 32k | 0.9116 | 94.3% | 0.02% | 0.939 |
-
-**FINAL authoritative: main_i7 freq>=500 — 54,057 clean types, recall 94.2%, false_flag 0.01% (7x better than local_lexicon 0.07%, 85x better than WITH conf 0.85%), score 0.942, model 3.5MB, 1267 pages, 14 feats conf-free, pass 0.10 flag 0.65**
-
-Why freq>=500 best for main_i7?
-- main_i7 from bigger data: freq 5.6M max vs 60k in local_lexicon → 100x bigger corpus
-- freq>=500 keeps words appearing at least 500 times in big corpus → very clean, real words, not web typos
-- 54k types similar size to local_lexicon 52k (freq>=10) but cleaner because higher freq threshold on bigger data
-- Result: lowest false flag 0.01% — only 1 in 10,000 clean words falsely flagged
+This package is self-contained: code, model, lexicon, confusion matrix and
+evaluation pages are all inside `OCR_error_detection/`. It is the only part of
+the repository that runs end to end with nothing but `pip install -r requirements.txt`.
+The parent corrector calls it through `adapter.py`.
 
 ---
 
@@ -39,48 +20,156 @@ Why freq>=500 best for main_i7?
 ```python
 from OCR_error_detection import DetectionEngine
 
-detector = DetectionEngine()  # auto-finds main_i7 model
-result = detector.verdict("በሸታ", doc_freq=2)
-print(result.label, result.suspicion)
+det = DetectionEngine()                 # ~3.7 s; auto-finds Model/detector_lgbm_conffree.pkl
+v = det.verdict("አና", doc_freq=2)
+print(v.label, round(v.suspicion, 3))   # flag 1.0
 ```
+
+Measured on this checkout (2026-10-24):
+
+| token | label | P(error) | why |
+|---|---|---:|---|
+| `እና` | pass | 0.000 | in lexicon, corpus freq 4,065,980 |
+| `በሽታ` | pass | 0.002 | in lexicon, freq 64,452 |
+| `በሸታ` | **gray** | **0.154** | in `main_i7_frq10.txt` at freq 263, dropped by the freq ≥ 500 loader filter; one flip reaches `በሽታ` |
+| `ABC` | gray | 0.283 | mixed script, no digit |
+| `የአድሜ` | flag | 0.863 | OCR of `የእድሜ` |
+| `ምዕፅራፍ` | flag | 0.867 | OCR of `ምዕራፍ` |
+| `አና` | flag | 1.000 | OCR of `እና` |
+
+(`doc_freq=2`; pass a page-level `Counter` value in real use, or `None` when the
+word is isolated — inference then leaves the two context columns as NaN.)
+
+> Older versions of this file said `verdict("በሸታ") → FLAG 0.85`. The shipped
+> model returns **gray 0.154**, and `በሸታ` is not a clean "unknown word" example:
+> only the default frequency filter makes it OOV. See
+> `docs/current_state.md` §2.
 
 ---
 
-## Dictionary — 5M vs 750k
+## The model
 
-- `amh_final_training_text.txt` — 4.4M tokens (359k lines, 56MB) — raw training text
-- `local_lexicon.txt` — 750,870 unique types (15MB) — from 4.4M tokens, NFC + normalization (ሐ→ሀ etc), no stemming
-- `main_i7_frq10.txt` — **737,106 types (15MB)** — from bigger data (5M dict main_i7.txt, 4.9M unique, no duplicates, already clean), **freq 9 and lower removed** (min freq 10), max freq 5.6M (vs 60k in local), cleaner because bigger data
+`Model/detector_lgbm_conffree.pkl` — 3.5 MB, LightGBM with **529 trees and 14
+features**, isotonic-calibrated. The pickle carries its own metadata:
 
-Scripts **call** dictionary (load with freq filter), they **don't train** dictionary itself. Dictionary static, model uses `in_lexicon` and `log_freq`.
+| key | value |
+|---|---|
+| `pass_thresh` / `flag_thresh` | **0.10 / 0.65** (these win over constructor defaults) |
+| `calibrator` | `IsotonicRegression(out_of_bounds='clip')` |
+| `features` | the 14 columns defined once in `features.py` |
+| `note` | `conf-free main_i7 freq>=500: 54057 types, 1267 pages, BEST FF 0.01%` |
 
-To use full 5M dict: `DetectionEngine(dict_vocab_path="main_i7_freq10.txt", max_lexicon_types=None)` — but 737k types already includes all with freq>=10, very clean.
+The pickle has **no `feature_schema_version`**, so the loader treats it as a
+pre-NaN-schema model: it logs one warning
+(`model has no feature schema version (pre-schema-2); missing values are imputed
+with the trained constants`) and applies `features.LEGACY_IMPUTE` to missing
+`doc_freq` / `is_doc_singleton` / `char_kenlm_score`. That warning is normal.
 
-For 5M dict, **freq>=500** gives 54k clean types — best tradeoff (similar to local 52k but cleaner, lower FF).
+**Signals that are deliberately off**
+
+* **SymSpell** — `n_neighbors` is 0 in the training data, the model gives the
+  column zero gain, and OFF vs ON measured the same recall. Building the index
+  costs seconds and gigabytes on a large lexicon.
+* **Character KenLM** — optional; without a model file the column is NaN.
+* **Tesseract confidence** — the model is conf-free. Confidence is not a feature
+  and is not needed at inference.
+
+---
+
+## Lexicon — the one knob that changes behaviour
+
+`Model/main_i7_frq10.txt`: **737,106 types**, freq 10 … 5,672,129 (`ነው`), 15 MB,
+from a much larger corpus than `local_lexicon.txt`.
+
+`DetectionEngine()` keeps types with **freq ≥ 500 → 54,057 types**
+(`DEFAULT_DICT_MIN_FREQ` in `detector.py`, because the pickle carries no
+`lexicon_min_freq`). That is the vocabulary the model was trained against, so it
+is the default. Other cuts, same file:
+
+| `dict_min_freq` | types | effect |
+|---:|---:|---|
+| 10 | 735,644 | widest coverage; rare/typo-ish types enter the lexicon |
+| 100 (sweep) | 163,891 | 93.5 % recall, 0.11 % false flag |
+| **500 (default)** | **54,057** | **the shipped model's training lexicon** |
+| 1000 (sweep) | 32,402 | 94.3 % recall, 0.02 % false flag |
+
+`local_lexicon.txt` (750,870 types, built from the repo's 4.4 M-token corpus) is
+the fallback if `main_i7_frq10.txt` is missing. It is smaller-domain and was
+measured worse (0.07 % false flag at freq ≥ 10).
+
+---
+
+## Sweep behind the shipped model
+
+Measured on the 1,267-page corpus, **1,200 train / 67 validation**:
+
+| Dictionary | Filter | Types | Val AUC | Recall | False flag | Score |
+|---|---|---|---:|---:|---:|---:|
+| local_lexicon | freq ≥ 1 | 719k | 0.9593 | 92.1 % | 0.10 % | 0.919 |
+| local_lexicon | top 150k (freq ≥ 3) | 150k | 0.9485 | 94.2 % | 0.04 % | 0.941 |
+| local_lexicon | freq ≥ 10 | 52,494 | 0.9346 | **94.8 %** | 0.07 % | **0.946** |
+| main_i7 | freq ≥ 10 (all) | 735,644 | 0.9512 | 90.7 % | 0.13 % | 0.904 |
+| main_i7 | freq ≥ 100 | 163,891 | 0.9423 | 93.5 % | 0.11 % | 0.913 |
+| **main_i7 (shipped)** | **freq ≥ 500** | **54,057** | 0.9242 | 94.2 % | **0.01 %** | 0.942 |
+| main_i7 | freq ≥ 1000 | 32,402 | 0.9116 | 94.3 % | 0.02 % | 0.939 |
+
+The shipped row was chosen for the lowest false-flag rate (≈1 clean word in
+10,000) at equal recall. This is **validation inside the training corpus** (a
+67-page slice of the 1,267 production pages), not a held-out test — the text of
+the 100 dev pages is in the corpus too. Do not quote 94.2 %/0.01 % as
+out-of-sample performance.
 
 ---
 
 ## Files
 
-- `Model/detector_lgbm_conffree.pkl` — **FINAL: main_i7 freq>=500, 54k types, 1267 pages, 14 feats conf-free, 3.5MB, recall 94.2% FF 0.01%**
-- `Model/main_i7_frq10.txt` — 737k types, 15MB, from bigger data, freq>=10 already, max freq 5.6M
-- `Model/local_lexicon.txt` — 750k types, 15MB, from 4.4M tokens
-- `Model/confusion_matrix.json` — 47K
-- `Model/harmonized_corpus_jiwer.tsv` — 1367 pages, 946k words (49MB)
-- `Evaluation/` — 100 pages + analysis.tsv (62k rows)
+| Path | What it is |
+|---|---|
+| `Model/detector_lgbm_conffree.pkl` | the shipped model (3.5 MB) |
+| `Model/main_i7_frq10.txt` | dictionary, 737,106 types, 15 MB |
+| `Model/local_lexicon.txt` | fallback lexicon, 750,870 types, 15 MB |
+| `Model/confusion_matrix.json` | optical confusion matrix, 318 substitution rows, 48 KB — the single source |
+| `Model/harmonized_corpus_jiwer.tsv` | training corpus, 1,367 pages, 946,058 rows, 50 MB |
+| `Model/train_LightGBM.py`, `train_final.py` | training entry points (need the in-repo corpus; KenLM optional) |
+| `Evaluation/` | 100 ground-truth pages, 100 OCR pages, `analysis.tsv` (62,521 rows), page images |
+| `detector.py` | `DetectionEngine`: load, features, verdicts |
+| `features.py` | the single feature definition shared with training |
+| `adapter.py` | `CorrectorDetectionAdapter` used by the parent corrector |
+| `signals.py`, `scoring.py`, `confusion.py`, `normalizer.py`, `utils.py` | evidence collection, rule fallback, character tables |
+| `run_ocr.py` | thin OCR helper |
+| `scripts/audit_decision.py` | per-decision audit (also reachable as root `ocr_decision_audit.py`) |
+| `tests/` | 56 tests |
 
-Tests: 40 OK
+`main_i7_frq10.txt` also exists one directory up; it is byte-identical and only
+a fallback in the loader's candidate list.
 
 ---
 
-## Results
+## Evaluation status — what the stored numbers mean
 
-**Tesseract:** 93% word acc, 98.07% char acc, WER 7%, 4267 errors, conf: correct mean 87, error mean 60, but 19% errors conf>85, 7.5% correct conf<70
+`Evaluation/analysis.tsv` (62,521 rows, 62,385 of them scored: 4,267 errors,
+58,118 correct) was
+produced by an **earlier** model. The 100 pages are held out of the fit
+(`DEV_PAGES = 100` in `Model/train_LightGBM.py`), but their text is entirely
+present in the training corpus (100 % 5-gram overlap — `docs/lgbm_step2_gate.md`),
+so this measures vocabulary the model has seen, not generalisation. From the
+stored verdicts: flag recall 60.4 %, flag+gray recall 95.6 %, false-flag rate
+1.19 % on clean tokens.
 
-**Detection:**
-- WITH conf: 0.85% FF, 87.9% recall, misses 44% high-conf errors
-- local_lexicon 150k: 0.04% FF, 94.2% recall
-- local_lexicon freq>=10 (52k): 0.07% FF, 94.8% recall BEST score 0.946
-- **main_i7 freq>=500 FINAL (54k): 0.01% FF (7x better), 94.2% recall, 100% high-conf caught in sample, 0% low-conf FF**
+Re-running the current engine on a 1,500-row random resample agrees with those
+stored verdicts only **85.6 %** of the time, so the file is stale. For current
+behaviour, run the engine yourself; for a number that measures unseen
+vocabulary, use the synthetic set built per `docs/new_test_set_plan.md`.
 
-**One-line:** Old 9.85% FF, WITH conf 0.85% FF misses 44% high-conf, **FINAL main_i7 freq>=500: 0.01% FF (100x better than old, 85x better than WITH conf), 94.2% recall, 100% high-conf caught, 2.1-3.5MB, linguistic only, no conf trust, from bigger clean data.**
+---
+
+## Tests
+
+```bash
+python -m pytest OCR_error_detection/tests -q       # 56 passed, ~2 s
+python -m unittest discover -s OCR_error_detection/tests -p 'test_*.py'
+```
+
+They cover feature/train-serve parity, the normalizer, the confusion matrix,
+verdict gates, the adapter handover and the legacy-pickle path. No KenLM, no
+Tesseract, no network.

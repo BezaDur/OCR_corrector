@@ -1,7 +1,9 @@
 """Check: (a) one-flip signal direction on the eval data, (b) tesseract_conf distribution in the corpus."""
 import csv, os, collections
+_HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.abspath(os.path.join(_HERE, '..', '..'))
+ROOT = os.path.join(REPO, 'OCR_error_detection')
 
-ROOT = '/home/user/OCR_corrector/OCR_error_detection'
 rows = list(csv.DictReader(open(os.path.join(ROOT, 'Evaluation/analysis.tsv'), encoding='utf-8'), delimiter='\t'))
 aligned = [r for r in rows if r['is_error'] in ('0', '1')]
 
@@ -16,7 +18,7 @@ for k in sorted(tab):
     print('in_lexicon=%s %-7s n=%6d  error_rate=%.4f' % (k[0], k[1], n, e / max(n, 1)))
 
 print('\n== tesseract_conf distribution in harmonized corpus (first 300k rows) ==')
-H = os.path.join(ROOT, 'harmonized_corpus_jiwer.tsv')
+H = os.path.join(ROOT, 'Model', 'harmonized_corpus_jiwer.tsv')
 vals = collections.Counter()
 errs = collections.defaultdict(lambda: [0, 0])
 n = 0

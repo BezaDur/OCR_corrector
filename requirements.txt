@@ -18,4 +18,8 @@ pandas
 opencv-python
 Pillow
 fonttools
+# The vendored morphological suite (vendor/segmenter/morph_types.py) imports
+# pydantic for its typed morph records; without it the segmenter refuses to
+# import and the corrector silently runs with morphology disabled.
+pydantic
 # tesseract-ocr itself is a system package, not a pip one.

@@ -537,7 +537,10 @@ the failure message explains what happened instead of saying
 | Question | Answer |
 | --- | --- |
 | Where is the suite? | `vendor/segmenter/` |
-| How is it found? | `MORPH_PATHS`, vendored = lowest priority |
+| How is it found? | `MORPH_PATHS`, vendored = lowest priority. **Fixed 2026-10-24:** the
+  vendored path used to resolve one directory too deep (`4_ocr_correction/vendor`)
+  after the corrector moved, so a fresh checkout fell back to "no analyzer"
+  again — see `docs/current_state.md` §7.1 |
 | What is called? | `segment_word()` only |
 | From where? | `analyze()` (~line 634), cached |
 | What is read? | `known` (via `is_known_word`); `pos`/`stem` stored, unused |

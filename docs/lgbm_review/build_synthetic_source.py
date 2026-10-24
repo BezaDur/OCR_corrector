@@ -29,12 +29,16 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 PUNCT = re.compile(r"[^\w\s]|\d")
 ETHIOPIC = re.compile(r"[\u1200-\u137F]")
 
+# Paths follow the 2026-10 repository reorganisation (files moved into their
+# stage folders). They used to point at the repository root, where the corpora
+# no longer live; the `os.path.exists` guards below then silently skipped them,
+# which would have weakened the "no shared 5-grams" guarantee without saying so.
 CORPUS_FILES = [
-    os.path.join(ROOT, "amh_final_training_text.txt"),
-    os.path.join(ROOT, "mined_rare_sentences.txt"),
-    os.path.join(ROOT, "amh.training_text"),
+    os.path.join(ROOT, "1_data_preparation", "data", "amh_final_training_text.txt"),
+    os.path.join(ROOT, "1_data_preparation", "data", "mined_rare_sentences.txt"),
+    os.path.join(ROOT, "1_data_preparation", "data", "amh.training_text"),
 ]
-TRAIN_TSV = os.path.join(ROOT, "OCR_error_detection", "harmonized_corpus_jiwer.tsv")
+TRAIN_TSV = os.path.join(ROOT, "OCR_error_detection", "Model", "harmonized_corpus_jiwer.tsv")
 EVAL_GT = os.path.join(ROOT, "OCR_error_detection", "Evaluation", "GroundTruth")
 
 
@@ -51,20 +55,22 @@ def corpus_grams():
     """All word 5-grams (cleaned) of the existing corpora, as hashes to save memory."""
     seen = set()
     for path in CORPUS_FILES:
-        if os.path.exists(path):
-            with open(path, encoding="utf-8", errors="ignore") as f:
-                for line in f:
-                    seen.update(hash(g) for g in grams(clean(line)))
-    if os.path.exists(TRAIN_TSV):
-        pages = {}
-        with open(TRAIN_TSV, encoding="utf-8", errors="ignore") as f:
-            header = f.readline()  # noqa: F841
-            for row in f:
-                parts = row.rstrip("\r\n").split("\t")
-                if len(parts) >= 3:
-                    pages.setdefault(parts[0], []).append(parts[2])
-        for words in pages.values():
-            seen.update(hash(g) for g in grams(clean(" ".join(words))))
+        if not os.path.exists(path):
+            raise SystemExit(f"corpus file missing, cannot guarantee decontamination: {path}")
+        with open(path, encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                seen.update(hash(g) for g in grams(clean(line)))
+    if not os.path.exists(TRAIN_TSV):
+        raise SystemExit(f"training corpus missing, cannot guarantee decontamination: {TRAIN_TSV}")
+    pages = {}
+    with open(TRAIN_TSV, encoding="utf-8", errors="ignore") as f:
+        header = f.readline()  # noqa: F841
+        for row in f:
+            parts = row.rstrip("\r\n").split("\t")
+            if len(parts) >= 3:
+                pages.setdefault(parts[0], []).append(parts[2])
+    for words in pages.values():
+        seen.update(hash(g) for g in grams(clean(" ".join(words))))
     for path in glob.glob(os.path.join(EVAL_GT, "*.txt")):
         with open(path, encoding="utf-8", errors="ignore") as f:
             seen.update(hash(g) for g in grams(clean(f.read())))

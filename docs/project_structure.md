@@ -1,6 +1,16 @@
 # Project Structure — Sensible Organization
 
-**You asked: Organizing it in a sensible manner, not just data but also scripts and other stuff is good practice. Also, directory structures, I want files relevant to detection should be inside the directory.**
+> **Status (2026-10-24): this document is the plan that was executed; it is kept
+> as the historical rationale.** For where files actually live today, use
+> **[`docs/repo_layout.md`](repo_layout.md)**. The "Current Layout (before
+> reorg)" tree below is the before-picture, and the "after" tree is what you now
+> see in the repository, with one difference: everything that used to sit at the
+> root now sits inside its stage folder, and the root keeps only import shims
+> plus `repo_paths.py` and `requirements.txt`.
+>
+> Numbers in this file are stale where they differ from `docs/current_state.md`
+> ("80K lines" for the corrector — it is 1,817 lines / 88 KB; "default 50k types
+> freq>=10" — the default is freq ≥ 500 → 54,057 types).
 
 ## Current Layout (before reorg) — Problems
 
@@ -80,7 +90,7 @@
 │
 ├── 4_ocr_correction/ (parent corrector, main correction logic)
 │   ├── README.md (explains corrector, how it calls child detection via adapter)
-│   ├── amharic_ocr_corrector.py (main corrector, moved from root, 80K lines)
+│   ├── amharic_ocr_corrector.py (main corrector, moved from root, 1,817 lines / 88 KB)
 │   ├── normalizer.py (parent normalizer, bigger, punctuation/numerals/abbrev, moved from root)
 │   ├── amharic_canonical_normalizer.py (moved from root, canonicalize for metrics)
 │   ├── suspicion.py (fallback SuspicionScorer, moved from root, deprecated but kept)
@@ -101,7 +111,7 @@
 ├── OCR_error_detection/ (child project, self-contained error detection)
 │   ├── README.md (child overview, final model main_i7 freq>=500 54k types recall 94.2% FF 0.01%)
 │   ├── __init__.py (exports DetectionEngine, CorrectorDetectionAdapter, etc.)
-│   ├── detector.py (main, LightGBM, default 50k types freq>=10 no SymSpell, 2.9s init 0.56ms/word)
+│   ├── detector.py (main, LightGBM, default freq>=500 → 54,057 types, no SymSpell)
 │   ├── adapter.py (for parent to import child, reuses vocab, no double load)
 │   ├── normalizer.py (child normalizer, smaller, lexicon keying only, ሐ→ሀ etc.)
 │   ├── signals.py (surface, lexical, one-flip signals)
@@ -225,7 +235,7 @@ class AmharicOCRCorrector:
 ## Benefits
 
 - **Sensible**: Parent pipeline 1→2→3→4→5 clear, child self-contained
-- **No crash**: Default 50k types no SymSpell, 2.9s init, won't crash PC
+- **No crash**: default lexicon 54,057 types, no SymSpell (3.7 s init, 0.48 ms/word measured 2026-10-24)
 - **Single source**: Dictionary main_i7_frq10.txt default for all needs, confusion_matrix.json single source
 - **Good practice**: Scripts call dictionary, don't train it; child doesn't train dict, parent doesn't duplicate
 - **Easy import**: Parent calls child via adapter, no circular, no double memory

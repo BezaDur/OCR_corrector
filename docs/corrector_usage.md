@@ -1,5 +1,19 @@
 # Corrector improvements and optional SymSpell backend
 
+> **Status (2026-10-24): this document describes the corrector revision that
+> introduced the `candidate_backend="trie"|"symspell"` switch. That revision is
+> no longer in the tree.**
+>
+> In HEAD there is no trie backend and no `candidate_backend`,
+> `trie_search`, `trusted_long_word_frequency` or `trusted_short_word_frequency`
+> argument. Candidate generation is SymSpell (edit distance 1) plus the weighted
+> optical reversal generator, gated by the peel guard
+> (`docs/segmenter_integration.md` §8 has the option-by-option compatibility
+> table). The parts of this document that still apply are the frequency-trust
+> policy, the acceptance-ceiling discussion and the `clear_caches()` guidance —
+> check them against `4_ocr_correction/README.md` and
+> `docs/current_state.md` §3 before relying on them.
+
 ## What changed
 
 - Optional `candidate_backend="symspell"`, leaving `"trie"` as the default. SymSpell indexes the same lexicon and segmenter vocabulary; no second populated trie is built in this mode.

@@ -125,8 +125,12 @@ def _vendored_segmenter_path():
     cancelled out. Vendoring a frozen copy makes the integration reproducible.
     """
     try:
-        p = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                         "vendor", "segmenter")
+        # `vendor/` sits at the repo root, one level above this stage folder.
+        # (This used to say dirname(__file__) / "vendor", which was correct
+        # while the corrector lived at the root; after the move to
+        # 4_ocr_correction/ it pointed at 4_ocr_correction/vendor and the
+        # vendored suite became unreachable again -- silently, as a warning.)
+        p = os.path.join(repo_paths.REPO_ROOT, "vendor", "segmenter")
         return p if os.path.isfile(os.path.join(p, "segmenter.py")) else None
     except Exception:
         return None

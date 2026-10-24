@@ -9,12 +9,14 @@ normalized lookup). If the bug drives verdicts, h_family + in_lexicon=1 should b
 mostly gray/flag, unlike plain + in_lexicon=1.
 """
 import csv, sys, os, collections
-sys.path.insert(0, '/home/user/OCR_corrector')
-sys.path.insert(0, '/home/user/OCR_corrector/OCR_error_detection')
+_HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.abspath(os.path.join(_HERE, '..', '..'))
+ROOT = os.path.join(REPO, 'OCR_error_detection')
+sys.path.insert(0, REPO)
+sys.path.insert(0, ROOT)
 from normalizer import AmharicNormalizer
 from OCR_error_detection.detector import RARE_GLYPHS
 
-ROOT = '/home/user/OCR_corrector/OCR_error_detection'
 rows = list(csv.DictReader(open(os.path.join(ROOT, 'Evaluation/analysis.tsv'), encoding='utf-8'), delimiter='\t'))
 aligned = [r for r in rows if r['is_error'] in ('0', '1')]
 norm = AmharicNormalizer()

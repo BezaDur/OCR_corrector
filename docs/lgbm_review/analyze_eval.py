@@ -1,10 +1,12 @@
 """Quantify the LightGBM detector on the saved Evaluation/analysis.tsv (in-sample caveat applies)."""
 import csv, sys, os, collections
-sys.path.insert(0, '/home/user/OCR_corrector')
-sys.path.insert(0, '/home/user/OCR_corrector/OCR_error_detection')
+_HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.abspath(os.path.join(_HERE, '..', '..'))
+ROOT = os.path.join(REPO, 'OCR_error_detection')
+sys.path.insert(0, REPO)
+sys.path.insert(0, ROOT)
 from normalizer import AmharicNormalizer
 
-ROOT = '/home/user/OCR_corrector/OCR_error_detection'
 rows = list(csv.DictReader(open(os.path.join(ROOT, 'Evaluation/analysis.tsv'), encoding='utf-8'), delimiter='\t'))
 # substitution errors + correct words only (exclude INSERTION=2 / DELETION=3 rows)
 aligned = [r for r in rows if r['is_error'] in ('0', '1')]

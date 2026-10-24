@@ -3,17 +3,19 @@
 OCR confidence and the lexicon flag contribute. Not a replacement for the production
 training run (which needs the master dictionary and KenLM model, both absent here)."""
 import csv, os, sys, collections
+_HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.abspath(os.path.join(_HERE, '..', '..'))
+ROOT = os.path.join(REPO, 'OCR_error_detection')
 import numpy as np
 import lightgbm as lgb
 from sklearn.model_selection import GroupKFold
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score, average_precision_score
 
-sys.path.insert(0, '/home/user/OCR_corrector')
-sys.path.insert(0, '/home/user/OCR_corrector/OCR_error_detection')
+sys.path.insert(0, REPO)
+sys.path.insert(0, ROOT)
 from OCR_error_detection.detector import RARE_GLYPHS
 
-ROOT = '/home/user/OCR_corrector/OCR_error_detection'
 rows = list(csv.DictReader(open(os.path.join(ROOT, 'Evaluation/analysis.tsv'), encoding='utf-8'), delimiter='\t'))
 aligned = [r for r in rows if r['is_error'] in ('0', '1')]
 

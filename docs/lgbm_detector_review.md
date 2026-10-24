@@ -2,6 +2,29 @@
 
 Date: 2026-10-13. Branch: `arena/3ca31a9a-ocr-corrector`.
 
+> **Status (2026-10-24): most of the "Bottom line" below no longer describes the code.**
+>
+> * "Not used by the corrector" — fixed. `CorrectorDetectionAdapter` now builds
+>   `DetectionEngine` and delegates every verdict to it; `SuspicionScorer` is only
+>   the fallback when the engine cannot be constructed.
+> * "Verdict logic is patched by hard floors" — fixed. The floors were removed;
+>   the calibrated payload thresholds (0.10 / 0.65) decide.
+> * "Cannot be imported from the repo root" — fixed. `from OCR_error_detection
+>   import DetectionEngine` works from anywhere; the imports are absolute.
+> * "No feature-name guard" — fixed. `DetectionEngine.__init__` raises
+>   `FeatureError` for a payload that asks for a column this code cannot compute.
+> * "`doc_freq` default" — fixed. Missing context is NaN, never a magic number.
+> * "Adapter bypasses the model" — fixed, as above.
+>
+> Still true, and still the important caveat: **the text of the 100 evaluation
+> pages is inside the training corpus** (100 % 5-gram overlap; the pages
+> themselves are held out via `DEV_PAGES = 100`), so §2–§3 measure seen
+> vocabulary, not generalisation; and the stored `Evaluation/analysis.tsv`
+> predates the shipped model (the current engine agrees with it on 85.6 % of a
+> resampled 1,500 words). For what is true now see
+> `docs/current_state.md` §2 and §5.2. The recommendations in §5 remain a good
+> checklist.
+
 > **Update.** Confidence is excluded from training (decided after this review). The
 > recommendation to add confidence as a feature (sections 4.1 and 5, item 4) is withdrawn.
 > The plain-language account of step 1, including the dictionary and confidence decisions,

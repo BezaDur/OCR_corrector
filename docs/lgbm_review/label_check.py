@@ -1,8 +1,10 @@
 import csv, os, sys, collections
-sys.path.insert(0, '/home/user/OCR_corrector/OCR_error_detection')
+_HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.abspath(os.path.join(_HERE, '..', '..'))
+ROOT = os.path.join(REPO, 'OCR_error_detection')
+sys.path.insert(0, ROOT)
 from normalizer import AmharicNormalizer
 N = AmharicNormalizer()
-ROOT = '/home/user/OCR_corrector/OCR_error_detection'
 rows = list(csv.DictReader(open(os.path.join(ROOT, 'Evaluation/analysis.tsv'), encoding='utf-8'), delimiter='\t'))
 err = [r for r in rows if r['is_error'] == '1']
 same_norm = [r for r in err if N.normalize_word_strict(r['ocr_word']) == N.normalize_word_strict(r['gt_word'])]

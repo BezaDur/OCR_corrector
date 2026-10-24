@@ -1,5 +1,17 @@
 # Architecture — Parent Project vs Child Project
 
+> **Status (2026-10-24): the migration described below is done.** The corrector
+> and its helpers live in `4_ocr_correction/`, metrics in
+> `3_training_evaluation/`, audit code in `OCR_error_detection/scripts/`, and
+> the root files are import shims (map: `docs/repo_layout.md`). The
+> "Current (messy)" tree is kept as the before-picture; "Proposed (clean)" is
+> what the repository now looks like.
+>
+> Numbers in this document that conflict with `docs/current_state.md` are stale
+> — in particular "default 50k types freq>=10 / 2.9 s init" (the default is
+> freq ≥ 500 → 54,057 types, 3.7 s here) and `verdict("በሸታ") → FLAG 0.85` (the
+> shipped model returns **gray 0.154**).
+
 **You asked: Organize whole project sensibly, not just data but scripts, and think about how parent imports child.**
 
 ## Overview
@@ -122,15 +134,18 @@ except Exception as e:
 
 **Why this is good:**
 - Single source of truth: LightGBM authoritative, SuspicionScorer fallback
-- No duplicate dictionary loading (saves 1-2GB RAM)
+- The engine adopts the corrector's vocabulary on the first verdict (it loads
+  its own 54k lexicon first), so the process never holds two full lexicons
 - Child self-contained, parent calls it, no circular dependency
-- Default 50k types freq>=10 no SymSpell → 2.9s init, 0.56 ms/word, no PC crash
+- Default lexicon: main_i7 filtered to freq ≥ 500 → 54,057 types; SymSpell off
+  → 3.7 s init and 0.48 ms/word measured in the verification sandbox
+  (`docs/current_state.md` §2)
 
 ---
 
 ## Directory Organization — Current vs Proposed
 
-### Current (messy)
+### Before the migration (historical)
 
 ```
 . (root)
@@ -163,7 +178,7 @@ except Exception as e:
 - No clear import path parent → child
 - Evaluation data in multiple places: eval_data/, evaluation_data/, OCR_error_detection/Evaluation/
 
-### Proposed (clean)
+### After the migration (implemented)
 
 ```
 .
@@ -296,14 +311,11 @@ from OCR_error_detection import DetectionEngine
 from OCR_error_detection.adapter import CorrectorDetectionAdapter
 
 # Option 1: Use DetectionEngine directly (self-contained, loads its own dict)
-det = DetectionEngine(
-    dict_vocab_path="OCR_error_detection/Model/main_i7_frq10.txt",
-    dict_min_freq=500,  # 54k types, best FF 0.01%
-    max_lexicon_types=None,
-    enable_symspell=False  # default, fast, no crash
-)
-verdict = det.verdict("በሸታ", doc_freq=1)
-print(verdict.label, verdict.suspicion)  # FLAG 0.85
+det = DetectionEngine()          # already freq >= 500 -> 54,057 types
+verdict = det.verdict("አና", doc_freq=1)
+print(verdict.label, verdict.suspicion)  # flag 1.0   (a real OCR error for እና)
+# note: verdict("በሸታ") is gray 0.154, not the old FLAG 0.85 -- በሸታ is in the
+# dictionary at freq 263, it is only OOV because the default loader cuts at 500
 
 # Option 2: Use via adapter (reuses parent's vocab, no double load)
 class AmharicOCRCorrector:

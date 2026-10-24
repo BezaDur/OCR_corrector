@@ -1,5 +1,7 @@
 import sys, os, io, contextlib, tempfile, math
-ROOT = '/home/user/OCR_corrector'
+_HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.abspath(os.path.join(_HERE, '..', '..'))
+REPO = ROOT
 sys.path.insert(0, ROOT)
 from OCR_error_detection.detector import DetectionEngine
 
@@ -10,7 +12,7 @@ with open(lex, 'w', encoding='utf-8') as fh:
                  ("ዓለም", 9000), ("ሀገር", 8000)]:
         fh.write(f'{w} {f}\n')
 with contextlib.redirect_stdout(io.StringIO()):
-    e = DetectionEngine(dict_vocab_path=lex, confusion_matrix_path=ROOT + '/confusion_matrix.json',
+    e = DetectionEngine(dict_vocab_path=lex, confusion_matrix_path=os.path.join(ROOT, 'OCR_error_detection', 'Model', 'confusion_matrix.json'),
                         char_lm_path=None, verbose=False)
 print('model loaded:', e.lgbm_model is not None, '| legacy schema:', e._legacy_model)
 for tok in ["ቤት", "ቤት፡", "ዓለም", "ሐገር", "ሰላም።"]:
