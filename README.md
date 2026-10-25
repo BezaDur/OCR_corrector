@@ -70,10 +70,12 @@ print(v.label, round(v.suspicion, 3))         # flag 1.0
 * **Speed:** 0.48 ms/word measured here; no dictionary beyond the one file, so it
   is the part of the repo that runs offline end to end.
 * **Held-out performance:** recall (flag + gray) **92.4 %**, false flag
-  **0.10 %**, AUC 0.923, calibration ECE 0.005 on 100 pages that are held out of
-  the fit *and* text-disjoint from the training pages. The README's older
-  "94.2 % / 0.01 %" was a selection number. Details:
-  `docs/detector_out_of_sample.md`.
+  **0.10 %**, AUC 0.923, calibration ECE 0.005 on the 100 pages held out of the
+  fit. The older "94.2 % / 0.01 %" was a selection number. Scope: those pages
+  are 5 documents and ~4,100 distinct words, so this is "news-style pages from
+  this pipeline", not "any page". Details and the document-grouped CV:
+  `docs/detector_out_of_sample.md`; how to check it yourself:
+  `docs/verify_claims.md`.
 
 Real verdicts on this checkout: `እና` pass 0.000 · `በሽታ` pass 0.002 ·
 **`በሸታ` gray 0.154** (attested at freq 263, so below the 500 cut) ·

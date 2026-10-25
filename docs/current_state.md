@@ -182,22 +182,27 @@ corrector made OCR output worse; whether HEAD still does is unknown".
 ### 5.2 Detector performance — the measured out-of-sample numbers
 
 **Full detail: `docs/detector_out_of_sample.md`.** Summary of three independent
-estimates (the shipped pickle, a text-grouped 5-fold CV, and a retrain):
+estimates (the shipped pickle, a document-grouped 5-fold CV, and a retrain):
 
-| | README claim (selection) | text-grouped OOF | shipped model, 100 dev pages |
+| | README claim (selection) | document-grouped OOF | shipped model, 100 dev pages |
 |---|---:|---:|---:|
-| recall (flag + gray) | 94.2 % | 91.9 % | **92.4 %** |
+| recall (flag + gray) | 94.2 % | 91.8 % (cal. 91.3 %) | **92.4 %** |
 | flag-only recall | — | 5.6 % | 2.7 % |
-| false flag on clean | 0.01 % | 0.079 % | **0.102 %** |
-| AUC | 0.9242 | 0.9224 | 0.9232 |
-| gray on clean | — | 16.2 % | 15.8 % |
+| false flag on clean | 0.01 % | 0.116 % (cal. 0.030 %) | **0.102 %** |
+| AUC | 0.9242 | 0.9187 | 0.9232 |
+| gray on clean | — | 16.5 % | 15.8 % |
 | ECE (calibration) | — | — | 0.0050 |
 
-The 100 dev pages are held out of the fit **and text-disjoint** from the 1,267
-training pages (76 pages share no 5-gram at all; all 100 are separate groups
-under the trainer's linking rule). Performance on the 76 fully disjoint pages is
-the same as on all 100 (recall 92.86 %, false flag 0.134 %), so the estimate is
-not flattered by overlap.
+The 100 dev pages are held out of the fit and 76 of them share no 5-gram with the
+training pages; performance on those 76 is the same as on all 100 (recall
+92.86 %, false flag 0.134 %).
+
+**The corpus is 55 documents, not 1,367 independent pages** (§3b of the same
+document): pages are overlapping windows, so 944,968 rows contain only ~106,000
+distinct 5-grams, and the 100 dev pages cover 5 documents and ~4,137 distinct
+words. The old "text-grouped" CV did not actually group by text (1,095 groups,
+1,074 singletons, because every 5-gram repeats on 10–40 pages); `--group-by
+document` is the honest grouping and gives the column above.
 
 The split that matters for the corrector: out-of-lexicon errors are caught 98.1 %
 of the time, **real-word (in-lexicon) errors only 43.3 %** — and real-word errors
@@ -335,6 +340,13 @@ should be re-measured rather than copied into new claims.
 
 ## 9. Change log of this file
 
+* **2026-10-25 (later)** — the corpus's document structure was measured: 1,367
+  pages are overlapping windows of **55 documents**, the 100 dev pages cover 5 of
+  them and ~4,137 distinct words, and the old "text-grouped" CV was effectively
+  page-level. §5.2 now reports a document-grouped CV (`--group-by document`,
+  51 groups, 91.3 %/0.030 % calibrated) instead, and the new
+  `docs/verify_claims.md` describes how to check every number, including on new
+  data.
 * **2026-10-25** — §5.2 replaced with measured out-of-sample numbers
   (`docs/detector_out_of_sample.md`); §5.4 clarified that the sweep is selection
   evidence. The earlier "the dev pages' text is inside the training corpus" claim

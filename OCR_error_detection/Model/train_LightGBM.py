@@ -60,7 +60,12 @@ import os
 import random
 import sys
 import time
+import re
 from collections import Counter, defaultdict
+
+# Punctuation/digit rule shared with the detector's feature extraction and with
+# scripts/evaluate_out_of_sample.py; used to compare page text for grouping.
+PUNCT_RE = re.compile(r"[^\w\s]|\d")
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _PARENT = os.path.dirname(_HERE)          # OCR_error_detection/
@@ -262,6 +267,49 @@ def strict_text_groups(df, max_page_occurrences=5, min_shared=20, ngram=5):
     return group_of
 
 
+def document_groups(df, probe=10, ngram=5):
+    """Group pages into documents by following page-to-page continuation.
+
+    This corpus is built from overlapping windows: the opening words of page i+1
+    usually reappear a few words into page i.  ``strict_text_groups`` cannot see
+    that -- its ``max_page_occurrences`` rule discards exactly those 5-grams,
+    because a sliding window repeats every 5-gram on ~10-40 pages, so most pages
+    end up as singletons.  (Measured: cutoff 5 -> 1,095 groups / 1,074
+    singletons; cutoff 20 -> 48 groups; cutoff 50 -> 19 groups, one of 1,047
+    pages.  There is no stable partition in between.)
+
+    A document is therefore a maximal run of consecutive pages in which each
+    page's opening ``probe`` words occur inside the previous page.  Measured on
+    this corpus: 55 runs, matching the 54 places where a page does not continue
+    its predecessor.  Sharing 5-grams is deliberately *not* used as a fallback:
+    different documents on the same topic share far too many 5-grams, and that
+    fallback merged 1,047 pages into one group.
+    """
+    ordered = sorted(df.page.unique(), key=lambda p: int(str(p).split("_")[-1]))
+    words = {}
+    for page, gt in df.groupby("page")["gt_word"]:
+        seq = [c for c in (PUNCT_RE.sub("", w).strip()
+                           for w in gt.tolist() if isinstance(w, str) and w) if c]
+        words[page] = seq
+
+    def continues(prev, cur):
+        a, b = words[prev], words[cur]
+        k = min(probe, len(b), len(a))
+        if k <= 0:
+            return False
+        head = tuple(b[:k])
+        return any(tuple(a[i:i + k]) == head for i in range(len(a) - k + 1))
+
+    group_of, current = {}, 0
+    for i, page in enumerate(ordered):
+        if i and not continues(ordered[i - 1], page):
+            current += 1
+        group_of[page] = current
+    sizes = sorted(Counter(group_of.values()).values(), reverse=True)
+    print(f"  document groups: {current + 1:,} (largest {sizes[:5]})")
+    return group_of
+
+
 def grouped_folds(group_of, df, n_splits, seed=42):
     """Assign whole groups to folds, greedily balancing row counts."""
     rows_by_group = df.groupby(df["page"].map(group_of)).size()
@@ -404,7 +452,7 @@ def parse_args(argv=None):
     ap.add_argument("--folds", type=int, default=5)
     ap.add_argument("--rounds", type=int, default=500)
     ap.add_argument("--early-stopping", type=int, default=50)
-    ap.add_argument("--group-by", choices=("text", "page"), default="text",
+    ap.add_argument("--group-by", choices=("text", "document", "page"), default="text",
                     help="cross-validation grouping (docs/lgbm_step2_gate.md: text)")
     ap.add_argument("--dev-pages", type=int, default=DEV_PAGES,
                     help="page_0001..page_N are held out of the production fit")
@@ -517,6 +565,10 @@ def main(argv=None):
     # ---- Grouped cross-validation (out-of-fold metrics + calibration) ----
     if args.group_by == "text":
         group_of = strict_text_groups(prod)
+        print("  note: max_page_occurrences=5 drops the sliding-window 5-grams, so this")
+        print("  is close to page-level on this corpus; --group-by document is the honest one.")
+    elif args.group_by == "document":
+        group_of = document_groups(prod)
     else:
         group_of = {p: p for p in prod.page.unique()}
         print(f"  page groups: {len(group_of):,} (page-level; overlapping text leaks)")
@@ -633,8 +685,8 @@ def main(argv=None):
         "lexicon": {"path": os.path.abspath(args.lexicon),
                     "min_freq": args.min_freq, "max_types": args.max_types,
                     "types": len(ctx.vocab)},
-        "groups": {"by": args.group_by,
-                   "count": len(set(page_to_fold.values())) if args.group_by == "text" else prod.page.nunique()},
+        "groups": {"by": args.group_by, "count": len(set(group_of.values())),
+                   "folds": args.folds},
         "rows": {"production": int(len(prod)), "development": int(len(dev))},
         "pages": {"production": int(prod.page.nunique()), "development": int(dev.page.nunique())},
         "rounds": rounds,

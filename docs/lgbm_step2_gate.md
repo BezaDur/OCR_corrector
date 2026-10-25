@@ -40,6 +40,13 @@ one decision is needed:
 3. **Cross-validation has to be grouped by text, not by page.** The training pages
    overlap each other heavily.
 
+   > **Update (2026-10-25):** grouped by *shared 5-grams* this does not work on
+   > this corpus — the pages are overlapping windows, so every 5-gram occurs on
+   > 10–40 pages and the `max_page_occurrences=5` rule drops exactly the linking
+   > evidence (1,095 groups, 1,074 singletons). Use `--group-by document`
+   > instead, which follows page-to-page continuation and finds 51 groups in the
+   > 1,267 training pages. See `docs/detector_out_of_sample.md` §3b.
+
 ## What the harmonized file is
 
 `harmonized_corpus_jiwer.tsv` is the harmonized form of your 1,367-page OCR run with the

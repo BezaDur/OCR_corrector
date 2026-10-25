@@ -169,8 +169,14 @@ Scoring the shipped pickle on those pages with
 
 Compare with the selection numbers in the table above (recall 94.2 %, false flag
 0.01 %, measured on the 67 validation pages used to choose the model): expect
-**≈ 91–92 % recall at ≈ 0.1 % false flags** on new pages of the same kind, and a
-text-grouped 5-fold CV over all 1,267 training pages agrees (91.9 % / 0.079 %).
+**≈ 91–92 % recall at ≈ 0.1 % false flags** on new pages of the same kind. A
+5-fold CV over all 1,267 training pages, grouped by **document** (51 groups),
+agrees: 91.3 % / 0.030 % calibrated, 91.8 % / 0.116 % uncalibrated.
+
+The grouping has to be by document, not by "shared 5-grams": the pages are
+overlapping windows of 55 documents, so every 5-gram repeats on 10–40 pages and
+the 5-gram rule collapses to page-level CV (1,095 groups, 1,074 singletons).
+See `docs/detector_out_of_sample.md` §1 and §3b.
 
 Two things the single recall number hides:
 
@@ -185,11 +191,13 @@ current engine agrees with only 85.6 % of its stored verdicts. Do not quote it.
 
 Full tables, per-page overlap, calibration bins and the threshold sweep:
 `docs/detector_out_of_sample.md` and `docs/out_of_sample_shipped.json`.
-Reproduce the text-grouped CV with:
+Reproduce it with:
 
 ```bash
-python OCR_error_detection/Model/train_LightGBM.py --no-char-lm --group-by text \
-    --out /tmp/model.pkl --report /tmp/report.json       # 91.9 % / 0.079 %, ~2 min
+python OCR_error_detection/Model/train_LightGBM.py --no-char-lm --group-by document \
+    --out /tmp/model.pkl --report /tmp/report.json       # 91.3 % / 0.030 %, ~2 min
+
+python OCR_error_detection/scripts/verify_claims.py      # checks every number above
 ```
 
 ---

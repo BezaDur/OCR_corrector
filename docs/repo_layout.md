@@ -116,7 +116,10 @@ only by `docs/lgbm_review/build_synthetic_source.py`.
 `adapter.py`, `Model/` (model, dictionaries, confusion matrix, training corpus),
 `Evaluation/` (100 pages + `analysis.tsv`), `tests/` (56 tests), `scripts/`,
 `archive/`. Its README documents the model and the lexicon filter, and
-`scripts/evaluate_out_of_sample.py` recomputes its held-out performance (see `docs/detector_out_of_sample.md`).
+`scripts/evaluate_out_of_sample.py` recomputes its held-out performance (see `docs/detector_out_of_sample.md`),
+`scripts/verify_claims.py` re-derives every number and tries to break it, and
+`scripts/make_eval_corpus.py` turns a new `Evaluation/`-style folder into a scorable corpus
+(see `docs/verify_claims.md`).
 
 ---
 

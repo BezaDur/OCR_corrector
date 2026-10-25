@@ -19,30 +19,38 @@ are in §8.
 
 ## 1. The answer
 
-|  | README claim (selection, 67 pages) | Text-grouped CV, out-of-fold, uncalibrated (883,578 rows) | Shipped model, 100 dev pages (62,479 rows) |
+|  | README claim (selection, 67 pages) | Document-grouped CV, out-of-fold, uncalibrated (51 documents, 883,578 rows) | Shipped model, 100 dev pages (62,479 rows) |
 |---|---:|---:|---:|
-| recall (flag + gray) | **94.2 %** | **91.9 %** | **92.4 %** |
+| recall (flag + gray) | **94.2 %** | **91.8 %** (calibrated 91.3 %) | **92.4 %** |
 | flag-only recall | — | 5.6 % | 2.7 % |
-| false flag on clean words | **0.01 %** | **0.079 %** | **0.102 %** |
-| AUC | 0.9242 | 0.9224 | 0.9232 |
-| AP | — | 0.4213 | 0.4117 |
-| gray on clean words | — | 16.2 % | 15.8 % |
-| score = recall × (1 − FF) | 0.942 | 0.918 | 0.923 |
+| false flag on clean words | **0.01 %** | **0.116 %** (calibrated 0.030 %) | **0.102 %** |
+| AUC | 0.9242 | 0.9187 (calibrated 0.9193) | 0.9232 |
+| AP | — | 0.4025 (calibrated 0.3912) | 0.4117 |
+| gray on clean words | — | 16.5 % | 15.8 % |
+| score = recall × (1 − FF) | 0.942 | 0.917 (calibrated 0.912) | 0.923 |
 | calibration (ECE) | — | — | 0.0050 |
 
 Three independent estimates of the same quantity, and they agree with each other
-to within a point (calibrating the out-of-fold scores moves them from
-91.9 %/0.079 % to 91.65 %/0.099 % — the gates are applied to calibrated
-probabilities, so that pair is the comparable one):
+to within a point (the gates are applied to calibrated probabilities, so the
+calibrated column is the comparable one):
 
-1. **Text-grouped 5-fold CV** on the 1,267 production pages. Folds are connected
-   components of shared word 5-grams (`strict_text_groups`), so no fold contains
-   text that another fold trained on. Out-of-fold, calibrated: recall 91.65 %,
-   FF 0.0989 %.
+1. **Document-grouped 5-fold CV** on the 1,267 production pages. Folds are whole
+   documents (`--group-by document`, 51 groups), so no fold contains a page that
+   continues a page in another fold. Out-of-fold, calibrated: recall 91.27 %,
+   FF 0.0305 %.
 2. **A freshly retrained model on the 100 dev pages**: recall 90.44 %,
-   FF 0.2684 % (train-report JSON: `docs/out_of_sample_textcv.json`).
+   FF 0.2684 % (train-report JSON: `docs/out_of_sample_doccv.json`).
 3. **The shipped pickle on the same 100 dev pages**: recall 92.39 %,
    FF 0.102 %, AUC 0.9232.
+
+The first column used to be a **text-grouped** CV — connected components of shared
+5-grams. That grouping does not work on this corpus: the pages are overlapping
+windows of 55 documents, so every 5-gram occurs on 10–40 pages and the
+`max_page_occurrences=5` rule throws away exactly the evidence that would link
+them. Measured: 1,095 groups at cutoff 5 (1,074 singletons), 798 at 10, 48 at 20,
+19 at 50 — there is no cutoff that recovers the 55 documents. The old number
+(91.65 %/0.099 %) was therefore close to page-level CV. Grouping by document
+instead, the result survives: 91.27 %/0.031 %.
 
 The honest expectation for this model on new synthetic-scan pages of the same
 kind is therefore **≈ 91–92 % recall (flag + gray) at ≈ 0.1 % false flags**, i.e.
@@ -95,11 +103,11 @@ return 100 %. Run against the pages the model actually trains on, the numbers ar
 | dev pages with **no** shared 5-gram at all | **76 / 100** |
 | dev pages whose 5-grams are ≥ 90 % present on production pages | 4 / 100 (`page_0096`–`page_0100`) |
 
-Under the strict grouping rule the trainer uses for CV (link two pages when they
-share ≥ 20 qualifying 5-grams), **all 100 dev pages are text-disjoint from the
-training pages** — the overlap that exists is concentrated in a tail: 20 pages
-share between 0.1 % and 60 % of their 5-grams, and 4 pages are near-duplicates
-(90.6 %–96.5 %), presumably repeated quotes or boilerplate.
+The overlap is concentrated in a tail: 20 pages share between 0.1 % and 60 % of
+their 5-grams with the training pages, and 4 pages are near-duplicates
+(90.6 %–96.5 %). That tail is not boilerplate — see §3b: the split at page 100
+cuts through the middle of a document, so the pages nearest the cut are literally
+the same text as the first training pages.
 
 Splitting the evaluation by that overlap gives the reassuring result:
 
@@ -115,6 +123,45 @@ vocabulary it has never encountered as on pages it has partly seen. That is the
 strongest thing that can be said about this detector, and it was not established
 before: the earlier reviews could only call the numbers "in-sample" because the
 model in circulation at the time had been fit on all 1,367 pages.
+
+**A caveat that matters more than the table.** "New text" is true page by page
+and misleading as a whole: the 100 dev pages are overlapping windows of **5
+documents**, and they judge only about **4,100 distinct source words**. §3b
+quantifies this.
+
+---
+
+## 3b. How much evidence is behind 62,479 rows
+
+The corpus is not 1,367 independent pages. It is **55 documents cut into
+overlapping windows**: the opening words of page *i+1* are normally found 10–60
+words into page *i*, and only 54 of the 1,366 page transitions start new text.
+
+| measure | value |
+|---|---|
+| pages / documents | 1,367 pages, **55 documents** |
+| rows / distinct 5-grams | 944,968 rows, **105,596 distinct 5-grams** (89 % of rows repeat text already present) |
+| dev pages / documents they cover | 100 pages, **5 documents** |
+| dev rows / distinct source words | 62,385 rows, **~4,137 distinct words** (6.6 % of rows) |
+| dev rows that are new 5-word OCR contexts | 18,541 of 62,479 (29.7 %) |
+| recall on just those new contexts | 92.62 % ± 0.83 pp (n = 3,849 errors) |
+
+Two honest readings of that:
+
+* **The row-level number is stable.** Restricting to first-seen OCR contexts
+  (29.7 % of the data) gives 92.62 % ± 0.83 pp, against 92.39 % ± 0.79 pp on all
+  rows. The 62k rows are not a statistical mirage: the same words recur, but
+  they recur on *different crops*, and Tesseract does not always make the same
+  mistake twice.
+* **The coverage is narrow.** Everything above is measured on ~4,100 word
+  positions drawn from 5 news documents (Ethiopia/Eritrea dam coverage, Ukraine
+  war reporting), one layout, one font set, one Tesseract build. The detector has
+  not been shown to work on a *different kind of page* — only on new text of the
+  same kind.
+
+That is why §7 puts "one corpus, one OCR engine" first, and why the honest way to
+move this forward is a new test set (`docs/new_test_set_plan.md`), not a tighter
+confidence interval on the current one.
 
 ---
 
@@ -247,6 +294,11 @@ README makes without evidence:
    the recipe but not the artifact: same features and folds, recall 90.4 % /
    FF 0.27 % versus the shipped 92.4 % / 0.10 %. The spread between those two is
    the run-to-run noise to expect when the model is retrained.
+6. **Five documents of coverage.** §3b: the dev pages are overlapping windows of
+   5 news documents (~4,100 distinct words). Nothing here shows the detector
+   works on a different page type — a form, a table, a book page, a scan from a
+   different collection. The per-row statistics are stable; the *scope* is one
+   document family.
 
 ---
 
@@ -259,9 +311,16 @@ pip install -r requirements.txt pytest
 python OCR_error_detection/scripts/evaluate_out_of_sample.py \
     --report docs/out_of_sample_shipped.json
 
-# 2. Text-grouped cross-validation over the 1,267 training pages (~2 min)
-python OCR_error_detection/Model/train_LightGBM.py --no-char-lm --group-by text \
-    --out /tmp/model.pkl --report docs/out_of_sample_textcv.json
+# 2. Document-grouped cross-validation over the 1,267 training pages (~2 min)
+python OCR_error_detection/Model/train_LightGBM.py --no-char-lm --group-by document \
+    --out /tmp/model.pkl --report docs/out_of_sample_doccv.json
+
+# 3. Check every claim in this document against the data (~3 min, exits 1 on a miss)
+python OCR_error_detection/scripts/verify_claims.py
+
+# 4. Score a new evaluation folder (see docs/verify_claims.md)
+python OCR_error_detection/scripts/make_eval_corpus.py --eval-dir fresh_eval --out /tmp/fresh.tsv
+python OCR_error_detection/scripts/evaluate_out_of_sample.py --corpus /tmp/fresh.tsv --eval-all
 ```
 
 `evaluate_out_of_sample.py` prints the tables in §1, §3, §4 and §5 and writes the
@@ -276,5 +335,8 @@ path you pass.
 |---|---|
 | `OCR_error_detection/scripts/evaluate_out_of_sample.py` | the evaluation script (§8) |
 | `docs/out_of_sample_shipped.json` | shipped model, all tables, per-page overlap, threshold sweep |
-| `docs/out_of_sample_textcv.json` | text-grouped CV report (OOF + dev metrics, feature importance) |
-| `OCR_error_detection/Model/train_LightGBM.py` | the trainer; `--group-by text` is the CV protocol used here |
+| `docs/out_of_sample_doccv.json` | document-grouped CV report (51 documents, OOF + dev metrics, feature importance) |
+| `OCR_error_detection/scripts/verify_claims.py` | re-derives every number here and tries to break it |
+| `OCR_error_detection/scripts/make_eval_corpus.py` | builds a scorable corpus from a new `Evaluation/`-style folder |
+| `docs/verify_claims.md` | how to check this without trusting it, including on new data |
+| `OCR_error_detection/Model/train_LightGBM.py` | the trainer; `--group-by document` is the CV protocol used here |

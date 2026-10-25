@@ -1,14 +1,14 @@
 {
   "generated_at": "2026-10-25T05:18:44",
-  "model": "/home/user/OCR_corrector/OCR_error_detection/Model/detector_lgbm_conffree.pkl",
-  "corpus": "/home/user/OCR_corrector/OCR_error_detection/Model/harmonized_corpus_jiwer.tsv",
+  "model": "OCR_error_detection/Model/detector_lgbm_conffree.pkl",
+  "corpus": "OCR_error_detection/Model/harmonized_corpus_jiwer.tsv",
   "dev_pages": 100,
   "gates": {
     "pass_below": 0.1,
     "flag_above": 0.65
   },
   "lexicon": {
-    "path": "/home/user/OCR_corrector/OCR_error_detection/Model/main_i7_frq10.txt",
+    "path": "OCR_error_detection/Model/main_i7_frq10.txt",
     "min_freq": 500,
     "max_types": null,
     "types": 54057,
@@ -278,84 +278,84 @@
     "in_lexicon_share": 0.7801204819277109,
     "examples": [
       [
-        "\u1270\u12a8\u1235\u1270\u12cd",
-        "\u1270\u12a8\u1230\u1270\u12cd"
+        "ተከስተው",
+        "ተከሰተው"
       ],
       [
-        "\u1235\u120b\u121d",
-        "\u1230\u120b\u121d"
+        "ስላም",
+        "ሰላም"
       ],
       [
-        "\u1270\u1293\u130d\u1228\u12cb\u120d",
+        "ተናግረዋል",
         null
       ],
       [
-        "\u1229\u1232\u12eb",
-        "\u1270\u1293\u130d\u1228\u12cb\u120d\u1229\u1232\u12eb"
+        "ሩሲያ",
+        "ተናግረዋልሩሲያ"
       ],
       [
-        "\u12e9\u12ad\u122c\u1295",
-        "\u1208\u12e9\u12ad\u122c\u1295"
+        "ዩክሬን",
+        "ለዩክሬን"
       ],
       [
-        "\u12a0\u12cd\u122e\u1355\u120b\u1295",
-        "\u12a0\u12cd\u122e\u1298\u120b\u1295"
+        "አውሮፕላን",
+        "አውሮኘላን"
       ],
       [
-        "\u12a0\u12cd\u122e\u1355\u120b\u1295",
-        "\u12a0\u12cd\u122e\u1298\u120b\u1295"
+        "አውሮፕላን",
+        "አውሮኘላን"
       ],
       [
-        "\u12a0\u12cd\u122e\u1355\u120b\u1295",
-        "\u12a0\u12cd\u122e\u1298\u120b\u1295"
+        "አውሮፕላን",
+        "አውሮኘላን"
       ],
       [
-        "\u120a\u12ee\u1295",
-        "\u121a\u120a\u12ee\u1295"
+        "ሊዮን",
+        "ሚሊዮን"
       ],
       [
-        "\u12a0\u12cd\u122e\u1355\u120b\u1295",
-        "\u12a0\u12cd\u122e\u1298\u120b\u1295"
+        "አውሮፕላን",
+        "አውሮኘላን"
       ],
       [
-        "\u12ad\u1270\u121b",
-        "\u12a8\u1270\u121b"
+        "ክተማ",
+        "ከተማ"
       ],
       [
-        "\u12ad\u1270\u121b",
-        "\u12a8\u1270\u121b"
+        "ክተማ",
+        "ከተማ"
       ],
       [
-        "\u12ad\u1270\u121b",
-        "\u12a8\u1270\u121b"
+        "ክተማ",
+        "ከተማ"
       ],
       [
-        "\u12ad\u134d\u120d",
-        "\u12a8\u134d\u120d"
+        "ክፍል",
+        "ከፍል"
       ],
       [
-        "\u12ad\u1270\u121b",
-        "\u12a8\u1270\u121b"
+        "ክተማ",
+        "ከተማ"
       ],
       [
-        "\u1273\u130b\u127d",
-        "\u12e8\u1273\u130b\u127d"
+        "ታጋች",
+        "የታጋች"
       ],
       [
-        "\u12a0\u121c\u122a\u12ab",
-        "\u12e8\u12a0\u121c\u122a\u12ab"
+        "አሜሪካ",
+        "የአሜሪካ"
       ],
       [
-        "\u1235\u120b\u121d",
-        "\u1230\u120b\u121d"
+        "ስላም",
+        "ሰላም"
       ],
       [
-        "\u12a0\u12cd\u122e\u1355\u120b\u1295",
-        "\u12a0\u12cd\u122e\u1298\u120b\u1295"
+        "አውሮፕላን",
+        "አውሮኘላን"
       ],
       [
-        "\u1273\u130b\u127d",
-        "\u12e8\u1273\u130b\u127d"
+        "ታጋች",
+        "የታጋች"
       ]
     ]
   },

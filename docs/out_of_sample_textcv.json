@@ -1,10 +1,10 @@
 {
   "args": {
-    "lexicon": "/home/user/OCR_corrector/OCR_error_detection/Model/main_i7_frq10.txt",
-    "corpus": "/home/user/OCR_corrector/OCR_error_detection/Model/harmonized_corpus_jiwer.tsv",
+    "lexicon": "OCR_error_detection/Model/main_i7_frq10.txt",
+    "corpus": "OCR_error_detection/Model/harmonized_corpus_jiwer.tsv",
     "min_freq": 500,
     "max_types": null,
-    "char_lm": "/mnt/mintdata/Users/Des/Mint/Models/KenLM/character_model/amharic_char_model.klm",
+    "char_lm": null,
     "no_char_lm": true,
     "out": "/tmp/oos/model_textcv.pkl",
     "report": "/tmp/oos/report_textcv.json",
@@ -41,7 +41,7 @@
     "is_high_freq"
   ],
   "lexicon": {
-    "path": "/home/user/OCR_corrector/OCR_error_detection/Model/main_i7_frq10.txt",
+    "path": "OCR_error_detection/Model/main_i7_frq10.txt",
     "min_freq": 500,
     "max_types": null,
     "types": 54057

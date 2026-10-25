@@ -85,15 +85,24 @@ def grams(text: str, n: int = 5) -> set:
     return {" ".join(w[i:i + n]) for i in range(len(w) - n + 1)}
 
 
-def load_corpus(path: str, dev_pages: int):
+def load_corpus(path: str, dev_pages: int, eval_all: bool = False):
     if not os.path.exists(path):
         raise SystemExit(f"corpus not found: {path}")
     df = pd.read_csv(path, sep="\t")
     df = df.dropna(subset=["ocr_word"]).copy()
     df["ocr_word"] = df["ocr_word"].astype(str)
-    df["page_no"] = df["page"].str.replace("page_", "", regex=False).astype(int)
+    # Page names are normally page_0001..; anything else is tolerated and simply
+    # cannot take part in the page-number split (used by --eval-all, where the
+    # whole file is the evaluation set).
+    page_no = df["page"].astype(str).str.replace("page_", "", regex=False)
+    df["page_no"] = pd.to_numeric(page_no, errors="coerce")
+    if eval_all:
+        return df, df.iloc[0:0]
     dev = df[df.page_no <= dev_pages].copy()
     prod = df[df.page_no > dev_pages]
+    if dev.empty:
+        raise SystemExit(f"no page in {path} has page number <= {dev_pages}; "
+                         f"pass --eval-all to score every row")
     return dev, prod
 
 
@@ -205,6 +214,8 @@ def main(argv=None):
                     help="page_0001..page_N are the held-out development pages")
     ap.add_argument("--report", default=None, help="write the JSON report here")
     ap.add_argument("--limit", type=int, default=None, help="evaluate a prefix only (smoke)")
+    ap.add_argument("--eval-all", action="store_true",
+                    help="score every row (a new corpus; no train/dev split)")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args(argv)
 
@@ -216,21 +227,29 @@ def main(argv=None):
     say("Out-of-sample evaluation — shipped detector, development pages")
     say("=" * 74)
 
-    dev, prod = load_corpus(args.corpus, args.dev_pages)
-    say(f"development rows {len(dev):,} ({dev.page.nunique()} pages), "
-        f"training rows {len(prod):,} ({prod.page.nunique()} pages)")
+    dev, prod = load_corpus(args.corpus, args.dev_pages, eval_all=args.eval_all)
+    if args.eval_all:
+        say(f"evaluation rows {len(dev):,} ({dev.page.nunique()} pages) — every row is scored")
+    else:
+        say(f"development rows {len(dev):,} ({dev.page.nunique()} pages), "
+            f"training rows {len(prod):,} ({prod.page.nunique()} pages)")
     say(f"real errors in development: {int(dev.is_error.sum()):,} "
         f"({100 * dev.is_error.mean():.2f} %)")
 
-    say("\nText overlap of each development page with the training pages ...")
-    share = text_overlap(dev, prod)
-    overlap = Counter()
-    for value in share.values():
-        for name, test in TIERS:
-            if test(value):
-                overlap[name] += 1
-                break
-    say(f"  pages by tier: {dict(overlap)}")
+    if len(prod):
+        say("\nText overlap of each development page with the training pages ...")
+        share = text_overlap(dev, prod)
+        overlap = Counter()
+        for value in share.values():
+            for name, test in TIERS:
+                if test(value):
+                    overlap[name] += 1
+                    break
+        say(f"  pages by tier: {dict(overlap)}")
+    else:
+        say("\nText overlap: skipped (--eval-all: this corpus has no training split; "
+            "use scripts/make_eval_corpus.py --reference to compare it with the training text)")
+        share = {}
 
     say(f"\nLoading detector: {args.model}")
     engine = DetectionEngine(lgbm_model_path=args.model, verbose=False)
