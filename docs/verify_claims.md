@@ -11,7 +11,7 @@ against data and code already in the repository, or against a folder you supply.
 ## 0. The three commands
 
 ```bash
-# 1. Re-derive every number and try to break it. ~3 min. Exit 1 on a miss.
+# 1. Re-derive every number and try to break it. ~2 min. Exit 1 on a miss.
 python 4_ocr_correction/error_detection/scripts/verify_claims.py
 
 # 2. The independent cross-check: 5-fold CV grouped by document, not by page. ~2 min
@@ -68,7 +68,7 @@ contain. Only §3 below does that.
 
 ```
 A: 3/3 passed        B: 11/11 passed      C: 4/4 passed      D: 7/7 passed
-102 s, exits 0
+102–135 s on the machines used so far, exits 0
 ```
 
 The two findings that are not pass/fail:
