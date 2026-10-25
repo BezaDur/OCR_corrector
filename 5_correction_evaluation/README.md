@@ -26,21 +26,21 @@ current code**; running one is the open task. Provenance and caveats:
 
 | Script | What it does |
 |---|---|
-| `04_evaluate_full_corrector.py` | end-to-end benchmark: runs the corrector over `<page>.ocr.txt`, produces corrected files, strict + canonical CER/WER, clean-token damage, optional damage gate, JSON report |
-| `05_collect_error_cases.py` | alignment-derived per-token triage into `TRUE_POSITIVE` / `FALSE_POSITIVE` / `SUBOPTIMAL_FLIP` / `FALSE_NEGATIVE` (uses `ocr_metrics.align_tokens`, not `SequenceMatcher`) |
-| `13_audit_correction_decisions.py` | summarize a decisions TSV into repair/damage patterns |
-| `14_stage1_precision.py` | Stage 1 precision/recall against a verdict dump |
-| `15_fit_stage1_scores.py` | fit Stage 1 score weights |
+| `01_evaluate_full_corrector.py` | end-to-end benchmark: runs the corrector over `<page>.ocr.txt`, produces corrected files, strict + canonical CER/WER, clean-token damage, optional damage gate, JSON report |
+| `02_collect_error_cases.py` | alignment-derived per-token triage into `TRUE_POSITIVE` / `FALSE_POSITIVE` / `SUBOPTIMAL_FLIP` / `FALSE_NEGATIVE` (uses `ocr_metrics.align_tokens`, not `SequenceMatcher`) |
+| `03_audit_correction_decisions.py` | summarize a decisions TSV into repair/damage patterns |
+| `04_stage1_precision.py` | Stage 1 precision/recall against a verdict dump |
+| `05_fit_stage1_scores.py` | fit Stage 1 score weights |
 | `stage1_labels.py`, `stage1_fit.py` | label/sample helpers for the above |
 | `smoke_eval.sh` | quick run over the first N pages |
 
 ## How to run
 
 ```bash
-python 5_correction_evaluation/04_evaluate_full_corrector.py \
+python 5_correction_evaluation/01_evaluate_full_corrector.py \
   --kenlm /path/to/amharic_5gram.binary \
-  --confusion OCR_error_detection/Model/confusion_matrix.json \
-  --dictionary OCR_error_detection/Model/main_i7_frq10.txt \
+  --confusion 4_ocr_correction/error_detection/Model/confusion_matrix.json \
+  --dictionary 4_ocr_correction/error_detection/Model/main_i7_frq10.txt \
   --gt-dir  /path/to/synthetic_eval/ground_truth \
   --raw-dir /path/to/synthetic_eval/ocr_new_model \
   --output-dir /path/to/synthetic_eval/corrected \
@@ -72,7 +72,7 @@ and record them with the report, or the run is not comparable to another one.
 | `data/failed_cases.tsv` | 7,979 rows, e.g. `OVER_CORRECTION` (`የሕዳሴው → የህዳሴው`), `UNREPAIRED_TYPO` |
 | `benchmarks/benchmark_full_symspell.json` | the 150-page benchmark summarized above (older revision) |
 
-The decision TSVs come from `05_collect_error_cases.py` and are alignment-derived
+The decision TSVs come from `02_collect_error_cases.py` and are alignment-derived
 estimates, not causal token provenance — see `docs/decision_audit.md`. The
 `FALSE_POSITIVE` rows are dominated by morphological over-peels
 (`ተከትሎም → ተከትሎ`, `የሚታይም → የሚታይ`), which is what

@@ -177,7 +177,7 @@ Measured over 6,000 real verified corpus tokens:
 ### 3.5 The morphology switch
 
 `use_morphology=None|True|False` on the constructor, and
-`--no-morphology` / `--require-morphology` on `04_evaluate_full_corrector.py`.
+`--no-morphology` / `--require-morphology` on `01_evaluate_full_corrector.py`.
 
 Default `None` preserves historical behaviour (on when importable). `True`
 raises `RuntimeError` if the suite is not importable. An injected `segmenter=`
@@ -193,7 +193,7 @@ always wins over the switch.
  'peel_guard_blocks': int, 'cache': {...}}
 ```
 
-Recorded by `04_evaluate_full_corrector.py`.
+Recorded by `01_evaluate_full_corrector.py`.
 
 ---
 
@@ -274,8 +274,8 @@ deeper integration.
 One flag, no code:
 
 ```bash
-04_evaluate_full_corrector.py --no-morphology       # analyzer off
-04_evaluate_full_corrector.py --require-morphology  # analyzer on (current default)
+01_evaluate_full_corrector.py --no-morphology       # analyzer off
+01_evaluate_full_corrector.py --require-morphology  # analyzer on (current default)
 ```
 
 This is the single most valuable experiment available, and it must come before
@@ -443,7 +443,7 @@ trade-off so much as a win on both.
 ### 7.3 What was added
 
 `max_lexicon_types` and `dict_min_freq` on the constructor, and
-`--max-lexicon-types` / `--dict-min-freq` on `04_evaluate_full_corrector.py`.
+`--max-lexicon-types` / `--dict-min-freq` on `01_evaluate_full_corrector.py`.
 
 The loader was restructured into two passes. Previously SymSpell was built
 *during* the file read, so a cap would have discarded an index we had already
@@ -523,7 +523,7 @@ the failure message explains what happened instead of saying
   `segment_word` has been exercised in this repo; anything deeper needs its own
   tests.
 * **No end-to-end run in this sandbox.** `kenlm` is absent, so
-  `04_evaluate_full_corrector.py` cannot run here. Every number in this
+  `01_evaluate_full_corrector.py` cannot run here. Every number in this
   document is from candidate generation and analysis only — never from a full
   decode. Treat the ablation in §6.1 as unmeasured until you run it.
 * **§5's 56.4 % is measured on correctly-spelled-but-rare words**, which is the

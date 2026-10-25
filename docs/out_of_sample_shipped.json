@@ -1,14 +1,14 @@
 {
   "generated_at": "2026-10-25T05:18:44",
-  "model": "OCR_error_detection/Model/detector_lgbm_conffree.pkl",
-  "corpus": "OCR_error_detection/Model/harmonized_corpus_jiwer.tsv",
+  "model": "4_ocr_correction/error_detection/Model/detector_lgbm_conffree.pkl",
+  "corpus": "4_ocr_correction/error_detection/Model/harmonized_corpus_jiwer.tsv",
   "dev_pages": 100,
   "gates": {
     "pass_below": 0.1,
     "flag_above": 0.65
   },
   "lexicon": {
-    "path": "OCR_error_detection/Model/main_i7_frq10.txt",
+    "path": "4_ocr_correction/error_detection/Model/main_i7_frq10.txt",
     "min_freq": 500,
     "max_types": null,
     "types": 54057,

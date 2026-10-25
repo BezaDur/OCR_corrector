@@ -1,7 +1,7 @@
 # Detector, out of sample — what the shipped model actually does
 
 **Measured:** 2026-10-25, branch `arena/c4c81d74-ocr-corrector`.
-**Artifact:** `OCR_error_detection/Model/detector_lgbm_conffree.pkl` (unmodified).
+**Artifact:** `4_ocr_correction/error_detection/Model/detector_lgbm_conffree.pkl` (unmodified).
 **Machine:** the verification sandbox — Python 3.11.2, lightgbm 4.7.0,
 scikit-learn 1.9.1. No Tesseract, no KenLM (neither is needed).
 
@@ -265,7 +265,7 @@ README makes without evidence:
   the model it reviewed (fit on all 1,367 pages); the shipped model is not.
 * `docs/current_state.md` §5.2 and both READMEs now quote the numbers in §1
   instead of the selection numbers.
-* `OCR_error_detection/Evaluation/analysis.tsv` remains **stale**: it predates
+* `Evaluation/analysis.tsv` remains **stale**: it predates
   the shipped model. The current engine agrees with only 85.6 % of its stored
   verdicts. The numbers in this document are computed from the corpus, not from
   that file.
@@ -308,19 +308,19 @@ README makes without evidence:
 pip install -r requirements.txt pytest
 
 # 1. Shipped model on the 100 development pages (~35 s), writes the JSON report
-python OCR_error_detection/scripts/evaluate_out_of_sample.py \
+python 4_ocr_correction/error_detection/scripts/evaluate_out_of_sample.py \
     --report docs/out_of_sample_shipped.json
 
 # 2. Document-grouped cross-validation over the 1,267 training pages (~2 min)
-python OCR_error_detection/Model/train_LightGBM.py --no-char-lm --group-by document \
+python 4_ocr_correction/error_detection/Model/train_LightGBM.py --no-char-lm --group-by document \
     --out /tmp/model.pkl --report docs/out_of_sample_doccv.json
 
 # 3. Check every claim in this document against the data (~3 min, exits 1 on a miss)
-python OCR_error_detection/scripts/verify_claims.py
+python 4_ocr_correction/error_detection/scripts/verify_claims.py
 
 # 4. Score a new evaluation folder (see docs/verify_claims.md)
-python OCR_error_detection/scripts/make_eval_corpus.py --eval-dir fresh_eval --out /tmp/fresh.tsv
-python OCR_error_detection/scripts/evaluate_out_of_sample.py --corpus /tmp/fresh.tsv --eval-all
+python 4_ocr_correction/error_detection/scripts/make_eval_corpus.py --eval-dir fresh_eval --out /tmp/fresh.tsv
+python 4_ocr_correction/error_detection/scripts/evaluate_out_of_sample.py --corpus /tmp/fresh.tsv --eval-all
 ```
 
 `evaluate_out_of_sample.py` prints the tables in §1, §3, §4 and §5 and writes the
@@ -333,10 +333,10 @@ path you pass.
 
 | File | Contents |
 |---|---|
-| `OCR_error_detection/scripts/evaluate_out_of_sample.py` | the evaluation script (§8) |
+| `4_ocr_correction/error_detection/scripts/evaluate_out_of_sample.py` | the evaluation script (§8) |
 | `docs/out_of_sample_shipped.json` | shipped model, all tables, per-page overlap, threshold sweep |
 | `docs/out_of_sample_doccv.json` | document-grouped CV report (51 documents, OOF + dev metrics, feature importance) |
-| `OCR_error_detection/scripts/verify_claims.py` | re-derives every number here and tries to break it |
-| `OCR_error_detection/scripts/make_eval_corpus.py` | builds a scorable corpus from a new `Evaluation/`-style folder |
+| `4_ocr_correction/error_detection/scripts/verify_claims.py` | re-derives every number here and tries to break it |
+| `4_ocr_correction/error_detection/scripts/make_eval_corpus.py` | builds a scorable corpus from a new `Evaluation/`-style folder |
 | `docs/verify_claims.md` | how to check this without trusting it, including on new data |
-| `OCR_error_detection/Model/train_LightGBM.py` | the trainer; `--group-by document` is the CV protocol used here |
+| `4_ocr_correction/error_detection/Model/train_LightGBM.py` | the trainer; `--group-by document` is the CV protocol used here |

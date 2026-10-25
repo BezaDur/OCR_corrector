@@ -5,8 +5,8 @@
 Two jobs live here:
 
 1. **Learn the optical confusion matrix** from aligned OCR errors
-   (`03_build_confusion_matrix.py` → `confusion_matrix.json`). The authoritative
-   copy is `OCR_error_detection/Model/confusion_matrix.json`; the corrector and
+   (`01_build_confusion_matrix.py` → `confusion_matrix.json`). The authoritative
+   copy is `4_ocr_correction/error_detection/Model/confusion_matrix.json`; the corrector and
    the detector both read that file.
 2. **Run the corrector** (`amharic_ocr_corrector.py`) — a CPU post-processor that
    combines Stage 1 detection, SymSpell/optical candidate generation, a
@@ -45,11 +45,11 @@ data**): `beam_width=4`, `max_optical_cost=3.6` (pairwise 1.6×),
 
 ```python
 # inside AmharicOCRCorrector.__init__
-from OCR_error_detection.adapter import CorrectorDetectionAdapter
+from error_detection.adapter import CorrectorDetectionAdapter
 self.suspicion = CorrectorDetectionAdapter(self)   # reuses the corrector's vocab
 ```
 
-`CorrectorDetectionAdapter` builds `OCR_error_detection.DetectionEngine`, then
+`CorrectorDetectionAdapter` builds `4_ocr_correction/error_detection.DetectionEngine`, then
 hands it the corrector's vocabulary (`adopt_lexicon`, the model's freq ≥ 500
 filter still applies) and delegates every verdict to the LightGBM model. The
 adapter is constructed *before* the corrector loads its lexicon, so the handover
@@ -98,7 +98,7 @@ is skipped with a warning and the `lambda_morph` term cancels out.
 | `normalizer.py` | parent normalizer: punctuation, numerals, abbreviations, homoglyph keying |
 | `amharic_canonical_normalizer.py` | canonicalisation used by metrics |
 | `suspicion.py` | rule-based Stage 1 fallback (deprecated, not the default path) |
-| `03_build_confusion_matrix.py` | build `confusion_matrix.json` from aligned OCR output |
+| `01_build_confusion_matrix.py` | build `confusion_matrix.json` from aligned OCR output |
 | `confusion_matrix_patch.json` | curated pairs merged into the matrix |
 | `confusion_matrix_coverage_audit.py` | which character pairs the matrix covers |
 | `trace_candidate.py` | trace how one token's candidates are scored |
@@ -113,8 +113,8 @@ is skipped with a warning and the `lambda_morph` term cancels out.
 python -m pytest tests/test_head_contract.py -q
 
 # rebuild the confusion matrix from an aligned OCR run
-python 4_ocr_correction/03_build_confusion_matrix.py --ocr-dir ... --gt-dir ... \
-  --out OCR_error_detection/Model/confusion_matrix.json
+python 4_ocr_correction/01_build_confusion_matrix.py --ocr-dir ... --gt-dir ... \
+  --out 4_ocr_correction/error_detection/Model/confusion_matrix.json
 
 # manual smoke run (needs KenLM + the dictionary)
 python 4_ocr_correction/test_corrector.py

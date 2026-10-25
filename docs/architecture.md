@@ -1,16 +1,17 @@
 # Architecture — Parent Project vs Child Project
 
-> **Status (2026-10-24): the migration described below is done.** The corrector
-> and its helpers live in `4_ocr_correction/`, metrics in
-> `3_training_evaluation/`, audit code in `OCR_error_detection/scripts/`, and
-> the root files are import shims (map: `docs/repo_layout.md`). The
-> "Current (messy)" tree is kept as the before-picture; "Proposed (clean)" is
-> what the repository now looks like.
+> **Status (2026-10-25): the migration described below is done.** The detector is
+> `4_ocr_correction/error_detection/`, the page corpus is `Evaluation/` at the
+> root, cross-stage helpers are in `tools/`, and the root files are import shims
+> (map: `docs/repo_layout.md`). "Current (messy)" is kept as the before-picture.
 >
 > Numbers in this document that conflict with `docs/current_state.md` are stale
 > — in particular "default 50k types freq>=10 / 2.9 s init" (the default is
 > freq ≥ 500 → 54,057 types, 3.7 s here) and `verdict("በሸታ") → FLAG 0.85` (the
-> shipped model returns **gray 0.154**).
+> shipped model returns **gray 0.154** with `doc_freq=2`, 0.314 with no
+> context). "Val recall 94.2 % FF 0.01 %" is a
+> selection number; the held-out measurement is **92.4 % recall at 0.102 %
+> false flags** (`docs/detector_out_of_sample.md`).
 
 **You asked: Organize whole project sensibly, not just data but scripts, and think about how parent imports child.**
 
@@ -24,10 +25,10 @@ Parent Project: OCR Training + Correction
   ├── 4_ocr_correction: build confusion matrix, main corrector (amharic_ocr_corrector.py)
   └── 5_correction_evaluation: evaluate full corrector
 
-Child Project: OCR_error_detection (error detection)
+Child Project: error_detection (error detection)
   ├── Detects errors: PASS / GRAY / FLAG
-  ├── Self-contained: detector.py, Model/, Evaluation/, tests/
-  └── Used by parent via adapter: 4_ocr_correction calls OCR_error_detection
+  ├── Self-contained: detector.py, Model/, tests/ (page corpus: Evaluation/ at the root)
+  └── Used by parent via adapter: 4_ocr_correction calls error_detection
 ```
 
 **Parent starts from data preparation, then training, then evaluation. Child is number of processes for detection, used inside parent's correction step.**
@@ -51,7 +52,7 @@ Child Project: OCR_error_detection (error detection)
   Output: confusion analysis, error composition
     ↓
 [4_ocr_correction]
-  03_build_confusion_matrix.py: learn which letters Tesseract confuses → confusion_matrix.json
+  01_build_confusion_matrix.py: learn which letters Tesseract confuses → confusion_matrix.json
   amharic_ocr_corrector.py: main corrector
     - Uses vendor/segmenter (morphology)
     - Uses SymSpell + confusion_matrix.json for candidate generation
@@ -66,10 +67,10 @@ Child Project: OCR_error_detection (error detection)
 
 ---
 
-## Child Project — OCR_error_detection — Data Flow
+## Child Project — error_detection — Data Flow
 
 ```
-[OCR_error_detection]
+[error_detection]
   Input: OCR word "በሸታ" + doc_freq + optional conf
     ↓
   Normalizer (child): ሐ→ሀ, ሠ→ሰ etc. → canonical form
@@ -93,7 +94,8 @@ Child Project: OCR_error_detection (error detection)
   Model training:
     harmonized_corpus_jiwer.tsv (1367 pages, 946k words, 49MB)
     → 1200 train / 67 val, 14 feats conf-free, freq>=500 filter 54k types
-    → Val recall 94.2% FF 0.01% BEST
+    → Val recall 94.2% FF 0.01% BEST (selection on 67 pages)
+    → held-out: 92.4% recall at 0.102% false flags
 ```
 
 **LightGBM does major work (90%), others are feature providers.**
@@ -113,11 +115,11 @@ Child Project: OCR_error_detection (error detection)
 # In 4_ocr_correction/amharic_ocr_corrector.py (parent corrector)
 # Primary: use child DetectionEngine via adapter (authoritative)
 try:
-    from OCR_error_detection.adapter import CorrectorDetectionAdapter
+    from error_detection.adapter import CorrectorDetectionAdapter
     self.suspicion = CorrectorDetectionAdapter(
         self,  # reuses parent's vocab, symspell, confusion map, normalizer
-        lgbm_model_path="OCR_error_detection/Model/detector_lgbm_conffree.pkl",
-        dict_vocab_path="OCR_error_detection/Model/main_i7_frq10.txt"
+        lgbm_model_path="4_ocr_correction/error_detection/Model/detector_lgbm_conffree.pkl",
+        dict_vocab_path="4_ocr_correction/error_detection/Model/main_i7_frq10.txt"
     )
     if self.suspicion.lgbm_model is not None:
         print("Using DetectionEngine (LightGBM) as authoritative")
@@ -134,8 +136,7 @@ except Exception as e:
 
 **Why this is good:**
 - Single source of truth: LightGBM authoritative, SuspicionScorer fallback
-- The engine adopts the corrector's vocabulary on the first verdict (it loads
-  its own 54k lexicon first), so the process never holds two full lexicons
+- No duplicate dictionary loading (saves 1-2GB RAM)
 - Child self-contained, parent calls it, no circular dependency
 - Default lexicon: main_i7 filtered to freq ≥ 500 → 54,057 types; SymSpell off
   → 3.7 s init and 0.48 ms/word measured in the verification sandbox
@@ -145,17 +146,17 @@ except Exception as e:
 
 ## Directory Organization — Current vs Proposed
 
-### Before the migration (historical)
+### Current (messy)
 
 ```
 . (root)
 ├── 1_data_preparation/
 ├── 2_training/
 ├── 3_training_evaluation/
-├── 4_ocr_correction/ (only has 03_build_confusion_matrix.py, etc., but main corrector at root)
+├── 4_ocr_correction/ (only has 01_build_confusion_matrix.py, etc., but main corrector at root)
 ├── 5_correction_evaluation/
-├── detection/ (old logistic regression, deprecated, confusing with OCR_error_detection)
-├── OCR_error_detection/ (new LightGBM, child)
+├── detection/ (old logistic regression, deprecated, confusing with error_detection)
+├── 4_ocr_correction/error_detection/ (new LightGBM, child)
 │   ├── Model/
 │   ├── Evaluation/
 │   └── ...
@@ -165,7 +166,7 @@ except Exception as e:
 ├── amharic_canonical_normalizer.py (eval util, should be in 3_ or 4_ or common)
 ├── ocr_metrics.py (eval metric, should be in 3_ or common)
 ├── tsv_gt.py, tsv_confidence.py (eval, should be in 3_)
-├── confusion_matrix.json (duplicate, should be single in OCR_error_detection/Model/)
+├── confusion_matrix.json (duplicate, should be single in 4_ocr_correction/error_detection/Model/)
 ├── amh_final_training_text.txt (training text, should be in 1_data_preparation/data or data/)
 ├── tests/ (mixed: test_detection.py tests old detection/, test_ocr_corrector.py tests parent)
 └── docs/
@@ -174,11 +175,11 @@ except Exception as e:
 **Problems:**
 - Root files mixed: some parent, some child, some old
 - Duplicate files: confusion_matrix.json at root and in Model/, normalizer.py at root and in child
-- detection/ vs OCR_error_detection/ confusing
+- detection/ vs 4_ocr_correction/error_detection/ confusing
 - No clear import path parent → child
-- Evaluation data in multiple places: eval_data/, evaluation_data/, OCR_error_detection/Evaluation/
+- Evaluation data in multiple places: eval_data/, evaluation_data/, Evaluation/
 
-### After the migration (implemented)
+### Proposed (clean)
 
 ```
 .
@@ -189,19 +190,19 @@ except Exception as e:
 │   └── project_structure.md (directory layout, what goes where)
 ├── 1_data_preparation/
 │   ├── README.md
-│   ├── 01_generate_eval_pages.py
-│   ├── 07_generate_training_boxes.py
-│   ├── 08_compile_lstmf_and_split.py
+│   ├── 07_generate_eval_pages.py
+│   ├── 05_generate_training_boxes.py
+│   ├── 06_compile_lstmf_and_split.py
 │   ├── data/
 │   │   └── amh_final_training_text.txt (4.4M tokens, 56MB)
 │   └── ...
 ├── 2_training/
 │   ├── README.md
-│   ├── 09_train_epochs.sh
+│   ├── 01_train_epochs.sh
 │   └── ...
 ├── 3_training_evaluation/
 │   ├── README.md
-│   ├── 02_run_ocr_eval.py
+│   ├── 01_run_ocr_eval.py
 │   ├── ocr_metrics.py (moved from root, canonical metrics)
 │   ├── tsv_gt.py, tsv_confidence.py (moved from root)
 │   └── ...
@@ -211,13 +212,13 @@ except Exception as e:
 │   ├── normalizer.py (parent normalizer, bigger, punctuation etc., moved from root)
 │   ├── amharic_canonical_normalizer.py (moved from root)
 │   ├── suspicion.py (fallback, moved from root)
-│   ├── 03_build_confusion_matrix.py (builds confusion_matrix.json)
+│   ├── 01_build_confusion_matrix.py (builds confusion_matrix.json)
 │   └── ...
 ├── 5_correction_evaluation/
 │   ├── README.md
-│   ├── 04_evaluate_full_corrector.py
+│   ├── 01_evaluate_full_corrector.py
 │   └── ...
-├── OCR_error_detection/ (child, self-contained)
+├── 4_ocr_correction/error_detection/ (child, self-contained)
 │   ├── README.md (child overview)
 │   ├── __init__.py (exports DetectionEngine, Adapter)
 │   ├── detector.py (main, LightGBM, 50k default no SymSpell)
@@ -230,7 +231,8 @@ except Exception as e:
 │   ├── utils.py
 │   ├── run_ocr.py
 │   ├── Model/
-│   │   ├── detector_lgbm_conffree.pkl (FINAL, 3.5MB, main_i7 freq>=500 54k types, recall 94.2% FF 0.01%)
+│   │   ├── detector_lgbm_conffree.pkl (3.5MB, main_i7 freq>=500 = 54,057 types;
+│   │   │    held-out recall 92.4% at 0.102% false flags)
 │   │   ├── main_i7_frq10.txt (737k types, 15MB, from bigger data, freq>=10, max freq 5.6M, default dict)
 │   │   ├── local_lexicon.txt (750k types, fallback)
 │   │   ├── confusion_matrix.json (single source, 47K)
@@ -250,19 +252,19 @@ except Exception as e:
 │   └── ...
 ├── vendor/
 │   └── segmenter/ (morphology)
-├── eval_data/ (deprecated, use OCR_error_detection/Evaluation/)
+├── eval_data/ (deprecated, use Evaluation/)
 ├── requirements.txt
 └── .gitignore
 ```
 
 **Benefits:**
-- Files relevant to detection inside OCR_error_detection/ directory (child self-contained)
+- Files relevant to detection inside 4_ocr_correction/error_detection/ directory (child self-contained)
 - Parent files inside 4_ocr_correction/ (corrector) and 3_training_evaluation/ (metrics)
 - No duplicates: confusion_matrix.json single source in Model/, parent loads via path
 - Clear import: parent → child via adapter, child doesn't import parent (no circular)
 - Old detection/ archived, not confusing
 - Data: amh_final_training_text.txt in 1_data_preparation/data/, not root
-- Tests: child tests in OCR_error_detection/tests/, parent tests in tests/ or 5_correction_evaluation/
+- Tests: child tests in 4_ocr_correction/error_detection/tests/, parent tests in tests/ or 5_correction_evaluation/
 
 ---
 
@@ -270,17 +272,17 @@ except Exception as e:
 
 1. **Move parent corrector files from root to 4_ocr_correction/**:
    - amharic_ocr_corrector.py, normalizer.py (parent), suspicion.py, amharic_canonical_normalizer.py
-   - Update imports in amharic_ocr_corrector.py to use OCR_error_detection via adapter (already does)
+   - Update imports in amharic_ocr_corrector.py to use error_detection via adapter (already does)
 
 2. **Move evaluation utils from root to 3_training_evaluation/**:
    - ocr_metrics.py, tsv_gt.py, tsv_confidence.py, tsv_gt_stats.py
 
-3. **Move detection-relevant files from root to OCR_error_detection/scripts/**:
-   - ocr_decision_audit.py → OCR_error_detection/scripts/audit_decision.py
-   - stage1_fit.py, stage1_labels.py → OCR_error_detection/archive/ or detection/
+3. **Move detection-relevant files from root to 4_ocr_correction/error_detection/scripts/**:
+   - ocr_decision_audit.py → 4_ocr_correction/error_detection/scripts/audit_decision.py
+   - stage1_fit.py, stage1_labels.py → 4_ocr_correction/error_detection/archive/ or detection/
 
 4. **Single source for confusion_matrix.json**:
-   - Keep in OCR_error_detection/Model/confusion_matrix.json (authoritative)
+   - Keep in 4_ocr_correction/error_detection/Model/confusion_matrix.json (authoritative)
    - Root confusion_matrix.json removed (no symlinks), parent loads via path
 
 5. **Archive old detection/**:
@@ -289,10 +291,10 @@ except Exception as e:
 6. **Update docs**:
    - docs/project_structure.md explains layout
    - 4_ocr_correction/README.md explains corrector and how it calls child
-   - OCR_error_detection/README.md already exists, update to reflect default dict main_i7
+   - 4_ocr_correction/error_detection/README.md already exists, update to reflect default dict main_i7
 
 7. **Ensure tests pass**:
-   - After moves, run tests/test_detection.py (old) and OCR_error_detection/tests/
+   - After moves, run tests/test_detection.py (old) and 4_ocr_correction/error_detection/tests/
 
 8. **Import child to parent**:
    - Already done via CorrectorDetectionAdapter
@@ -305,17 +307,23 @@ except Exception as e:
 ```python
 # Parent corrector (4_ocr_correction/amharic_ocr_corrector.py)
 import sys
-sys.path.insert(0, "..")  # if needed to find OCR_error_detection at repo root
+sys.path.insert(0, "..")  # if needed to find error_detection at repo root
 
-from OCR_error_detection import DetectionEngine
-from OCR_error_detection.adapter import CorrectorDetectionAdapter
+from error_detection import DetectionEngine
+from error_detection.adapter import CorrectorDetectionAdapter
 
 # Option 1: Use DetectionEngine directly (self-contained, loads its own dict)
-det = DetectionEngine()          # already freq >= 500 -> 54,057 types
+det = DetectionEngine(
+    dict_vocab_path="4_ocr_correction/error_detection/Model/main_i7_frq10.txt",
+    dict_min_freq=500,  # 54,057 types; chosen on the 67-page validation slice
+    max_lexicon_types=None,
+    enable_symspell=False  # default, fast, no crash
+)
 verdict = det.verdict("አና", doc_freq=1)
-print(verdict.label, verdict.suspicion)  # flag 1.0   (a real OCR error for እና)
-# note: verdict("በሸታ") is gray 0.154, not the old FLAG 0.85 -- በሸታ is in the
-# dictionary at freq 263, it is only OOV because the default loader cuts at 500
+print(verdict.label, verdict.suspicion)  # flag 1.0
+# verdict("በሸታ", doc_freq=2) is gray 0.154 (0.314 when doc_freq is None), not the
+# old FLAG 0.85: በሸታ is in the dictionary at
+# freq 263 and is only out-of-lexicon because the default loader cuts at 500
 
 # Option 2: Use via adapter (reuses parent's vocab, no double load)
 class AmharicOCRCorrector:
@@ -337,8 +345,8 @@ class AmharicOCRCorrector:
 ## One-line Summary
 
 - **Parent**: 1_data_preparation → 2_training → 3_training_evaluation → 4_ocr_correction (main corrector) → 5_correction_evaluation
-- **Child**: OCR_error_detection (detection, self-contained, Model/, Evaluation/, tests/)
+- **Child**: error_detection (detection, self-contained, Model/, Evaluation/, tests/)
 - **Parent imports child** via adapter (CorrectorDetectionAdapter reuses vocab, no double load)
-- **Files relevant to detection inside OCR_error_detection/**, parent files inside 4_ocr_correction/ and 3_training_evaluation/
+- **Files relevant to detection inside 4_ocr_correction/error_detection/**, parent files inside 4_ocr_correction/ and 3_training_evaluation/
 - **No duplicates**: confusion_matrix.json single source in Model/, normalizer separate (parent bigger, child smaller for lexicon keying)
 - **Old detection/** archived to archive/detection_old/

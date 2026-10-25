@@ -1,7 +1,7 @@
 {
   "args": {
-    "lexicon": "OCR_error_detection/Model/main_i7_frq10.txt",
-    "corpus": "OCR_error_detection/Model/harmonized_corpus_jiwer.tsv",
+    "lexicon": "4_ocr_correction/error_detection/Model/main_i7_frq10.txt",
+    "corpus": "4_ocr_correction/error_detection/Model/harmonized_corpus_jiwer.tsv",
     "min_freq": 500,
     "max_types": null,
     "char_lm": null,
@@ -41,7 +41,7 @@
     "is_high_freq"
   ],
   "lexicon": {
-    "path": "OCR_error_detection/Model/main_i7_frq10.txt",
+    "path": "4_ocr_correction/error_detection/Model/main_i7_frq10.txt",
     "min_freq": 500,
     "max_types": null,
     "types": 54057

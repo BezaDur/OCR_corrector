@@ -4,6 +4,7 @@
 #
 # Grouped by what needs them:
 #   - detector / corrector:  numpy, joblib, lightgbm, scikit-learn, symspellpy
+#   - vendored morphology:    pydantic  (vendor/segmenter/morph_types.py)
 #   - training + evaluation:  pandas
 #   - page synthesis / OCR:   opencv-python, Pillow, fonttools
 #   - KenLM:  not on PyPI. Install "kenlm" itself (pip install kenlm, or the

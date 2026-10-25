@@ -7,4 +7,4 @@ corpus they were built from (`amh_final_training_text.txt`, 4,420,102 tokens).
 
 The per-run lists (`list.train`, `list.eval`) are generated into
 `$TESSERACT_WORKSPACE/training/lists/` by
-`1_data_preparation/08_compile_lstmf_and_split.py`; they are not in git.
+`1_data_preparation/06_compile_lstmf_and_split.py`; they are not in git.

@@ -12,14 +12,14 @@ against data and code already in the repository, or against a folder you supply.
 
 ```bash
 # 1. Re-derive every number and try to break it. ~3 min. Exit 1 on a miss.
-python OCR_error_detection/scripts/verify_claims.py
+python 4_ocr_correction/error_detection/scripts/verify_claims.py
 
 # 2. The independent cross-check: 5-fold CV grouped by document, not by page. ~2 min
-python OCR_error_detection/Model/train_LightGBM.py --no-char-lm --group-by document \
+python 4_ocr_correction/error_detection/Model/train_LightGBM.py --no-char-lm --group-by document \
     --out /tmp/model.pkl --report /tmp/report.json
 
 # 3. Score the shipped pickle yourself (~35 s)
-python OCR_error_detection/scripts/evaluate_out_of_sample.py --report /tmp/oos.json
+python 4_ocr_correction/error_detection/scripts/evaluate_out_of_sample.py --report /tmp/oos.json
 ```
 
 Run 1 first: it performs 2 and 3 internally and compares them with the committed
@@ -101,14 +101,14 @@ fresh_eval/
   OCRed/page_0001.conf.tsv         # optional: word<TAB>confidence
 ```
 
-This is the layout of `OCR_error_detection/Evaluation/`, so every script works
+This is the layout of `Evaluation/`, so every script works
 unchanged. Page names can be anything; `make_eval_corpus.py` renames them
 `page_0001…` in file-name order.
 
 ### 3.2 Build the corpus and check that it is really new
 
 ```bash
-python OCR_error_detection/scripts/make_eval_corpus.py \
+python 4_ocr_correction/error_detection/scripts/make_eval_corpus.py \
     --eval-dir fresh_eval --out /tmp/fresh.tsv --report /tmp/fresh.json
 ```
 
@@ -126,7 +126,7 @@ If the novelty numbers are low, the set is not a test — it is a re-run.
 ### 3.3 Score it
 
 ```bash
-python OCR_error_detection/scripts/evaluate_out_of_sample.py \
+python 4_ocr_correction/error_detection/scripts/evaluate_out_of_sample.py \
     --corpus /tmp/fresh.tsv --eval-all --report /tmp/fresh.json
 ```
 

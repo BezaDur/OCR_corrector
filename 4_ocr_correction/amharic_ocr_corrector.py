@@ -47,11 +47,16 @@ Fixes applied across this revision history:
 import os as _os
 import sys as _sys
 _root = _os.path.dirname(_os.path.abspath(__file__))
-while _root != _os.path.dirname(_root) and not _os.path.exists(_os.path.join(_root, "repo_paths.py")):
+while _root != _os.path.dirname(_root) and not _os.path.exists(
+        _os.path.join(_root, "tools", "stage_paths.py")):
     _root = _os.path.dirname(_root)
-if _root not in _sys.path:
-    _sys.path.insert(0, _root)
-import repo_paths  # noqa: E402  (imported after the path bootstrap)
+# tools/ first so stage_paths and repo_paths resolve, then register every stage
+# folder so cross-stage imports work by bare module name. This replaces the
+# thirteen root-level shims that used to forward those imports by hand.
+_sys.path.insert(0, _os.path.join(_root, "tools"))
+import stage_paths  # noqa: E402  (imported after the path bootstrap)
+stage_paths.register(_root)
+import repo_paths  # noqa: E402
 # ----------------------------------------------------------------------------
 
 import os
@@ -123,14 +128,17 @@ def _vendored_segmenter_path():
     which meant a fresh checkout could not import it at all -- the corrector
     silently ran with morphology disabled and the whole ``lambda_morph`` term
     cancelled out. Vendoring a frozen copy makes the integration reproducible.
+
+    BUG FIXED: this used ``dirname(__file__)`` once, which resolves to
+    ``4_ocr_correction/`` and produced ``4_ocr_correction/vendor/segmenter`` --
+    a path that has never existed, since ``vendor/`` sits at the repository
+    root. The guard returned None, the vendored copy was never used, and the
+    corrector ran with morphology silently disabled: exactly the failure mode
+    this function was written to prevent. ``repo_paths`` already knows where the
+    vendored data lives, so defer to it instead of recomputing the root.
     """
     try:
-        # `vendor/` sits at the repo root, one level above this stage folder.
-        # (This used to say dirname(__file__) / "vendor", which was correct
-        # while the corrector lived at the root; after the move to
-        # 4_ocr_correction/ it pointed at 4_ocr_correction/vendor and the
-        # vendored suite became unreachable again -- silently, as a warning.)
-        p = os.path.join(repo_paths.REPO_ROOT, "vendor", "segmenter")
+        p = os.path.dirname(repo_paths.VENDORED_SEGMENTER_DATA)
         return p if os.path.isfile(os.path.join(p, "segmenter.py")) else None
     except Exception:
         return None
@@ -334,11 +342,12 @@ class AmharicOCRCorrector:
     """
 
     #: Resolved relative to this file, so the defaults work from any directory.
-    _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    DEFAULT_CONFUSION_MATRIX = os.path.join(
-        _REPO, "OCR_error_detection", "Model", "confusion_matrix.json")
-    DEFAULT_DICT_VOCAB = os.path.join(
-        _REPO, "OCR_error_detection", "Model", "main_i7_frq10.txt")
+    _STAGE4 = os.path.dirname(os.path.abspath(__file__))
+    _REPO = os.path.dirname(_STAGE4)
+    #: The detector lives beside the corrector, inside stage 4.
+    _DETECTOR_MODEL = os.path.join(_STAGE4, "error_detection", "Model")
+    DEFAULT_CONFUSION_MATRIX = os.path.join(_DETECTOR_MODEL, "confusion_matrix.json")
+    DEFAULT_DICT_VOCAB = os.path.join(_DETECTOR_MODEL, "main_i7_frq10.txt")
 
     def __init__(
         self,
@@ -584,7 +593,7 @@ class AmharicOCRCorrector:
         if self.stage1_detection:
             # Try authoritative DetectionEngine via adapter first
             try:
-                from OCR_error_detection.adapter import CorrectorDetectionAdapter
+                from error_detection.adapter import CorrectorDetectionAdapter
                 (sw, spb, sfa, clm) = self._suspicion_cfg
                 self.suspicion = CorrectorDetectionAdapter(
                     self, weights=sw, pass_below=spb, flag_above=sfa,
@@ -1292,7 +1301,7 @@ class AmharicOCRCorrector:
         return result
 
     # --- backwards-compatible aliases -----------------------------------
-    # 04_evaluate_full_corrector.py and tests/ call these and inspect
+    # 01_evaluate_full_corrector.py and tests/ call these and inspect
     # .cache_info(); keep them working, backed by the bounded caches.
     @property
     def _generate_candidates_cached(self):

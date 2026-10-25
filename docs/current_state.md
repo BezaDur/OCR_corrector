@@ -1,9 +1,11 @@
 # Current state — verified facts
 
-**Verified:** 2026-10-24 on branch `arena/c4c81d74-ocr-corrector`, base commit `c9325d2`.
-**Environment:** Python 3.11.2, numpy 2.4.6, lightgbm 4.7.0, scikit-learn 1.9.1,
-pandas 3.1.0, symspellpy 6.10.0, joblib. `kenlm`, `tesseract-ocr` and the
-`segmenter` package's `pydantic` dependency are **not** installed there.
+**Verified:** 2026-10-25 on branch `arena/c4c81d74-ocr-corrector`, base commit
+`e8cb916` (the 2026-10-25 reorganisation: per-stage script numbering, `tools/`,
+detector at `4_ocr_correction/error_detection/`, corpus at `Evaluation/`).
+**Environment:** Python 3.11.2, numpy, lightgbm 4.7.0, scikit-learn, pandas,
+symspellpy 6.10.0, joblib, pydantic. `kenlm` and `tesseract-ocr` are **not**
+installed in the verification sandbox.
 
 **Why this file exists.** The READMEs quote sizes, defaults, timings, verdicts
 and test counts, and those drift silently: the front page still said "default
@@ -21,33 +23,33 @@ in one block).
 
 | Component | Runs from a clean checkout? | Needs |
 |---|---|---|
-| `OCR_error_detection` detector (model, features, verdicts) | **yes** | pip deps only |
-| `pytest OCR_error_detection/tests` | **yes** | `pytest` |
+| `4_ocr_correction/error_detection` detector (model, features, verdicts) | **yes** | pip deps only |
+| `pytest 4_ocr_correction/error_detection/tests` | **yes** | `pytest` |
 | `scripts/evaluate_out_of_sample.py` (detector held-out evaluation) | **yes** | pip deps + the in-repo corpus |
 | `pytest tests` (repo-wide contract suite) | **yes** | `pytest` |
 | `AmharicOCRCorrector()` construction | **yes** | pip deps only |
 | `corrector.correct_text(...)` | **no** | word KenLM binary + `kenlm` |
 | morphology (`segment_word`) | **yes**, once `pydantic` is installed (it is now in `requirements.txt`) | vendored path (§7.1, fixed) |
-| `2_training`, `3_training_evaluation/02_run_ocr_eval.py` | **no** | Tesseract + workspace roots |
-| `1_data_preparation/01_generate_eval_pages.py` | **no** | OpenCV/Pillow + fonts + writable workspace |
-| `5_correction_evaluation/04_evaluate_full_corrector.py` | **no** | KenLM + pages + OCR output |
+| `2_training`, `3_training_evaluation/01_run_ocr_eval.py` | **no** | Tesseract + workspace roots |
+| `1_data_preparation/07_generate_eval_pages.py` | **no** | OpenCV/Pillow + fonts + writable workspace |
+| `5_correction_evaluation/01_evaluate_full_corrector.py` | **no** | KenLM + pages + OCR output |
 
-`repo_paths.py` is the only place that knows where the external trees live
+`tools/repo_paths.py` is the only place that knows where the external trees live
 (`AMHARIC_DATA_ROOT`, `TESSERACT_WORKSPACE`, `TESSERACT_TRAINING`,
-`AMHARIC_WORD_KENLM`, …). `python repo_paths.py` prints what resolves where.
+`AMHARIC_WORD_KENLM`, …). `python tools/repo_paths.py` prints what resolves where.
 
 ---
 
 ## 2. Detector — the numbers that matter
 
 ```python
-from OCR_error_detection import DetectionEngine
+from error_detection import DetectionEngine
 det = DetectionEngine()
 ```
 
 | Fact | Value | Where it comes from |
 |---|---|---|
-| Model file | `OCR_error_detection/Model/detector_lgbm_conffree.pkl` (3.5 MB) | `_resolve_first_existing(CANDIDATE_MODEL_PATHS)` |
+| Model file | `4_ocr_correction/error_detection/Model/detector_lgbm_conffree.pkl` (3.5 MB) | `_resolve_first_existing(CANDIDATE_MODEL_PATHS)` |
 | Payload | `model, features, pass_thresh, flag_thresh, calibrator, note` | `joblib.load` |
 | Booster | 529 trees, 14 features | `booster.num_trees()` |
 | Features | `log_corpus_freq, in_lexicon, doc_freq, is_doc_singleton, token_len, len_ratio, has_one_flip, one_flip_count, char_kenlm_score, rare_glyph_ratio, n_neighbors, mixed_script, has_digit, is_high_freq` | `features.FEATURE_NAMES` |
@@ -83,8 +85,8 @@ expected, not an error.
 
 Three consequences worth carrying into every other document:
 
-1. **The old README example was wrong twice.** `verdict("በሸታ")` returns
-   **gray 0.15**, not FLAG 0.85 — and `በሸታ` is a poor "not in the dictionary"
+1. **The old README example was wrong twice.** `verdict("በሸታ", doc_freq=2)`
+   returns **gray 0.1537** (0.3142 with `doc_freq=None`), not FLAG 0.85 — and `በሸታ` is a poor "not in the dictionary"
    example because it *is* in `main_i7_frq10.txt` at freq 263. It is OOV only
    because the default loader drops freq < 500.
 2. **`gray` is not "keep the word".** The parent corrector adds `gray_margin`
@@ -140,14 +142,14 @@ engine cannot be constructed. If the handover fails, the adapter records
 | `1_data_preparation/data/amh_final_training_text.txt` | 58,248,932 (55.6 MiB) | 359,776 lines, 4,420,102 tokens, 638,125 unique | the "4.4M tokens" corpus; 22,714,994 characters |
 | `1_data_preparation/data/mined_rare_sentences.txt` | 58,248,932 | 359,776 | same size and line count as the training text but a **different 51M-byte content**; scripts read `repo_paths.workspace("mined_rare_sentences.txt")`, i.e. the external workspace copy, not this one |
 | `1_data_preparation/data/amh.training_text` | 24,896,171 | — | Tesseract training text built from the corpus (with `amh.unicharset`, `amh.lstm-unicharset`, 20 KB each) |
-| `OCR_error_detection/Model/main_i7_frq10.txt` | 15,052,074 | 737,106 | the dictionary; min freq 10, max 5,672,129 (`ነው`) |
-| `OCR_error_detection/main_i7_frq10.txt` | 15,052,074 | 737,106 | **byte-identical duplicate**, only a fallback in `CANDIDATE_LEXICON_PATHS` |
-| `OCR_error_detection/Model/local_lexicon.txt` | 14,809,281 | 750,870 | fallback lexicon, not the default |
-| `OCR_error_detection/Model/harmonized_corpus_jiwer.tsv` | 50,595,285 | 946,058 | 1,367-page training corpus |
-| `OCR_error_detection/Model/detector_lgbm_conffree.pkl` | 3,655,005 | — | the shipped model |
-| `OCR_error_detection/Model/confusion_matrix.json` | 47,847 | 318 `sub` rows | keys `sub, del, ins, default_sub, default_del, default_ins` |
+| `4_ocr_correction/error_detection/Model/main_i7_frq10.txt` | 15,052,074 | 737,106 | the dictionary; min freq 10, max 5,672,129 (`ነው`) |
+| `4_ocr_correction/error_detection/main_i7_frq10.txt` | 15,052,074 | 737,106 | **byte-identical duplicate**, only a fallback in `CANDIDATE_LEXICON_PATHS` |
+| `4_ocr_correction/error_detection/Model/local_lexicon.txt` | 14,809,281 | 750,870 | fallback lexicon, not the default |
+| `4_ocr_correction/error_detection/Model/harmonized_corpus_jiwer.tsv` | 50,595,285 | 946,058 | 1,367-page training corpus |
+| `4_ocr_correction/error_detection/Model/detector_lgbm_conffree.pkl` | 3,655,005 | — | the shipped model |
+| `4_ocr_correction/error_detection/Model/confusion_matrix.json` | 47,847 | 318 `sub` rows | keys `sub, del, ins, default_sub, default_del, default_ins` |
 | `2_training/config/confusion_matrix.json` | 48 KB | — | **different content, read by no code path** (§7.3) |
-| `OCR_error_detection/Evaluation/` | 570 MB | 100 GT pages, 100 OCR pages, `analysis.tsv` 62,521 rows | the 100-page eval set |
+| `Evaluation/` | 570 MB | 100 GT pages, 100 OCR pages, `analysis.tsv` 62,521 rows | the 100-page eval set |
 | `5_correction_evaluation/data/correction_decisions.tsv` | 3.1 MB | 21,927 rows | 976 TRUE_POSITIVE, 1,348 FALSE_POSITIVE, 1,370 SUBOPTIMAL_FLIP, 18,233 FALSE_NEGATIVE |
 | `5_correction_evaluation/data/failed_cases.tsv` | 712 KB | 7,979 rows | |
 | `5_correction_evaluation/benchmarks/benchmark_full_symspell.json` | 160 KB | 150 pages | see §5.1 |
@@ -208,7 +210,7 @@ The split that matters for the corrector: out-of-lexicon errors are caught 98.1 
 of the time, **real-word (in-lexicon) errors only 43.3 %** — and real-word errors
 are 78 % of the 332 words the detector passes while wrong.
 
-`OCR_error_detection/Evaluation/analysis.tsv` is **stale** and should not be
+`Evaluation/analysis.tsv` is **stale** and should not be
 quoted: it predates the shipped model (the current engine agrees with only 85.6 %
 of its stored verdicts on a 1,500-row resample). Its stored verdicts imply flag
 recall 60.4 %, flag+gray 95.6 %, false flag 1.19 %.
@@ -236,8 +238,8 @@ measures recall 92.4 % / false flag 0.10 % (§5.2).
 
 | Suite | Command | Result (this checkout) |
 |---|---|---|
-| Child detector | `pytest OCR_error_detection/tests -q` | **56 passed** in 1.6 s |
-| Repo-wide | `pytest tests -q` | **142 passed, 52 skipped, 2,930 subtests** in 236 s |
+| Child detector | `pytest 4_ocr_correction/error_detection/tests -q` | **97 passed** in 26 s |
+| Repo-wide | `pytest tests -q` | **158 passed, 52 skipped, 2,984 subtests** in 163 s |
 
 Skip reasons: the retired `detection/` package (tests assert it is absent), the
 three quarantined suites that described a deleted corrector API
@@ -261,7 +263,9 @@ pytest's.
    and the corrector now lives in `4_ocr_correction/`, so it looked for
    `4_ocr_correction/vendor/segmenter` — which does not exist, leaving
    morphology silently disabled and `lambda_morph` cancelled out. **Fixed** in
-   this pass: the path now resolves through `repo_paths.REPO_ROOT`. Verified
+   this pass (and again after the 2026-10-25 reorganisation): the path now
+   resolves through `repo_paths.VENDORED_SEGMENTER_DATA`, so it follows the move
+   of the corrector into `4_ocr_correction/` automatically. Verified
    after the fix: `HAS_MORPH=True`, `MORPH_PATHS[0]=<repo>/vendor/segmenter`,
    `segmenter = AmharicMorphologicalSegmenter`, and the analyzer is actually
    called on OOV tokens (e.g. `ተከትሎማቸውም` → `known=False`, `pos=UN`,
@@ -273,10 +277,10 @@ pytest's.
    which is why gap 1 stayed invisible for so long: with no `pydantic` the
    import fails even on a correct path. Added to `requirements.txt`.
 3. **Two confusion matrices.** `2_training/config/confusion_matrix.json` differs
-   from `OCR_error_detection/Model/confusion_matrix.json` and is read by no code
+   from `4_ocr_correction/error_detection/Model/confusion_matrix.json` and is read by no code
    path; the `Model/` copy is the single source. Treat `2_training/config/` as a
    stale artefact.
-4. **15 MB duplicated dictionary** (`OCR_error_detection/main_i7_frq10.txt` ==
+4. **15 MB duplicated dictionary** (`4_ocr_correction/error_detection/main_i7_frq10.txt` ==
    `Model/main_i7_frq10.txt`). The root copy is only a fallback.
 5. **Build junk is tracked**: `__pycache__/*.pyc` (3), `augraphy_cache/*.png` (9),
    `font_diag_temp/` (48 images). `.gitignore` lists them, but tracked files are
@@ -285,12 +289,12 @@ pytest's.
    section was three generations of model old. Both fixed in this pass.
 7. **`5_correction_evaluation/README.md` never mentioned that the corrector
    measured worse than raw OCR.** §5.1 added there.
-8. **`docs/lgbm_review/build_synthetic_source.py` looked for its corpora at the
+8. **`tools/analysis/build_synthetic_source.py` looked for its corpora at the
    repository root** (they moved into the stage folders) and for
    `harmonized_corpus_jiwer.tsv` outside `Model/`. Its `os.path.exists` guards
    meant the decontamination step would silently run against nothing — the
    "0 shared 5-grams" property would have been reported as intact while it was
-   not. Paths fixed and missing files now abort. The other `docs/lgbm_review/`
+   not. Paths fixed and missing files now abort. The other `tools/analysis/`
    helper scripts had hard-coded `/home/user/OCR_corrector/...` paths; they now
    resolve them from `__file__`.
 9. **`2_training/data/` contains only a README** — the Tesseract inputs
@@ -306,7 +310,7 @@ pytest's.
 # detector facts
 python - <<'PY'
 import joblib
-p = joblib.load('OCR_error_detection/Model/detector_lgbm_conffree.pkl')
+p = joblib.load('4_ocr_correction/error_detection/Model/detector_lgbm_conffree.pkl')
 print(list(p), p['pass_thresh'], p['flag_thresh'], p['features'])
 print('trees', p['model'].num_trees())
 PY
@@ -314,7 +318,7 @@ PY
 # defaults + lexicon + timing
 python - <<'PY'
 import time
-from OCR_error_detection import DetectionEngine
+from error_detection import DetectionEngine
 t0 = time.time(); d = DetectionEngine(); print('init', round(time.time()-t0, 2), 's')
 print(d.lexicon_info)
 for w in ["እና", "በሽታ", "በሸታ", "አና", "የአድሜ", "ምዕፅራፍ"]:
@@ -323,7 +327,7 @@ for w in ["እና", "በሽታ", "በሸታ", "አና", "የአድሜ", "ምዕ�
 PY
 
 # tests
-pytest OCR_error_detection/tests -q
+pytest 4_ocr_correction/error_detection/tests -q
 pytest tests -q
 
 # corpus counts
@@ -355,5 +359,5 @@ should be re-measured rather than copied into new claims.
 * **2026-10-24** — created. Detector defaults, verdicts, timings, data counts,
   benchmark provenance, test counts, gaps 1–9. Same day, after this file was
   written: gaps 1–3 and 8 were fixed (vendored-segmenter path, `pydantic` in
-  `requirements.txt`, `docs/lgbm_review/` paths), which raised the root test
+  `requirements.txt`, `tools/analysis/` paths), which raised the root test
   total from 137/57 to 142/52 (§6).

@@ -1,6 +1,6 @@
 # 5_correction_evaluation/data — last audit outputs
 
-Produced by `05_collect_error_cases.py` from the 150-page benchmark run
+Produced by `02_collect_error_cases.py` from the 150-page benchmark run
 (the older corrector revision — see `docs/current_state.md` §5.1).
 
 | File | Size | Rows |

@@ -146,7 +146,7 @@ not a held-out test: the 100 pages in `Evaluation/` are part of the same corpus
 ```python
 # Default — main_i7 filtered to freq>=500 → 54,057 types, no SymSpell
 # (measured 2026-10-24: 3.7 s init, 0.48 ms/word; see docs/current_state.md)
-from OCR_error_detection import DetectionEngine
+from error_detection import DetectionEngine
 det = DetectionEngine()  # auto-finds Model/main_i7_frq10.txt
 
 # Full 737k types — slower but more coverage
@@ -482,7 +482,7 @@ det = DetectionEngine(dict_vocab_path="/path/to/main_i7.txt", dict_min_freq=100)
 **How:**
 ```python
 # Inside AmharicOCRCorrector.__init__:
-from OCR_error_detection.adapter import CorrectorDetectionAdapter
+from error_detection.adapter import CorrectorDetectionAdapter
 self.suspicion = CorrectorDetectionAdapter(self)  # reuses self.vocab etc.
 
 # Inside corrector loop:
@@ -504,7 +504,7 @@ verdict = self.suspicion.verdict(word, context, ocr_conf=conf, doc_freq=df)
 
 ```python
 # Default — uses main_i7 with freq>=500 → 54,057 types, no SymSpell
-from OCR_error_detection import DetectionEngine
+from error_detection import DetectionEngine
 det = DetectionEngine()  # auto-finds Model/main_i7_frq10.txt (54,057 types after the filter)
 
 # Explicit form of the default (freq>=500, 54,057 types, lowest FF 0.01%)

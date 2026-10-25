@@ -147,7 +147,7 @@ adopting them.
   to 1.93% after correction. That is the over-correction problem the framework
   warns about, and this change is aimed at it. It has not been re-measured.
 
-**Next step:** run `04_evaluate_full_corrector.py` on the same 150-page set with
+**Next step:** run `01_evaluate_full_corrector.py` on the same 150-page set with
 (a) HEAD defaults and (b) the new defaults, and compare strict CER, clean-token
 damage, and tokens changed. Tune `oov_anchor_margin` and `curated_confusion_cost`
 first.

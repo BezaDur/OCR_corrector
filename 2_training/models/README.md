@@ -9,5 +9,5 @@
 Two more packaged variants live at the repository root in `models/`:
 `amh_best.traineddata` (4.7 MB) and `amh_fast.traineddata` (644 KB). To use a
 model, copy its `.traineddata` into a tessdata directory as `amh.traineddata`;
-`3_training_evaluation/02_run_ocr_eval.py` expects `tesseract` and that
+`3_training_evaluation/01_run_ocr_eval.py` expects `tesseract` and that
 directory to exist.

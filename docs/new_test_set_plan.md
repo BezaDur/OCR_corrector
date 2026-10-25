@@ -54,7 +54,7 @@ results can be compared with real ones.
 
 ## Folder layout
 
-Use the same layout as `OCR_error_detection/Evaluation/`, so the existing scripts work:
+Use the same layout as `Evaluation/`, so the existing scripts work:
 
 ```
 fresh_eval/
@@ -75,7 +75,7 @@ tighter numbers.
 1. **Dictionary coverage.** Run:
 
    ```
-   python docs/lgbm_review/check_dictionary_coverage.py \
+   python tools/analysis/check_dictionary_coverage.py \
        --dict <path to main_i7.txt> --set fresh_eval
    ```
 
@@ -120,17 +120,17 @@ tighter numbers.
 Source: `telegram_c4.txt` (new source, pulled from the branch). Built in `synthetic_eval/`,
 which is git-ignored, so the images and text stay out of Git.
 
-- **Selection** (`docs/lgbm_review/build_synthetic_source.py`): 35 consecutive posts per
+- **Selection** (`tools/analysis/build_synthetic_source.py`): 35 consecutive posts per
   page, 100 pages sampled at random (seed 7). Posts sharing any word 5-gram with the
   training ground truth, the other corpus files, or the evaluation ground truth were
   removed (8,061 of 187,748 candidate posts). Final ground truth has 0 shared 5-grams with
   any of them.
-- **Rendering** (`docs/lgbm_review/make_synthetic_set.py`): A4 at 300 dpi, 36 px text,
+- **Rendering** (`tools/analysis/make_synthetic_set.py`): A4 at 300 dpi, 36 px text,
   11 legible fonts rotated page by page (Abyssinica SIL, Brana, FreeSerif, Noto Sans
   Ethiopic regular and bold, Nyala, Jiret, Jiret slant, Hiwua, WashRa BS, WashRa slant).
   Degradation rotates clean / light / medium. Five pages were too full; their last posts
   are not rendered and are not in the ground truth (manifest notes say so).
-- **OCR** (`docs/lgbm_review/ocr_synthetic_api.py`): Tesseract 5.5.1 through the Python API,
+- **OCR** (`tools/analysis/ocr_synthetic_api.py`): Tesseract 5.5.1 through the Python API,
   model `amh_fast` from `models/`, page segmentation mode 3. The command-line binary is not
   installed in this sandbox. On the saved preview images in `font_diag_temp/`, the API output
   matches the saved OCR exactly for Abyssinica and gives 0.952 word similarity for Noto and
@@ -141,7 +141,7 @@ which is git-ignored, so the images and text stay out of Git.
   (see "What I need from you" above).
 
 Still to do:
-1. Run `docs/lgbm_review/check_dictionary_coverage.py --dict <main_i7.txt> --set synthetic_eval`
+1. Run `tools/analysis/check_dictionary_coverage.py --dict <main_i7.txt> --set synthetic_eval`
    on your machine. It needs the dictionary file.
 2. Decide whether the degradation settings should be harsher, to match the real error rate.
 3. Run one page through `run_ocr.py` and compare with `synthetic_eval/OCRed/`.
