@@ -20,13 +20,28 @@ import tesserocr
 from tesserocr import PyTessBaseAPI, RIL
 
 
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python tools/analysis/ocr_synthetic_api.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+CONFIG = {
+    "images": os.path.join(_REPO_ROOT, "Evaluation", "images"),
+    "out": "synthetic_eval/OCRed",
+    "models": os.path.join(_REPO_ROOT, "2_training", "models", "packaged"),  # holds amh_fast.traineddata
+    "lang": "amh_fast",
+    "psm": 3,
+}
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--images", required=True)
-    ap.add_argument("--out", required=True)
-    ap.add_argument("--models", required=True, help="folder that holds <lang>.traineddata")
-    ap.add_argument("--lang", default="amh_fast")
-    ap.add_argument("--psm", type=int, default=3)
+    ap.add_argument("--images", default=CONFIG["images"])
+    ap.add_argument("--out", default=CONFIG["out"])
+    ap.add_argument("--models", default=CONFIG["models"], help="folder that holds <lang>.traineddata")
+    ap.add_argument("--lang", default=CONFIG["lang"])
+    ap.add_argument("--psm", type=int, default=CONFIG["psm"])
     args = ap.parse_args()
 
     images = []

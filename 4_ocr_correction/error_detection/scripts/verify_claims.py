@@ -56,6 +56,20 @@ EVAL_DIR = os.path.join(_ROOT, "Evaluation")
 RESULTS: list[dict] = []
 
 
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python 4_ocr_correction/error_detection/scripts/verify_claims.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+CONFIG = {
+    "corpus": eos.CORPUS,
+    "model": eos.SHIPPED_MODEL,
+    "claims": CLAIMS_JSON,
+    "fast": False,
+    "json": None,
+}
+
 def record(group: str, ident: str, title: str, ok: bool | None, detail: str):
     """ok=None means the check is informational (no pass/fail)."""
     status = "INFO" if ok is None else ("PASS" if ok else "FAIL")
@@ -348,11 +362,11 @@ def check_independence(df: pd.DataFrame, dev: pd.DataFrame, prod: pd.DataFrame, 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--corpus", default=eos.CORPUS)
-    ap.add_argument("--model", default=eos.SHIPPED_MODEL)
-    ap.add_argument("--claims", default=CLAIMS_JSON)
-    ap.add_argument("--fast", action="store_true", help="skip the two slow checks")
-    ap.add_argument("--json", default=None)
+    ap.add_argument("--corpus", default=CONFIG["corpus"])
+    ap.add_argument("--model", default=CONFIG["model"])
+    ap.add_argument("--claims", default=CONFIG["claims"])
+    ap.add_argument("--fast", action="store_true", default=CONFIG["fast"], help="skip the two slow checks")
+    ap.add_argument("--json", default=CONFIG["json"])
     args = ap.parse_args(argv)
 
     if not os.path.exists(args.claims):

@@ -45,6 +45,18 @@ OUTPUT_REPORT_TXT = repo_paths.workspace("confusion_report.txt")
 # -------------------------------------------------
 
 
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python 4_ocr_correction/01_build_confusion_matrix.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+CONFIG = {
+    "gt_dir": GT_DIR,
+    "ocr_dir": OCR_DIR,
+    "out": OUTPUT_MATRIX_JSON,
+}
+
 def align_characters_dp(true_str, ocr_str):
     """
     Standard dynamic programming Needleman-Wunsch string alignment.
@@ -120,9 +132,9 @@ def main():
     import argparse
     global GT_DIR, OCR_DIR, OUTPUT_MATRIX_JSON
     ap = argparse.ArgumentParser()
-    ap.add_argument("--gt-dir", default=GT_DIR)
-    ap.add_argument("--ocr-dir", default=OCR_DIR)
-    ap.add_argument("--out", default=OUTPUT_MATRIX_JSON)
+    ap.add_argument("--gt-dir", default=CONFIG["gt_dir"])
+    ap.add_argument("--ocr-dir", default=CONFIG["ocr_dir"])
+    ap.add_argument("--out", default=CONFIG["out"])
     a = ap.parse_args()
     GT_DIR, OCR_DIR, OUTPUT_MATRIX_JSON = a.gt_dir, a.ocr_dir, a.out
     print(f"GT  : {GT_DIR}")

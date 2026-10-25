@@ -51,6 +51,20 @@ MAIN_I7 = os.path.join(MODEL_DIR, "main_i7_frq10.txt")
 LOCAL_LEXICON = os.path.join(MODEL_DIR, "local_lexicon.txt")
 
 
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python 4_ocr_correction/error_detection/scripts/compare_lexicon_configs.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+CONFIG = {
+    "config": [],  # explicit 'name|model.pkl|lexicon.txt|min_freq' entries; empty = scan model_dir
+    "model_dir": "/tmp/det_cmp",
+    "max_pages": 0,
+    "json_report": None,
+    "verbose": False,
+}
+
 def _load_eval_module():
     """Import scripts/evaluate_child.py (the folder is not a package)."""
     path = os.path.join(_HERE, "evaluate_child.py")
@@ -171,13 +185,15 @@ def main(argv=None):
     ap.add_argument("--config", action="append", default=[],
                     help="'name|model.pkl|lexicon.txt|min_freq'; repeatable, "
                          "'-' means auto-resolve")
-    ap.add_argument("--model-dir", default="/tmp/det_cmp",
+    ap.add_argument("--model-dir", default=CONFIG["model_dir"],
                     help="with no --config: directory of candidate pickles "
                          "(default /tmp/det_cmp)")
-    ap.add_argument("--max-pages", type=int, default=0)
-    ap.add_argument("--json-report", default=None)
-    ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--max-pages", type=int, default=CONFIG["max_pages"])
+    ap.add_argument("--json-report", default=CONFIG["json_report"])
+    ap.add_argument("--verbose", action="store_true", default=CONFIG["verbose"])
     args = ap.parse_args(argv)
+    if not args.config:
+        args.config = list(CONFIG["config"])  # in-file RUN SETTINGS
 
     ev = _load_eval_module()
     pages = ev.load_pages(args.max_pages)

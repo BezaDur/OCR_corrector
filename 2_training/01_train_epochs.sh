@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# RUN SETTINGS: every setting is a variable below — edit them here or
+# override from the environment, then run with no arguments:
+#     bash 2_training/01_train_epochs.sh
+# See HOW_TO_RUN.md.
 # ==============================================================================
 # Step 9: Stefan Weil Sequential Epoch Runner for Tesseract LSTM
 # ==============================================================================

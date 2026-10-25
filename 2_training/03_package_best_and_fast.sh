@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# RUN SETTINGS: every setting is a variable below — edit them here or
+# override from the environment, then run with no arguments:
+#     bash 2_training/03_package_best_and_fast.sh
+# See HOW_TO_RUN.md.
 # ==============================================================================
 # Step 10: Packages the Best Checkpoint into Best and Fast .traineddata Models
 # ==============================================================================

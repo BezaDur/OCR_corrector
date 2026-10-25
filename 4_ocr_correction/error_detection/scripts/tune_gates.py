@@ -78,6 +78,29 @@ CURRENT_PASS = 0.10
 CURRENT_FLAG = 0.65
 
 
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python 4_ocr_correction/error_detection/scripts/tune_gates.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+CONFIG = {
+    "model": None,
+    "lexicon": None,
+    "min_freq": None,
+    "max_pages": 0,
+    "pass_grid": "0.00-0.60:0.01",
+    "flag_grid": "0.20-0.99:0.01",
+    "ff_budget": "0.05,0.10,0.25,0.50,1.00",
+    "miss_budget": "5,7.5,10,18",
+    "min_precision": 60.0,
+    "folds": 5,
+    "dump_probs": None,
+    "load_probs": None,
+    "json_report": None,
+    "verbose": False,
+}
+
 def _load_eval_module():
     path = os.path.join(_HERE, "evaluate_child.py")
     spec = importlib.util.spec_from_file_location("evaluate_child_for_gates", path)
@@ -376,26 +399,26 @@ def fmt_row(m):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--model", default=None, help="LightGBM payload (default: shipped)")
-    ap.add_argument("--lexicon", default=None, help="lexicon the model was trained on")
-    ap.add_argument("--min-freq", type=int, default=None)
-    ap.add_argument("--max-pages", type=int, default=0)
-    ap.add_argument("--pass-grid", default="0.00-0.60:0.01",
+    ap.add_argument("--model", default=CONFIG["model"], help="LightGBM payload (default: shipped)")
+    ap.add_argument("--lexicon", default=CONFIG["lexicon"], help="lexicon the model was trained on")
+    ap.add_argument("--min-freq", type=int, default=CONFIG["min_freq"])
+    ap.add_argument("--max-pages", type=int, default=CONFIG["max_pages"])
+    ap.add_argument("--pass-grid", default=CONFIG["pass_grid"],
                     help="lo-hi:step for the pass gate")
-    ap.add_argument("--flag-grid", default="0.20-0.99:0.01",
+    ap.add_argument("--flag-grid", default=CONFIG["flag_grid"],
                     help="lo-hi:step for the flag gate")
-    ap.add_argument("--ff-budget", default="0.05,0.10,0.25,0.50,1.00",
+    ap.add_argument("--ff-budget", default=CONFIG["ff_budget"],
                     help="comma-separated false-flag budgets (%%) for the frontier")
-    ap.add_argument("--miss-budget", default="5,7.5,10,18",
+    ap.add_argument("--miss-budget", default=CONFIG["miss_budget"],
                     help="comma-separated ceilings (%%) on real errors verdicted "
                          "PASS, i.e. missed outright")
-    ap.add_argument("--min-precision", type=float, default=60.0,
+    ap.add_argument("--min-precision", type=float, default=CONFIG["min_precision"],
                     help="minimum FLAG precision (%%) a flag gate must keep")
-    ap.add_argument("--folds", type=int, default=5, help="page folds for CV (0 = skip)")
-    ap.add_argument("--dump-probs", default=None, help="save collected probabilities (.npz)")
-    ap.add_argument("--load-probs", default=None, help="reuse collected probabilities (.npz)")
-    ap.add_argument("--json-report", default=None)
-    ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--folds", type=int, default=CONFIG["folds"], help="page folds for CV (0 = skip)")
+    ap.add_argument("--dump-probs", default=CONFIG["dump_probs"], help="save collected probabilities (.npz)")
+    ap.add_argument("--load-probs", default=CONFIG["load_probs"], help="reuse collected probabilities (.npz)")
+    ap.add_argument("--json-report", default=CONFIG["json_report"])
+    ap.add_argument("--verbose", action="store_true", default=CONFIG["verbose"])
     args = ap.parse_args(argv)
 
     def grid(spec):

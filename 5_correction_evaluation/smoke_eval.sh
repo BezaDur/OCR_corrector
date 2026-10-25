@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# RUN SETTINGS: every setting is a variable below — edit them here or
+# override from the environment, then run with no arguments:
+#     bash 5_correction_evaluation/smoke_eval.sh
+# See HOW_TO_RUN.md.
 # Fast smoke run of 01_evaluate_full_corrector.py on the first N pages.
 # Builds a small subset by copying files, so it works with any evaluator version.
 # Usage: ./smoke_eval.sh [N]        (default N=10)

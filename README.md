@@ -213,6 +213,7 @@ print(corrector.correct_text("ሰላም በሸታ"))
 
 ## Docs
 
+- `HOW_TO_RUN.md` — **start here to run anything**: every script, stage by stage, no CLI arguments
 - `docs/current_state.md` — verified facts: defaults, counts, timings, what is measured and what is not
 - `docs/detector_out_of_sample.md` — the detector's held-out numbers, calibration, lexicon split, limits
 - `docs/verify_claims.md` — how to re-derive every number (and test on new data) before believing it

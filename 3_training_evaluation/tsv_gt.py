@@ -25,6 +25,19 @@ from amharic_ocr_corrector import EthiopicPunctuationManager as P
 EXTRA = ["core", "gt_word", "gt_status"]
 
 
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python 3_training_evaluation/tsv_gt.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+CONFIG = {
+    "tsv_in": os.path.join(os.environ.get("TESSERACT_WORKSPACE", "/media/des/Tess/Tesseract2"),
+            "synthetic_eval", "tsv", "page_0001.tsv"),  # a Tesseract TSV for one page
+    "gt_txt": os.path.join(_root, "Evaluation", "GroundTruth", "page_0001.gt.txt"),
+    "tsv_out": "/tmp/page_0001.gt.tsv",
+}
+
 def _core(token: str) -> str:
     norm = P.normalize_sentence_text(token).split()
     return P.decompose_token(norm[0])[1] if norm else ""
@@ -94,9 +107,9 @@ def annotate_tsv(tsv_in: str, gold_text: str, tsv_out: str) -> int:
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser(description="Add ground truth columns to a Tesseract TSV")
-    ap.add_argument("tsv_in")
-    ap.add_argument("gt_txt")
-    ap.add_argument("tsv_out")
+    ap.add_argument("tsv_in", nargs="?", default=CONFIG["tsv_in"])
+    ap.add_argument("gt_txt", nargs="?", default=CONFIG["gt_txt"])
+    ap.add_argument("tsv_out", nargs="?", default=CONFIG["tsv_out"])
     a = ap.parse_args()
     with open(a.gt_txt, encoding="utf-8") as fh:
         n = annotate_tsv(a.tsv_in, fh.read(), a.tsv_out)

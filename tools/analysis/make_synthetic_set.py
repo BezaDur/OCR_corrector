@@ -36,6 +36,29 @@ LEVELS = {
 }
 
 
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python tools/analysis/make_synthetic_set.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+CONFIG = {
+    "text": os.path.join(_REPO_ROOT, "synthetic_eval", "source_pages.txt"),  # from build_synthetic_source.py
+    "font": [os.path.join(_REPO_ROOT, "1_data_preparation", "fonts", "AbyssinicaSIL-R.ttf"),
+            os.path.join(_REPO_ROOT, "1_data_preparation", "fonts", "NotoSansEthiopic-Regular.ttf")],
+    "out": "fresh_eval",
+    "source": "telegram_c4 (1_data_preparation/data/telegram_c4.txt)",
+    "collected": "2026-10",
+    "size": 36,
+    "dpi": 300,
+    "width": 2480,
+    "height": 3508,
+    "margin": 160,
+    "line_gap": 18,
+    "seed": 7,
+}
+
 def split_pages(path):
     pages, cur = [], []
     with open(path, encoding="utf-8") as f:
@@ -115,19 +138,19 @@ def degrade(img, level, rng):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--text", required=True)
-    ap.add_argument("--font", required=True, nargs="+",
+    ap.add_argument("--text", default=CONFIG["text"])
+    ap.add_argument("--font", default=CONFIG["font"], nargs="+",
                     help="one or more TTF/OTF files with Ethiopic glyphs; pages rotate through them")
-    ap.add_argument("--out", required=True)
-    ap.add_argument("--source", required=True, help="where the text came from (manifest)")
-    ap.add_argument("--collected", required=True, help="date collected, e.g. 2026-10")
-    ap.add_argument("--size", type=int, default=36, help="font size in pixels")
-    ap.add_argument("--dpi", type=int, default=300)
-    ap.add_argument("--width", type=int, default=2480)
-    ap.add_argument("--height", type=int, default=3508)
-    ap.add_argument("--margin", type=int, default=160)
-    ap.add_argument("--line-gap", type=int, default=18)
-    ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--out", default=CONFIG["out"])
+    ap.add_argument("--source", default=CONFIG["source"], help="where the text came from (manifest)")
+    ap.add_argument("--collected", default=CONFIG["collected"], help="date collected, e.g. 2026-10")
+    ap.add_argument("--size", type=int, default=CONFIG["size"], help="font size in pixels")
+    ap.add_argument("--dpi", type=int, default=CONFIG["dpi"])
+    ap.add_argument("--width", type=int, default=CONFIG["width"])
+    ap.add_argument("--height", type=int, default=CONFIG["height"])
+    ap.add_argument("--margin", type=int, default=CONFIG["margin"])
+    ap.add_argument("--line-gap", type=int, default=CONFIG["line_gap"])
+    ap.add_argument("--seed", type=int, default=CONFIG["seed"])
     args = ap.parse_args()
 
     fonts = [(path, ImageFont.truetype(path, args.size)) for path in args.font]

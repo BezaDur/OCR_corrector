@@ -35,6 +35,17 @@ LANG = "amh_fast"
 PSM = "3"
 
 
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python 4_ocr_correction/error_detection/run_ocr.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+CONFIG = {
+    "images": IMAGES_DIR,
+    "out": OUTPUT_DIR,
+}
+
 def run_tesseract(image_path, output_base):
     """Run Tesseract on one image. Returns (text, word_confidences)."""
 
@@ -85,8 +96,8 @@ def run_tesseract(image_path, output_base):
 def main():
     global IMAGES_DIR, OUTPUT_DIR
     ap = argparse.ArgumentParser(description="OCR page images with the deployment settings.")
-    ap.add_argument("--images", default=IMAGES_DIR, help="folder of page images")
-    ap.add_argument("--out", default=OUTPUT_DIR, help="folder for .ocr.txt and .conf.tsv")
+    ap.add_argument("--images", default=CONFIG["images"], help="folder of page images")
+    ap.add_argument("--out", default=CONFIG["out"], help="folder for .ocr.txt and .conf.tsv")
     args = ap.parse_args()
     IMAGES_DIR, OUTPUT_DIR = args.images, args.out
 

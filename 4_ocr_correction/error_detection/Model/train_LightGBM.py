@@ -129,6 +129,37 @@ LGB_PARAMS = {
 # Inputs
 # --------------------------------------------------------------------------- #
 
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python 4_ocr_correction/error_detection/Model/train_LightGBM.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+CONFIG = {
+    "lexicon": LEXICON_PATH,
+    "corpus": HARMONIZED_TSV,
+    "min_freq": DEFAULT_MIN_FREQ,
+    "max_types": None,
+    "char_lm": CHAR_LM_PATH,
+    "no_char_lm": False,
+    "out": MODEL_OUTPUT,
+    "report": None,
+    "pass_thresh": DEFAULT_PASS_THRESH,
+    "flag_thresh": DEFAULT_FLAG_THRESH,
+    "folds": 5,
+    "rounds": 500,
+    "early_stopping": 50,
+    "group_by": "text",
+    "dev_pages": DEV_PAGES,
+    "sweep_freqs": None,
+    "val_pages": VAL_PAGES,
+    "tune_thresholds": False,
+    "ff_target": 0.0001,
+    "seed": 42,
+    "quick": False,
+    "quick_pages": 60,
+}
+
 def load_master_dict(filepath):
     """Raw surface form -> max frequency, as stored in the dictionary file."""
     print(f"Loading main dictionary: {filepath}...")
@@ -439,41 +470,41 @@ def feature_importance_table(model):
 def parse_args(argv=None):
     ap = argparse.ArgumentParser(description="Train the LightGBM OCR error detector.",
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--lexicon", default=LEXICON_PATH,
+    ap.add_argument("--lexicon", default=CONFIG["lexicon"],
                     help="dictionary file (word + frequency)")
-    ap.add_argument("--corpus", default=HARMONIZED_TSV,
+    ap.add_argument("--corpus", default=CONFIG["corpus"],
                     help="harmonized corpus TSV")
-    ap.add_argument("--min-freq", type=int, default=DEFAULT_MIN_FREQ,
+    ap.add_argument("--min-freq", type=int, default=CONFIG["min_freq"],
                     help="drop lexicon entries below this frequency (README FINAL: 500)")
-    ap.add_argument("--max-types", type=int, default=None,
+    ap.add_argument("--max-types", type=int, default=CONFIG["max_types"],
                     help="keep at most this many types (default: no cap)")
-    ap.add_argument("--char-lm", default=CHAR_LM_PATH, help="character KenLM model")
-    ap.add_argument("--no-char-lm", action="store_true",
+    ap.add_argument("--char-lm", default=CONFIG["char_lm"], help="character KenLM model")
+    ap.add_argument("--no-char-lm", action="store_true", default=CONFIG["no_char_lm"],
                     help="train without the KenLM feature (the column becomes NaN)")
-    ap.add_argument("--out", default=MODEL_OUTPUT, help="model output path")
-    ap.add_argument("--report", default=None, help="JSON report path (default: <out>.report.json)")
-    ap.add_argument("--pass-thresh", type=float, default=DEFAULT_PASS_THRESH)
-    ap.add_argument("--flag-thresh", type=float, default=DEFAULT_FLAG_THRESH)
-    ap.add_argument("--folds", type=int, default=5)
-    ap.add_argument("--rounds", type=int, default=500)
-    ap.add_argument("--early-stopping", type=int, default=50)
-    ap.add_argument("--group-by", choices=("text", "document", "page"), default="text",
+    ap.add_argument("--out", default=CONFIG["out"], help="model output path")
+    ap.add_argument("--report", default=CONFIG["report"], help="JSON report path (default: <out>.report.json)")
+    ap.add_argument("--pass-thresh", type=float, default=CONFIG["pass_thresh"])
+    ap.add_argument("--flag-thresh", type=float, default=CONFIG["flag_thresh"])
+    ap.add_argument("--folds", type=int, default=CONFIG["folds"])
+    ap.add_argument("--rounds", type=int, default=CONFIG["rounds"])
+    ap.add_argument("--early-stopping", type=int, default=CONFIG["early_stopping"])
+    ap.add_argument("--group-by", choices=("text", "document", "page"), default=CONFIG["group_by"],
                     help="cross-validation grouping (docs/lgbm_step2_gate.md: text)")
-    ap.add_argument("--dev-pages", type=int, default=DEV_PAGES,
+    ap.add_argument("--dev-pages", type=int, default=CONFIG["dev_pages"],
                     help="page_0001..page_N are held out of the production fit")
-    ap.add_argument("--sweep-freqs", default=None,
+    ap.add_argument("--sweep-freqs", default=CONFIG["sweep_freqs"],
                     help="e.g. 10,100,500,1000 — reproduce the README dictionary table "
                          "on a 1200/67 page split instead of training once")
-    ap.add_argument("--val-pages", type=int, default=VAL_PAGES,
+    ap.add_argument("--val-pages", type=int, default=CONFIG["val_pages"],
                     help="development pages used by --sweep-freqs")
-    ap.add_argument("--tune-thresholds", action="store_true",
+    ap.add_argument("--tune-thresholds", action="store_true", default=CONFIG["tune_thresholds"],
                     help="pick the gates from the out-of-fold sweep instead of the README's")
-    ap.add_argument("--ff-target", type=float, default=0.0001,
+    ap.add_argument("--ff-target", type=float, default=CONFIG["ff_target"],
                     help="false-flag target for --tune-thresholds (README FINAL: 0.01%%)")
-    ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--quick", action="store_true",
+    ap.add_argument("--seed", type=int, default=CONFIG["seed"])
+    ap.add_argument("--quick", action="store_true", default=CONFIG["quick"],
                     help="smoke run: 60 pages, 2 folds, 50 rounds, capped lexicon")
-    ap.add_argument("--quick-pages", type=int, default=60,
+    ap.add_argument("--quick-pages", type=int, default=CONFIG["quick_pages"],
                     help="pages kept by --quick (development pages stay held out)")
     return ap.parse_args(argv)
 

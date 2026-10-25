@@ -22,6 +22,19 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from stage1_fit import auc, feature_names, leave_one_page_out  # noqa: E402
 
 
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python 5_correction_evaluation/05_fit_stage1_scores.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+CONFIG = {
+    "verdict_dir": os.path.join(os.environ.get("TESSERACT_WORKSPACE", "/media/des/Tess/Tesseract2"),
+            "synthetic_eval", "verdicts"),  # *.verdicts.jsonl from 01_evaluate_full_corrector.py
+    "target": 0.85,
+    "l2": 1.0,
+}
+
 def precision_table(scores, rows, thresholds):
     out = []
     for t in thresholds:
@@ -35,9 +48,9 @@ def precision_table(scores, rows, thresholds):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("verdict_dir")
-    ap.add_argument("--target", type=float, default=0.85)
-    ap.add_argument("--l2", type=float, default=1.0)
+    ap.add_argument("verdict_dir", nargs="?", default=CONFIG["verdict_dir"])
+    ap.add_argument("--target", type=float, default=CONFIG["target"])
+    ap.add_argument("--l2", type=float, default=CONFIG["l2"])
     args = ap.parse_args()
 
     rows = []

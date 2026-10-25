@@ -37,6 +37,18 @@ BASE_SEED = 42
 # -------------------------------------------------
 
 
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python 1_data_preparation/06_compile_lstmf_and_split.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+CONFIG = {
+    "gt_dir": GT_DIR,
+    "lists_dir": LISTS_DIR,
+    "verbose": False,
+}
+
 def compile_single_lstmf(tif_path):
     """
     Executes Tesseract to compile one .tif + .box pair into a .lstmf tensor.
@@ -70,11 +82,11 @@ def _parse_args(argv=None):
     import argparse
     ap = argparse.ArgumentParser(description="Compile training images into .lstmf files and write the train/eval lists.",
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--gt-dir", default=GT_DIR,
+    ap.add_argument("--gt-dir", default=CONFIG["gt_dir"],
                     help="directory with the generated .tif/.box/.gt.txt triples")
-    ap.add_argument("--lists-dir", default=LISTS_DIR,
+    ap.add_argument("--lists-dir", default=CONFIG["lists_dir"],
                     help="where to write list.train / list.eval")
-    ap.add_argument("-v", "--verbose", action="store_true", help="more output")
+    ap.add_argument("-v", "--verbose", action="store_true", default=CONFIG["verbose"], help="more output")
     return ap.parse_args(argv)
 
 
