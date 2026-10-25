@@ -10,7 +10,7 @@ or the production lexicon. They use:
   * the REAL checked-in confusion_matrix.json,
   * the real symspellpy (install it with `pip install -r requirements.txt`).
 
-Their job is to pin the interface contract that 04_evaluate_full_corrector.py
+Their job is to pin the interface contract that 01_evaluate_full_corrector.py
 and the rest of the tooling depend on, and to guard the specific regressions
 called out in docs/architecture_review.md.
 
@@ -27,7 +27,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-CONFUSION = str(ROOT / "OCR_error_detection" / "Model" / "confusion_matrix.json")
+CONFUSION = str(ROOT / "4_ocr_correction" / "error_detection" / "Model" / "confusion_matrix.json")
 
 
 # --------------------------------------------------------------------------- #
@@ -536,7 +536,7 @@ class TestSymSpellDistance(CorrectorTestCase):
         import subprocess
         import sys
         here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        script = os.path.join(here, "5_correction_evaluation", "04_evaluate_full_corrector.py")
+        script = os.path.join(here, "5_correction_evaluation", "01_evaluate_full_corrector.py")
         r = subprocess.run(
             [sys.executable, script, "--symspell-distance", "1", "--help"],
             capture_output=True, text=True, timeout=120)
@@ -547,7 +547,7 @@ class TestSymSpellDistance(CorrectorTestCase):
         import subprocess
         import sys
         here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        script = os.path.join(here, "5_correction_evaluation", "04_evaluate_full_corrector.py")
+        script = os.path.join(here, "5_correction_evaluation", "01_evaluate_full_corrector.py")
         for flag, value in (("--trie-search", None),
                             ("--trusted-long-word-frequency", "5"),
                             ("--trusted-short-word-frequency", "5")):
@@ -827,7 +827,7 @@ class TestOptimizedDPEquivalence(CorrectorTestCase):
 
 
 class TestEvaluatorContract(CorrectorTestCase):
-    """§2 guard: 04_evaluate_full_corrector.py must be able to build HEAD.
+    """§2 guard: 01_evaluate_full_corrector.py must be able to build HEAD.
 
     The committed benchmark JSON was produced by an earlier revision whose
     options no longer exist; this pins the option set that the evaluator
@@ -857,7 +857,7 @@ class TestEvaluatorContract(CorrectorTestCase):
         has since been restored as a real constructor parameter, so the
         evaluator passing it is now correct.
         """
-        src = (ROOT / "5_correction_evaluation" / "04_evaluate_full_corrector.py").read_text(encoding="utf-8")
+        src = (ROOT / "5_correction_evaluation" / "01_evaluate_full_corrector.py").read_text(encoding="utf-8")
         for dead in ("candidate_backend", "trie_search",
                      "trusted_long_word_frequency", "trusted_short_word_frequency"):
             self.assertNotIn(f"{dead}=", src,
@@ -915,7 +915,7 @@ class TestStage1Detection(unittest.TestCase):
 
     def _mk(self, **kw):
         return self.mod.AmharicOCRCorrector(
-            kenlm_path="", confusion_matrix_path=str(ROOT / "OCR_error_detection" / "Model" / "confusion_matrix.json"),
+            kenlm_path="", confusion_matrix_path=str(ROOT / "4_ocr_correction" / "error_detection" / "Model" / "confusion_matrix.json"),
             dict_vocab_path=self.lex, lm=self.NullLM(),
             state_factory=lambda: self.NullLM.S(),
             max_lexicon_types=200, segmenter=None, **kw)

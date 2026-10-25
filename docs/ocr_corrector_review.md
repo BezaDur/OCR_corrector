@@ -10,14 +10,14 @@ Small candidate-generation probes used the real confusion JSON and a tiny trie, 
 
 ## Current pipeline
 
-1. `01_generate_eval_pages.py` renders text in multiple fonts and applies degradation.
-2. `02_run_ocr_eval.py` runs the older configured OCR model into `ocr_pred`; `11_benchmark_new_model.py` runs the configured newer model into `ocr_new_model`.
-3. `03_build_confusion_matrix.py` aligns ground truth to `ocr_new_model`, estimates directional edit costs, and writes the JSON.
+1. `07_generate_eval_pages.py` renders text in multiple fonts and applies degradation.
+2. `01_run_ocr_eval.py` runs the older configured OCR model into `ocr_pred`; `02_benchmark_new_model.py` runs the configured newer model into `ocr_new_model`.
+3. `01_build_confusion_matrix.py` aligns ground truth to `ocr_new_model`, estimates directional edit costs, and writes the JSON.
 4. The active corrector loads KenLM, the external segmenter, and a nested-dictionary trie seeded from segmenter frequencies plus `main_i7.txt` and abbreviations.
 5. Each line is normalized and split on whitespace; outer punctuation is peeled and selected combining marks are removed.
 6. Frequent words bypass search. Other words get weighted trie candidates, plus an authenticated prefix repair and a trailing-character removal heuristic. The observed word is normally retained at zero cost.
 7. A left-to-right beam combines KenLM, optical cost, boolean morphology reward, and an observed-word anchor bonus.
-8. `04_evaluate_full_corrector.py` calculates raw/corrected CER and WER. `05_collect_error_cases.py` classifies residual correction decisions from exact word alignments (see `docs/decision_audit.md`). `12_audit_raw_ocr_sentences.py` separately canonicalizes punctuation before a raw-OCR audit.
+8. `01_evaluate_full_corrector.py` calculates raw/corrected CER and WER. `02_collect_error_cases.py` classifies residual correction decisions from exact word alignments (see `docs/decision_audit.md`). `06_audit_raw_ocr_sentences.py` separately canonicalizes punctuation before a raw-OCR audit.
 
 **Good foundations:** directional confusion costs; always retaining the observed token; separating punctuation from lexical LM input; caching candidate sets; and a conservative bias toward keeping recognized words. Keep these ideas.
 
@@ -86,7 +86,7 @@ A frequent observed token produces only itself, regardless of context or optical
 
 ### 5. Optical costs are partly overwritten and incompletely calibrated
 
-Locations: `_get_del_cost`, `_get_ins_cost`, `03_build_confusion_matrix.py`.
+Locations: `_get_del_cost`, `_get_ins_cost`, `01_build_confusion_matrix.py`.
 
 Both insertion and deletion costs are capped at 2.4. The stored insertion costs range from 8.5155 to 11.5129, so **every stored insertion gets exactly 2.4**. Relative insertion evidence is lost. A substitution costing more than 4.8 can be represented as one deletion plus one insertion costing 4.8, where the search budget permits it.
 
