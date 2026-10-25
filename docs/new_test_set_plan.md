@@ -4,9 +4,16 @@ Date: 2026-10-13. Branch: `arena/3ca31a9a-ocr-corrector`.
 
 ## Why
 
-Every document in the current corpus is also in the dictionary. The 100 evaluation pages
-are also part of the training text (see `docs/lgbm_step2_gate.md`, check C6). So the
-evaluation numbers cannot show how the detector behaves on text it has never seen.
+Every document in the current corpus is also in the dictionary, so the evaluation
+cannot show how the detector behaves on genuinely new *vocabulary*.
+
+> **Update (2026-10-25):** the second half of this paragraph was wrong. The 100
+> evaluation pages are *not* part of the detector's training text — see the
+> correction at the top of `docs/lgbm_step2_gate.md` and
+> `docs/detector_out_of_sample.md` §3. Held-out-text performance is now measured
+> (recall 91–92 % at ≈0.1 % false flags). What remains unmeasured is behaviour on
+> documents whose *words* are not in the dictionary, which is still the reason to
+> build the set below.
 
 The fix is a new test set made from text that is not in the corpus at all. The test set
 is synthetic: we collect the text, render it as page images, run OCR on the images, and

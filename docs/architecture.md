@@ -1,5 +1,18 @@
 # Architecture — Parent Project vs Child Project
 
+> **Status (2026-10-25): the migration described below is done.** The detector is
+> `4_ocr_correction/error_detection/`, the page corpus is `Evaluation/` at the
+> root, cross-stage helpers are in `tools/`, and the root files are import shims
+> (map: `docs/repo_layout.md`). "Current (messy)" is kept as the before-picture.
+>
+> Numbers in this document that conflict with `docs/current_state.md` are stale
+> — in particular "default 50k types freq>=10 / 2.9 s init" (the default is
+> freq ≥ 500 → 54,057 types, 3.7 s here) and `verdict("በሸታ") → FLAG 0.85` (the
+> shipped model returns **gray 0.154** with `doc_freq=2`, 0.314 with no
+> context). "Val recall 94.2 % FF 0.01 %" is a
+> selection number; the held-out measurement is **92.4 % recall at 0.102 %
+> false flags** (`docs/detector_out_of_sample.md`).
+
 **You asked: Organize whole project sensibly, not just data but scripts, and think about how parent imports child.**
 
 ## Overview
@@ -14,7 +27,7 @@ Parent Project: OCR Training + Correction
 
 Child Project: error_detection (error detection)
   ├── Detects errors: PASS / GRAY / FLAG
-  ├── Self-contained: detector.py, Model/, Evaluation/, tests/
+  ├── Self-contained: detector.py, Model/, tests/ (page corpus: Evaluation/ at the root)
   └── Used by parent via adapter: 4_ocr_correction calls error_detection
 ```
 
@@ -81,7 +94,8 @@ Child Project: error_detection (error detection)
   Model training:
     harmonized_corpus_jiwer.tsv (1367 pages, 946k words, 49MB)
     → 1200 train / 67 val, 14 feats conf-free, freq>=500 filter 54k types
-    → Val recall 94.2% FF 0.01% BEST
+    → Val recall 94.2% FF 0.01% BEST (selection on 67 pages)
+    → held-out: 92.4% recall at 0.102% false flags
 ```
 
 **LightGBM does major work (90%), others are feature providers.**
@@ -124,7 +138,9 @@ except Exception as e:
 - Single source of truth: LightGBM authoritative, SuspicionScorer fallback
 - No duplicate dictionary loading (saves 1-2GB RAM)
 - Child self-contained, parent calls it, no circular dependency
-- Default 50k types freq>=10 no SymSpell → 2.9s init, 0.56 ms/word, no PC crash
+- Default lexicon: main_i7 filtered to freq ≥ 500 → 54,057 types; SymSpell off
+  → 3.7 s init and 0.48 ms/word measured in the verification sandbox
+  (`docs/current_state.md` §2)
 
 ---
 
@@ -215,7 +231,8 @@ except Exception as e:
 │   ├── utils.py
 │   ├── run_ocr.py
 │   ├── Model/
-│   │   ├── detector_lgbm_conffree.pkl (FINAL, 3.5MB, main_i7 freq>=500 54k types, recall 94.2% FF 0.01%)
+│   │   ├── detector_lgbm_conffree.pkl (3.5MB, main_i7 freq>=500 = 54,057 types;
+│   │   │    held-out recall 92.4% at 0.102% false flags)
 │   │   ├── main_i7_frq10.txt (737k types, 15MB, from bigger data, freq>=10, max freq 5.6M, default dict)
 │   │   ├── local_lexicon.txt (750k types, fallback)
 │   │   ├── confusion_matrix.json (single source, 47K)
@@ -298,12 +315,15 @@ from error_detection.adapter import CorrectorDetectionAdapter
 # Option 1: Use DetectionEngine directly (self-contained, loads its own dict)
 det = DetectionEngine(
     dict_vocab_path="4_ocr_correction/error_detection/Model/main_i7_frq10.txt",
-    dict_min_freq=500,  # 54k types, best FF 0.01%
+    dict_min_freq=500,  # 54,057 types; chosen on the 67-page validation slice
     max_lexicon_types=None,
     enable_symspell=False  # default, fast, no crash
 )
-verdict = det.verdict("በሸታ", doc_freq=1)
-print(verdict.label, verdict.suspicion)  # FLAG 0.85
+verdict = det.verdict("አና", doc_freq=1)
+print(verdict.label, verdict.suspicion)  # flag 1.0
+# verdict("በሸታ", doc_freq=2) is gray 0.154 (0.314 when doc_freq is None), not the
+# old FLAG 0.85: በሸታ is in the dictionary at
+# freq 263 and is only out-of-lexicon because the default loader cuts at 500
 
 # Option 2: Use via adapter (reuses parent's vocab, no double load)
 class AmharicOCRCorrector:

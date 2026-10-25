@@ -2,6 +2,31 @@
 
 Date: 2026-10-13. Branch: `arena/3ca31a9a-ocr-corrector`.
 
+> **Status (2026-10-24): most of the "Bottom line" below no longer describes the code.**
+>
+> * "Not used by the corrector" — fixed. `CorrectorDetectionAdapter` now builds
+>   `DetectionEngine` and delegates every verdict to it; `SuspicionScorer` is only
+>   the fallback when the engine cannot be constructed.
+> * "Verdict logic is patched by hard floors" — fixed. The floors were removed;
+>   the calibrated payload thresholds (0.10 / 0.65) decide.
+> * "Cannot be imported from the repo root" — fixed. `from 4_ocr_correction/error_detection
+>   import DetectionEngine` works from anywhere; the imports are absolute.
+> * "No feature-name guard" — fixed. `DetectionEngine.__init__` raises
+>   `FeatureError` for a payload that asks for a column this code cannot compute.
+> * "`doc_freq` default" — fixed. Missing context is NaN, never a magic number.
+> * "Adapter bypasses the model" — fixed, as above.
+>
+> **The "in-sample" caveat in §2–§3 no longer applies to the shipped model.** It
+> was true of the model this review examined, which had been fit on all 1,367
+> pages. The shipped model holds out 100 pages (`DEV_PAGES = 100`) and those
+> pages are text-disjoint from its training pages (76 of 100 share no 5-gram at
+> all), so §3 can now be compared against a real held-out measurement:
+> **recall 92.4 %, false flag 0.10 %, AUC 0.923, ECE 0.005** —
+> `docs/detector_out_of_sample.md`, numbers in `docs/current_state.md` §5.2.
+> The stored `Evaluation/analysis.tsv` is still stale (the current engine agrees
+> with only 85.6 % of its verdicts). The recommendations in §5 remain a good
+> checklist.
+
 > **Update.** Confidence is excluded from training (decided after this review). The
 > recommendation to add confidence as a feature (sections 4.1 and 5, item 4) is withdrawn.
 > The plain-language account of step 1, including the dictionary and confidence decisions,

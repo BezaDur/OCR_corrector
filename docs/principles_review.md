@@ -1,5 +1,14 @@
 # Principles review — does the code follow the post-OCR framework?
 
+> **Status (2026-10-24): historical scorecard.** The "Now" column is what landed
+> on the branch this review was written for, and it still matches the code, but
+> two numbers are out of date: the test suite is now **56 child tests** and
+> **142 root tests + 52 documented skips** (`tests/test_head_contract.py` is the
+> contract suite — `docs/current_state.md` §6), and the `requirements-symspell.txt`
+> file does not exist; `symspellpy==6.10.0` is in `requirements.txt`. Nothing in
+> this file has been benchmarked end to end — the KenLM model still is not in the
+> repository.
+
 Reference: the "Framework" document (98% initial accuracy; over-correction is the
 main risk; act like a surgical tool: fast, conservative, triggered only when needed).
 
@@ -75,10 +84,11 @@ this checkout.
 On the unmodified HEAD, 11 of these 14 fail; the other 3 error only because they
 pass keyword arguments HEAD does not have. So they guard the defects above.
 
-**Test status:** `python -m unittest discover -s tests` → 112 tests, OK (9 skipped).
-Setup note: `symspellpy` must be installed (`requirements-symspell.txt`). On a
-system Python without it, 68 tests error at import. In this sandbox I used a
-virtualenv (`/home/user/.venv_ocr`) because the system Python is PEP 668 managed.
+**Test status when this was written:** 112 tests, OK (9 skipped) — that was the
+suite of the revision under review. Current counts are in `docs/current_state.md`
+§6 (56 child + 142 root tests, 52 skips). Setup note: `symspellpy==6.10.0` and
+`pydantic` are in `requirements.txt`; there is no `requirements-symspell.txt` in
+this tree. On a PEP 668 managed system Python, use a virtualenv.
 
 ---
 

@@ -1,5 +1,16 @@
 # Two-phase SymSpell validation
 
+> **Status (2026-10-24): procedure is current, some flags are not.** The
+> evaluator exists and runs, but: `--backend trie` no longer exists (only
+> `symspell` is accepted; the trie backend was removed), `--trie-search` and
+> `--trusted-{long,short}-word-frequency` are rejected with an explanation, and
+> `requirements-symspell.txt` does not exist in this tree — `symspellpy==6.10.0`
+> is in `requirements.txt`. The evaluator's CLI defaults (`--max-optical-cost
+> 4.8`, `--beam-width 5`, `--lambda-optical 0.9`, `--lambda-lm 2.0`) also differ
+> from the corrector's constructor defaults (`3.6 / 4 / 1.2 / 1.8`), so pass
+> every value explicitly and record it in the JSON report. Last committed result
+> and its provenance: `docs/current_state.md` §5.1.
+
 This is a benchmark procedure, not a claimed result. The supplied 6,928→903 ms measurement is an approximately 87% reduction for that run, but the old script timed candidates before sentences, warming its caches. Adding those token timings to sentence timing is invalid. SymSpell hash probes are average O(1); whole lookups also generate signatures, scan collision buckets, verify suggestions and rerank them. Exact candidate lists and 15–30 ms sentence latency cannot be promised. Full-vocabulary RAM and morphology costs may still dominate.
 
 ## Phase A — targeted regressions and cold/warm measurements

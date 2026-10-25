@@ -1,5 +1,17 @@
 # Project Structure — Sensible Organization
 
+> **Status (2026-10-25): this document is the plan that was executed; it is kept
+> as the historical rationale.** For where files actually live today, use
+> **[`docs/repo_layout.md`](repo_layout.md)**. The "Current Layout (before reorg)"
+> tree below is the before-picture. The after-tree is what you now see, plus the
+> 2026-10-25 reorganisation: per-stage script numbering, `tools/` for cross-stage
+> helpers, and the detector at `4_ocr_correction/error_detection/`.
+>
+> Numbers in this file are stale where they differ from `docs/current_state.md`
+> ("80K lines" for the corrector — it is 1,817 lines / 88 KB; "default 50k types
+> freq>=10" — the default is freq ≥ 500 → 54,057 types; "recall 94.2 % FF 0.01 %"
+> — that was selection on 67 pages, held-out is 92.4 % at 0.102 %).
+
 **You asked: Organizing it in a sensible manner, not just data but also scripts and other stuff is good practice. Also, directory structures, I want files relevant to detection should be inside the directory.**
 
 ## Layout
@@ -154,7 +166,7 @@ class AmharicOCRCorrector:
 ## Benefits
 
 - **Sensible**: Parent pipeline 1→2→3→4→5 clear, child self-contained
-- **No crash**: Default 50k types no SymSpell, 2.9s init, won't crash PC
+- **No crash**: default lexicon 54,057 types, no SymSpell (3.7 s init, 0.48 ms/word measured 2026-10-24)
 - **Single source**: Dictionary main_i7_frq10.txt default for all needs, confusion_matrix.json single source
 - **Good practice**: Scripts call dictionary, don't train it; child doesn't train dict, parent doesn't duplicate
 - **Easy import**: Parent calls child via adapter, no circular, no double memory

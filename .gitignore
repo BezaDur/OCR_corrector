@@ -21,6 +21,7 @@ dist/
 # Local Python environments and caches
 .venv/
 __pycache__/
+.pytest_cache/
 
 # Machine-local benchmark reports
 /benchmark_results/

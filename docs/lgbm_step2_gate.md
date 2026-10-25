@@ -1,5 +1,16 @@
 # Step 2: data checks (go / no-go gate)
 
+> **Correction (2026-10-25): check C6 was tautological and its conclusion is
+> withdrawn.** C6 compared the evaluation pages against a "training" set that
+> still contained pages 1–100, so it could only report 100 % overlap. Run
+> against the pages the detector actually trains on (101–1367), only **6.2 %** of
+> evaluation lines (259/4,148) appear verbatim, and only **0.5 %** appear in the
+> OCR training text. Under the strict 5-gram grouping used for cross-validation,
+> all 100 evaluation pages are text-disjoint from the training pages.
+> `docs/detector_out_of_sample.md` §3 has the measurements and §1 the resulting
+> out-of-sample performance. Items 2 and 3 of the verdict below still hold and
+> were acted on.
+
 Date: 2026-10-13. Branch: `arena/3ca31a9a-ocr-corrector`.
 Script: `tools/analysis/step2_data_checks.py`. Output: `tools/analysis/step2_results.txt`.
 
@@ -16,15 +27,25 @@ from that version.
 **Not ready for retraining as the data stands.** Two things have to be fixed first, and
 one decision is needed:
 
-1. **The 100 evaluation pages are the training pages.** Their text is entirely in the
-   training data. They can only serve as a development set. Every evaluation number so
-   far is in-sample.
+1. ~~**The 100 evaluation pages are the training pages.**~~ **Withdrawn — see the
+   correction above.** They are held out of the detector fit and their text is
+   text-disjoint from the 1,267 training pages; 6.2 % of their lines occur
+   verbatim anywhere in the training GT. The evaluation numbers *were* in-sample
+   at the time this gate was written, because the model then in circulation had
+   been fit on all 1,367 pages.
 2. **The training rows contain no punctuation or digits, but deployment text does.**
    12.3% of the evaluation OCR tokens have punctuation or digits. The model never
    learns from them. This is the same class of problem as the punctuation bug fixed in
    step 1.
 3. **Cross-validation has to be grouped by text, not by page.** The training pages
    overlap each other heavily.
+
+   > **Update (2026-10-25):** grouped by *shared 5-grams* this does not work on
+   > this corpus — the pages are overlapping windows, so every 5-gram occurs on
+   > 10–40 pages and the `max_page_occurrences=5` rule drops exactly the linking
+   > evidence (1,095 groups, 1,074 singletons). Use `--group-by document`
+   > instead, which follows page-to-page continuation and finds 51 groups in the
+   > 1,267 training pages. See `docs/detector_out_of_sample.md` §3b.
 
 ## What the harmonized file is
 

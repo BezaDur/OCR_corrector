@@ -15,13 +15,12 @@ joblib
 lightgbm
 scikit-learn
 symspellpy==6.10.0
-# vendor/segmenter/morph_types.py raises ImportError without it, and the
-# corrector then runs with morphology silently disabled (lambda_morph cancels
-# out). It was missing from this file, which is why the failure looked like a
-# missing module rather than a missing dependency.
-pydantic
 pandas
 opencv-python
 Pillow
 fonttools
+# The vendored morphological suite (vendor/segmenter/morph_types.py) imports
+# pydantic for its typed morph records; without it the segmenter refuses to
+# import and the corrector silently runs with morphology disabled.
+pydantic
 # tesseract-ocr itself is a system package, not a pip one.

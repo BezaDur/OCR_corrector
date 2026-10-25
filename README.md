@@ -85,7 +85,7 @@ corrector it feeds, imported through `adapter.py`.
 
 ```
 4_ocr_correction/error_detection/
-├── README.md — final model main_i7 freq>=500 54k types recall 94.2% FF 0.01%
+├── README.md — the child overview; held-out numbers and their limits
 ├── detector.py — main LightGBM, default 50k types freq>=10 no SymSpell (2.9s init, 0.56ms/word, no crash)
 ├── adapter.py — for parent to import child (reuses vocab, no double load)
 ├── normalizer.py — child normalizer (lexicon keying, ሐ→ሀ etc.); NOT the same
@@ -100,7 +100,8 @@ corrector it feeds, imported through `adapter.py`.
 │   ├── harmonized_corpus_jiwer.tsv — 1367 pages 946k words
 │   └── train_LightGBM.py, train_final.py, train_sweep_report.json
 ├── scripts/ — evaluate_child.py, tune_gates.py, compare_lexicon_configs.py,
-│   probe_late_fusion.py, audit_decision.py, test_child.py
+│   probe_late_fusion.py, audit_decision.py, test_child.py,
+│   evaluate_out_of_sample.py, verify_claims.py, make_eval_corpus.py
 └── tests/
 ```
 
@@ -164,7 +165,29 @@ Tested freq filters on 1267 pages (1200 train / 67 val):
 | **main_i7 — FINAL** | **freq>=500 — 54k types** | **54,057** | 0.9242 | 94.2% | **0.01%** | 0.942 |
 | main_i7 | freq>=1000 | 32k | 0.9116 | 94.3% | 0.02% | 0.939 |
 
-**FINAL authoritative: main_i7 freq>=500 — 54,057 clean types, recall 94.2%, false_flag 0.01% (7x better than local 0.07%, 85x better than WITH conf 0.85%), score 0.942, model 3.5MB, 1267 pages, 14 feats conf-free, pass 0.10 flag 0.65**
+**These are selection numbers.** The 67 validation pages are the same pages
+that chose the dictionary filter, the round count and the gates, so "94.2 %
+recall at 0.01 % false flags" says what the search found, not what the model
+does. Scoring the shipped pickle on the 100 pages held out of the fit:
+
+| held-out measurement | value |
+|---|---:|
+| recall (flag + gray) | **92.39 %** |
+| flag-only recall | 2.71 % |
+| false flag on clean words | **0.102 %** |
+| gray on clean words | 15.77 % |
+| AUC / average precision | 0.9232 / 0.4117 |
+| calibration error (ECE) | 0.0050 |
+
+A 5-fold CV grouped by document over the 1,267 training pages agrees (91.3 % at
+0.030 % calibrated). So expect **≈ 91–92 % recall at ≈ 0.1 % false flags** — about
+10× the advertised false-flag rate. The model is also essentially an
+out-of-vocabulary detector: 98.1 % recall on OOV errors but 43.3 % on real-word
+errors, which are 10.5 % of all errors and 78 % of the misses.
+
+Full tables, the document structure of the corpus (~55 documents, not 1,367
+independent pages) and the limits: `docs/detector_out_of_sample.md`. To check
+every number yourself: `docs/verify_claims.md`.
 
 **Performance fix:** Default 50k types freq>=10 no SymSpell → 2.9s init, 0.56 ms/word, won't crash PC (before full 750k + SymSpell 10-15s 1-2GB crash)
 
@@ -190,6 +213,9 @@ print(corrector.correct_text("ሰላም በሸታ"))
 
 ## Docs
 
+- `docs/current_state.md` — verified facts: defaults, counts, timings, what is measured and what is not
+- `docs/detector_out_of_sample.md` — the detector's held-out numbers, calibration, lexicon split, limits
+- `docs/verify_claims.md` — how to re-derive every number (and test on new data) before believing it
 - `docs/components_guide.md` — plain explanation of each component (dictionary, normalizer, confusion, surface, SymSpell, KenLM, LightGBM, DetectionEngine, Adapter) with diagrams & many Amharic examples, why SymSpell OFF no quality loss (tested OFF vs ON same recall 94.5%)
 - `docs/architecture.md` — parent vs child, data flow, how parent imports child
 - `docs/project_structure.md` — directory layout, what goes where, migration steps
@@ -209,8 +235,11 @@ python -m unittest discover -s 4_ocr_correction/error_detection/tests -p 'test_*
 python -m unittest discover -s tests -p 'test_*.py'
 ```
 
-Tests: 40 OK for child, detection OFF vs ON same quality
+Counts measured on 2026-10-25: root **158 passed, 52 skipped, 2,984 subtests**;
+`4_ocr_correction/error_detection/tests/` **97 passed**. The roots of the suite are
+`tests/` for the pipeline stages and the child package's own `tests/` for the
+detector; both must pass before a change to the detector is merged.
 
 ## One-line
 
-**Parent: 1_data_preparation (4.4M tokens) → 2_training (Tesseract) → 3_training_evaluation (CER/WER) → 4_ocr_correction (main corrector + confusion + child detection via adapter) → 5_correction_evaluation. Child: error_detection self-contained (Model/main_i7_frq10.txt 737k types default, detector_lgbm_conffree.pkl FINAL 54k types freq>=500 recall 94.2% FF 0.01% BEST, LightGBM does major work 90%, SymSpell OFF gain 0 no quality loss, default 50k types no SymSpell 2.9s init no crash). Files relevant to detection inside 4_ocr_correction/error_detection/, parent files inside 4_ocr_correction/ and 3_training_evaluation/, no duplicates, single source confusion_matrix.json in Model/, parent imports child via adapter, old detection/ archived.**
+**Parent: 1_data_preparation (4.4M tokens) → 2_training (Tesseract) → 3_training_evaluation (CER/WER) → 4_ocr_correction (main corrector + confusion + child detection via adapter) → 5_correction_evaluation. Child: error_detection self-contained (Model/main_i7_frq10.txt 737k types default, detector_lgbm_conffree.pkl freq>=500 = 54,057 types, LightGBM does the work, SymSpell and KenLM gain 0, 0.48 ms/word). Held-out: recall (flag + gray) 92.4 % at 0.102 % false flags on 100 pages excluded from the fit — the old "94.2 % / 0.01 %" was selection on 67 pages. Files relevant to detection inside 4_ocr_correction/error_detection/, corpus at Evaluation/, tools in tools/.**
