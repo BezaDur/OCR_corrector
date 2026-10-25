@@ -69,6 +69,11 @@ print(v.label, round(v.suspicion, 3))         # flag 1.0
   NaN when no model is supplied), OCR confidence (the model is conf-free).
 * **Speed:** 0.48 ms/word measured here; no dictionary beyond the one file, so it
   is the part of the repo that runs offline end to end.
+* **Held-out performance:** recall (flag + gray) **92.4 %**, false flag
+  **0.10 %**, AUC 0.923, calibration ECE 0.005 on 100 pages that are held out of
+  the fit *and* text-disjoint from the training pages. The README's older
+  "94.2 % / 0.01 %" was a selection number. Details:
+  `docs/detector_out_of_sample.md`.
 
 Real verdicts on this checkout: `እና` pass 0.000 · `በሽታ` pass 0.002 ·
 **`በሸታ` gray 0.154** (attested at freq 263, so below the 500 cut) ·
@@ -145,9 +150,9 @@ the `Model/` copy is the single source.
   code: that run used options (`candidate_backend`, `trie_search`,
   `trusted_*_frequency`) that no longer exist.
 * `OCR_error_detection/Evaluation/analysis.tsv` is **stale** — the current engine
-  agrees with only 85.6 % of its stored verdicts on a 1,500-row resample — and
-  weak evidence even when fresh: its 100 pages are held out of the fit, but their
-  text is entirely in the training corpus.
+  agrees with only 85.6 % of its stored verdicts on a 1,500-row resample. Use
+  `OCR_error_detection/scripts/evaluate_out_of_sample.py` instead; it recomputes
+  every number from the corpus.
 
 Re-running Phase B on the current code is the open task; see
 `docs/two_phase_benchmark.md` for the procedure and `docs/current_state.md` §5
@@ -177,6 +182,7 @@ skipped because the vendored analyzer could not import (`pydantic`).
 | Document | What it is |
 |---|---|
 | **`docs/current_state.md`** | **verified facts: defaults, verdicts, timings, data counts, test counts, known gaps** |
+| **`docs/detector_out_of_sample.md`** | **held-out performance of the shipped detector: what the headline numbers really are** |
 | `docs/repo_layout.md` | where everything lives today, including the root shims |
 | `docs/architecture.md` | parent vs child, data flow, how the adapter wires them |
 | `docs/components_guide.md` | plain-language tour of dictionary, normalizer, confusion matrix, SymSpell, KenLM, LightGBM |
@@ -194,12 +200,12 @@ skipped because the vendored analyzer could not import (`pydantic`).
 
 1. No benchmark of the **current** corrector exists; the last one was negative
    (see above).
-2. The detector's evaluation is weak as evidence: its 100 pages are held out of
-   the fit, but their text is wholly present in the training corpus, and the
-   stored `analysis.tsv` predates the shipped model. A non-dictionary synthetic
-   set was built following `docs/new_test_set_plan.md` (in the external
-   `synthetic_eval/` workspace, git-ignored), but no detector results on it are
-   recorded in this repository.
+2. The detector is now measured out of sample (92.4 % recall / 0.10 % false
+   flags on text-disjoint pages), but only on one synthetic-scan corpus with one
+   OCR engine, and never on documents whose *words* are outside the dictionary.
+   A non-dictionary synthetic set was built following `docs/new_test_set_plan.md`
+   (in the external `synthetic_eval/` workspace, git-ignored), but no detector
+   results on it are recorded here.
 3. The corrector needs an external KenLM binary to run at all.
 4. The repository is large (~960 MB tracked, 570 MB of it evaluation PNGs) and
    still tracks some build junk (`__pycache__`, `augraphy_cache/`,

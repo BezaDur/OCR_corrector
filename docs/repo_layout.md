@@ -115,7 +115,8 @@ only by `docs/lgbm_review/build_synthetic_source.py`.
 `OCR_error_detection/` is self-contained: `detector.py`, `features.py`,
 `adapter.py`, `Model/` (model, dictionaries, confusion matrix, training corpus),
 `Evaluation/` (100 pages + `analysis.tsv`), `tests/` (56 tests), `scripts/`,
-`archive/`. Its README documents the model and the lexicon filter.
+`archive/`. Its README documents the model and the lexicon filter, and
+`scripts/evaluate_out_of_sample.py` recomputes its held-out performance (see `docs/detector_out_of_sample.md`).
 
 ---
 

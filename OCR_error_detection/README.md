@@ -114,10 +114,9 @@ Measured on the 1,267-page corpus, **1,200 train / 67 validation**:
 | main_i7 | freq ≥ 1000 | 32,402 | 0.9116 | 94.3 % | 0.02 % | 0.939 |
 
 The shipped row was chosen for the lowest false-flag rate (≈1 clean word in
-10,000) at equal recall. This is **validation inside the training corpus** (a
-67-page slice of the 1,267 production pages), not a held-out test — the text of
-the 100 dev pages is in the corpus too. Do not quote 94.2 %/0.01 % as
-out-of-sample performance.
+10,000) at equal recall. This is **selection evidence** — a 67-page slice of the
+1,267 production pages, used to choose the filter — so 94.2 %/0.01 % is a best
+case, not an expectation. The held-out measurement is 92.4 %/0.10 % (below).
 
 ---
 
@@ -138,6 +137,7 @@ out-of-sample performance.
 | `signals.py`, `scoring.py`, `confusion.py`, `normalizer.py`, `utils.py` | evidence collection, rule fallback, character tables |
 | `run_ocr.py` | thin OCR helper |
 | `scripts/audit_decision.py` | per-decision audit (also reachable as root `ocr_decision_audit.py`) |
+| `scripts/evaluate_out_of_sample.py` | held-out evaluation of the shipped model (`docs/detector_out_of_sample.md`) |
 | `tests/` | 56 tests |
 
 `main_i7_frq10.txt` also exists one directory up; it is byte-identical and only
@@ -145,21 +145,52 @@ a fallback in the loader's candidate list.
 
 ---
 
-## Evaluation status — what the stored numbers mean
+## Evaluation status — what the numbers mean
 
-`Evaluation/analysis.tsv` (62,521 rows, 62,385 of them scored: 4,267 errors,
-58,118 correct) was
-produced by an **earlier** model. The 100 pages are held out of the fit
-(`DEV_PAGES = 100` in `Model/train_LightGBM.py`), but their text is entirely
-present in the training corpus (100 % 5-gram overlap — `docs/lgbm_step2_gate.md`),
-so this measures vocabulary the model has seen, not generalisation. From the
-stored verdicts: flag recall 60.4 %, flag+gray recall 95.6 %, false-flag rate
-1.19 % on clean tokens.
+The 100 pages in `Evaluation/` are held out of the fit (`DEV_PAGES = 100` in
+`Model/train_LightGBM.py`) **and** text-disjoint from the 1,267 training pages:
+76 of them share no word 5-gram with any training page, all 100 are separate
+groups under the trainer's linking rule, and only 6.2 % of their ground-truth
+lines occur verbatim in the training text. So this is a real held-out
+evaluation, not an in-sample one.
 
-Re-running the current engine on a 1,500-row random resample agrees with those
-stored verdicts only **85.6 %** of the time, so the file is stale. For current
-behaviour, run the engine yourself; for a number that measures unseen
-vocabulary, use the synthetic set built per `docs/new_test_set_plan.md`.
+Scoring the shipped pickle on those pages with
+`python OCR_error_detection/scripts/evaluate_out_of_sample.py`:
+
+| | value |
+|---|---:|
+| rows / errors | 62,479 / 4,361 |
+| AUC / AP | 0.9232 / 0.412 |
+| **recall (flag + gray)** | **92.39 %** |
+| recall, flag only | 2.71 % |
+| **false flag on clean words** | **0.102 %** |
+| gray on clean words | 15.77 % |
+| calibration ECE | 0.0050 |
+
+Compare with the selection numbers in the table above (recall 94.2 %, false flag
+0.01 %, measured on the 67 validation pages used to choose the model): expect
+**≈ 91–92 % recall at ≈ 0.1 % false flags** on new pages of the same kind, and a
+text-grouped 5-fold CV over all 1,267 training pages agrees (91.9 % / 0.079 %).
+
+Two things the single recall number hides:
+
+* **Out-of-lexicon errors: 98.1 % caught. In-lexicon (real-word) errors: 43.3 %.**
+  The 457 real-word errors are only 10.5 % of all errors but 78 % of the words the
+  detector wrongly passes. Fixing that needs context (KenLM), not more dictionary.
+* **92 % of clean out-of-lexicon words are `gray`** — names and rare inflections.
+  That, not `flag`, is where the parent corrector spends its search budget.
+
+`Evaluation/analysis.tsv` is **stale**: it predates the shipped model, and the
+current engine agrees with only 85.6 % of its stored verdicts. Do not quote it.
+
+Full tables, per-page overlap, calibration bins and the threshold sweep:
+`docs/detector_out_of_sample.md` and `docs/out_of_sample_shipped.json`.
+Reproduce the text-grouped CV with:
+
+```bash
+python OCR_error_detection/Model/train_LightGBM.py --no-char-lm --group-by text \
+    --out /tmp/model.pkl --report /tmp/report.json       # 91.9 % / 0.079 %, ~2 min
+```
 
 ---
 

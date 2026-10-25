@@ -23,6 +23,7 @@ in one block).
 |---|---|---|
 | `OCR_error_detection` detector (model, features, verdicts) | **yes** | pip deps only |
 | `pytest OCR_error_detection/tests` | **yes** | `pytest` |
+| `scripts/evaluate_out_of_sample.py` (detector held-out evaluation) | **yes** | pip deps + the in-repo corpus |
 | `pytest tests` (repo-wide contract suite) | **yes** | `pytest` |
 | `AmharicOCRCorrector()` construction | **yes** | pip deps only |
 | `corrector.correct_text(...)` | **no** | word KenLM binary + `kenlm` |
@@ -178,26 +179,34 @@ Initialization 222 s, 55.3 tokens/worker-second. **No benchmark of HEAD exists.*
 Until one is run, the honest statement is "the last committed version of this
 corrector made OCR output worse; whether HEAD still does is unknown".
 
-### 5.2 `OCR_error_detection/Evaluation/analysis.tsv` — held out by page, not by text, and stale
+### 5.2 Detector performance — the measured out-of-sample numbers
 
-62,521 rows (4,267 error tokens, 58,118 correct). The stored verdicts imply:
-flag recall 60.4 %, flag+gray recall 95.6 %, false-flag rate 1.19 % on clean
-tokens. Two caveats:
+**Full detail: `docs/detector_out_of_sample.md`.** Summary of three independent
+estimates (the shipped pickle, a text-grouped 5-fold CV, and a retrain):
 
-* **Held out by page, not by text.** `Model/train_LightGBM.py` sets
-  `DEV_PAGES = 100` and fits on `page_0101`…`page_1367`, so these 100 pages are
-  not training rows. But their *text* is entirely present in the training corpus
-  (`docs/lgbm_step2_gate.md`: 100 % 5-gram overlap once punctuation is handled),
-  so results here are not evidence of generalisation to new vocabulary.
+| | README claim (selection) | text-grouped OOF | shipped model, 100 dev pages |
+|---|---:|---:|---:|
+| recall (flag + gray) | 94.2 % | 91.9 % | **92.4 %** |
+| flag-only recall | — | 5.6 % | 2.7 % |
+| false flag on clean | 0.01 % | 0.079 % | **0.102 %** |
+| AUC | 0.9242 | 0.9224 | 0.9232 |
+| gray on clean | — | 16.2 % | 15.8 % |
+| ECE (calibration) | — | — | 0.0050 |
 
-* **Stale.** Re-running the current engine on a 1,500-row random resample agrees
-  with the stored labels only **85.6 %** of the time (39.3 % of stored `flag`
-  rows now come out `gray`). Quote these numbers as "an older model on the dev
-  pages", not as current performance.
+The 100 dev pages are held out of the fit **and text-disjoint** from the 1,267
+training pages (76 pages share no 5-gram at all; all 100 are separate groups
+under the trainer's linking rule). Performance on the 76 fully disjoint pages is
+the same as on all 100 (recall 92.86 %, false flag 0.134 %), so the estimate is
+not flattered by overlap.
 
-In short: page-level held out, vocabulary-level seen, and produced by a previous
-model. The sweep in §5.4 is different again — it is validation inside the
-production fit.
+The split that matters for the corrector: out-of-lexicon errors are caught 98.1 %
+of the time, **real-word (in-lexicon) errors only 43.3 %** — and real-word errors
+are 78 % of the 332 words the detector passes while wrong.
+
+`OCR_error_detection/Evaluation/analysis.tsv` is **stale** and should not be
+quoted: it predates the shipped model (the current engine agrees with only 85.6 %
+of its stored verdicts on a 1,500-row resample). Its stored verdicts imply flag
+recall 60.4 %, flag+gray 95.6 %, false flag 1.19 %.
 
 ### 5.3 A held-out synthetic set exists but has no results here
 
@@ -210,11 +219,11 @@ repository.** It is the natural first target for the out-of-sample work.
 ### 5.4 The dictionary/threshold sweep (94.2 % recall, 0.01 % false flag)
 
 Measured on the 1,267 production pages (`page_0101`…`page_1367`), split
-1,200 train / 67 validation. It is the selection evidence for the shipped model,
-and the only measurement behind the "FINAL: recall 94.2 %, false flag 0.01 %"
-headline. It is **validation inside the training corpus**, not a held-out test:
-the 67 validation pages are part of the same 1,267, and the text of the 100 dev
-pages overlaps it (see §5.2).
+1,200 train / 67 validation. It is the **selection** evidence for the shipped
+model — the numbers used to pick the dictionary filter, the round count and the
+gates — and it is why the "FINAL: recall 94.2 %, false flag 0.01 %" figure should
+be read as a maximum, not an expectation. On held-out text the same model
+measures recall 92.4 % / false flag 0.10 % (§5.2).
 
 ---
 
@@ -326,6 +335,11 @@ should be re-measured rather than copied into new claims.
 
 ## 9. Change log of this file
 
+* **2026-10-25** — §5.2 replaced with measured out-of-sample numbers
+  (`docs/detector_out_of_sample.md`); §5.4 clarified that the sweep is selection
+  evidence. The earlier "the dev pages' text is inside the training corpus" claim
+  was wrong: it came from a tautological check in `docs/lgbm_step2_gate.md`,
+  which now carries a correction.
 * **2026-10-24** — created. Detector defaults, verdicts, timings, data counts,
   benchmark provenance, test counts, gaps 1–9. Same day, after this file was
   written: gaps 1–3 and 8 were fixed (vendored-segmenter path, `pydantic` in

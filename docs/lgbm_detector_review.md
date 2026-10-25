@@ -16,13 +16,15 @@ Date: 2026-10-13. Branch: `arena/3ca31a9a-ocr-corrector`.
 > * "`doc_freq` default" — fixed. Missing context is NaN, never a magic number.
 > * "Adapter bypasses the model" — fixed, as above.
 >
-> Still true, and still the important caveat: **the text of the 100 evaluation
-> pages is inside the training corpus** (100 % 5-gram overlap; the pages
-> themselves are held out via `DEV_PAGES = 100`), so §2–§3 measure seen
-> vocabulary, not generalisation; and the stored `Evaluation/analysis.tsv`
-> predates the shipped model (the current engine agrees with it on 85.6 % of a
-> resampled 1,500 words). For what is true now see
-> `docs/current_state.md` §2 and §5.2. The recommendations in §5 remain a good
+> **The "in-sample" caveat in §2–§3 no longer applies to the shipped model.** It
+> was true of the model this review examined, which had been fit on all 1,367
+> pages. The shipped model holds out 100 pages (`DEV_PAGES = 100`) and those
+> pages are text-disjoint from its training pages (76 of 100 share no 5-gram at
+> all), so §3 can now be compared against a real held-out measurement:
+> **recall 92.4 %, false flag 0.10 %, AUC 0.923, ECE 0.005** —
+> `docs/detector_out_of_sample.md`, numbers in `docs/current_state.md` §5.2.
+> The stored `Evaluation/analysis.tsv` is still stale (the current engine agrees
+> with only 85.6 % of its verdicts). The recommendations in §5 remain a good
 > checklist.
 
 > **Update.** Confidence is excluded from training (decided after this review). The
