@@ -19,6 +19,7 @@ Usage:
 """
 
 import json
+import os
 import argparse
 import unicodedata
 import collections
@@ -27,6 +28,18 @@ ETHIOPIC_BLOCK_START = 0x1200
 ETHIOPIC_BLOCK_END = 0x137F
 FAMILY_WIDTH = 8  # orders 1-7 + 1 reserved/labialized slot, per family
 
+
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python 4_ocr_correction/confusion_matrix_coverage_audit.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+CONFIG = {
+    "confusion_matrix": os.path.join(os.path.dirname(os.path.abspath(__file__)),
+            "error_detection", "Model", "confusion_matrix.json"),
+    "generate_missing": None,  # path to write a patch JSON for missing same-family pairs
+}
 
 def get_family_and_order(ch: str):
     cp = ord(ch)
@@ -120,8 +133,8 @@ def audit(confusion_matrix_path: str, generate_missing_path: str = None):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--confusion-matrix", required=True)
-    parser.add_argument("--generate-missing", default=None,
+    parser.add_argument("--confusion-matrix", default=CONFIG["confusion_matrix"])
+    parser.add_argument("--generate-missing", default=CONFIG["generate_missing"],
                          help="Optional path to write an auto-generated patch JSON "
                               "for all missing same-family order pairs")
     args = parser.parse_args()

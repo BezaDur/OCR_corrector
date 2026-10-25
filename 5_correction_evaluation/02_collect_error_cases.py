@@ -32,6 +32,23 @@ from audit_decision import DECISION_STATUSES, audit_tokens
 DATASET_DIR = Path(repo_paths.workspace("synthetic_eval"))
 
 
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python 5_correction_evaluation/02_collect_error_cases.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+CONFIG = {
+    "gt_dir": DATASET_DIR / 'ground_truth',
+    "raw_dir": DATASET_DIR / 'ocr_new_model',
+    "corrected_dir": DATASET_DIR / 'ocr_corrected',
+    "output_tsv": Path('benchmark_results/correction_decisions.tsv'),
+    "output_summary": Path('benchmark_results/correction_patterns_report.txt'),
+    "normalization": 'strict',
+    "expected_pages": None,
+    "allow_missing": False,
+}
+
 def align_three_way(gt_tokens, raw_tokens, corr_tokens):
     """Compatibility wrapper returning focused five-field event tuples.
 
@@ -46,14 +63,14 @@ def align_three_way(gt_tokens, raw_tokens, corr_tokens):
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--gt-dir', type=Path, default=DATASET_DIR / 'ground_truth')
-    parser.add_argument('--raw-dir', type=Path, default=DATASET_DIR / 'ocr_new_model')
-    parser.add_argument('--corrected-dir', type=Path, default=DATASET_DIR / 'ocr_corrected')
-    parser.add_argument('--output-tsv', type=Path, default=Path('benchmark_results/correction_decisions.tsv'))
-    parser.add_argument('--output-summary', type=Path, default=Path('benchmark_results/correction_patterns_report.txt'))
-    parser.add_argument('--normalization', choices=('strict', 'canonical'), default='strict')
-    parser.add_argument('--expected-pages', type=int)
-    parser.add_argument('--allow-missing', action='store_true', help='Skip missing pairs, reporting every skip')
+    parser.add_argument('--gt-dir', type=Path, default=CONFIG["gt_dir"])
+    parser.add_argument('--raw-dir', type=Path, default=CONFIG["raw_dir"])
+    parser.add_argument('--corrected-dir', type=Path, default=CONFIG["corrected_dir"])
+    parser.add_argument('--output-tsv', type=Path, default=CONFIG["output_tsv"])
+    parser.add_argument('--output-summary', type=Path, default=CONFIG["output_summary"])
+    parser.add_argument('--normalization', choices=('strict', 'canonical'), default=CONFIG["normalization"])
+    parser.add_argument('--expected-pages', type=int, default=CONFIG["expected_pages"])
+    parser.add_argument('--allow-missing', action='store_true', default=CONFIG["allow_missing"], help='Skip missing pairs, reporting every skip')
     return parser.parse_args(argv)
 
 

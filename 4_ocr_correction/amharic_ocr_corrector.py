@@ -1779,24 +1779,44 @@ class AmharicOCRCorrector:
         return "\n".join(res)
 
 
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python 4_ocr_correction/amharic_ocr_corrector.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+CONFIG = {
+    "kenlm": repo_paths.word_kenlm(),
+    "confusion_matrix": repo_paths.confusion_matrix(),
+    "vocab": repo_paths.main_i7_dict(),
+    "morphemes_json": None,
+    "beam_width": 4,
+    "max_optical_cost": 3.6,
+    "max_optical_cost_pairwise": None,
+    "max_reverse_sub_cost": None,
+    "reserved_pairwise_slots": 20,
+    "text": None,  # a sentence to correct and exit; None = read lines from stdin
+    "file": None,  # a text file to correct line by line
+}
+
 # --------------------------------- CLI ----------------------------------- #
 def main():
     parser = argparse.ArgumentParser(description="Amharic OCR Spelling Corrector")
-    parser.add_argument("--kenlm", required=True, help="Path to KenLM model (.arpa/.bin/.klm)")
-    parser.add_argument("--confusion-matrix", required=True, help="Path to confusion_matrix.json")
-    parser.add_argument("--vocab", required=True, help="Path to frequency dictionary/vocab file")
+    parser.add_argument("--kenlm", default=CONFIG["kenlm"], help="Path to KenLM model (.arpa/.bin/.klm)")
+    parser.add_argument("--confusion-matrix", default=CONFIG["confusion_matrix"], help="Path to confusion_matrix.json")
+    parser.add_argument("--vocab", default=CONFIG["vocab"], help="Path to frequency dictionary/vocab file")
     parser.add_argument(
         "--morphemes-json",
-        default=None,
+        default=CONFIG["morphemes_json"],
         help="Path to morphemes.json (defaults to AMHARIC_MORPHEMES_JSON env var or built-in default)",
     )
-    parser.add_argument("--beam-width", type=int, default=4)
-    parser.add_argument("--max-optical-cost", type=float, default=3.6)
-    parser.add_argument("--max-optical-cost-pairwise", type=float, default=None)
-    parser.add_argument("--max-reverse-sub-cost", type=float, default=None)
-    parser.add_argument("--reserved-pairwise-slots", type=int, default=20)
-    parser.add_argument("--text", default=None, help="Single line/sentence to correct")
-    parser.add_argument("--file", default=None, help="Path to a text file to correct, line by line")
+    parser.add_argument("--beam-width", type=int, default=CONFIG["beam_width"])
+    parser.add_argument("--max-optical-cost", type=float, default=CONFIG["max_optical_cost"])
+    parser.add_argument("--max-optical-cost-pairwise", type=float, default=CONFIG["max_optical_cost_pairwise"])
+    parser.add_argument("--max-reverse-sub-cost", type=float, default=CONFIG["max_reverse_sub_cost"])
+    parser.add_argument("--reserved-pairwise-slots", type=int, default=CONFIG["reserved_pairwise_slots"])
+    parser.add_argument("--text", default=CONFIG["text"], help="Single line/sentence to correct")
+    parser.add_argument("--file", default=CONFIG["file"], help="Path to a text file to correct, line by line")
     args = parser.parse_args()
 
     corrector = AmharicOCRCorrector(

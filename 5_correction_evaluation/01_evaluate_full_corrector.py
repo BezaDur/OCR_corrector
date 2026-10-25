@@ -69,6 +69,44 @@ MAX_DAMAGE_RATE = None
 LIMIT_PAGES = None
 
 
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python 5_correction_evaluation/01_evaluate_full_corrector.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+CONFIG = {
+    "gt_dir": GT_DIR,
+    "raw_dir": RAW_OCR_DIR,
+    "output_dir": CORRECTED_OUT_DIR,
+    "kenlm": KENLM_BIN,
+    "confusion": CONFUSION_JSON,
+    "dictionary": DICT_FILE,
+    "backend": "symspell",
+    "char_lm": None,
+    "morphemes_json": None,
+    "max_optical_cost": 4.8,
+    "anchor_margin": 3.5,
+    "max_candidates": 25,
+    "workers": 1,
+    "canonical_metrics": False,
+    "verdict_dir": None,
+    "tsv_dir": None,
+    "no_eos": False,
+    "json_report": None,
+    "expected_pages": None,
+    "limit_pages": None,
+    "max_clean_damage_rate": None,
+    "beam_width": 5,
+    "lambda_optical": 0.9,
+    "lambda_lm": 2.0,
+    "lambda_morph": 1.5,
+    "require_morphemes_json": False,
+    "symspell_distance": 1,
+    "max_lexicon_types": None,
+    "dict_min_freq": None,
+}
+
 def build_corrector():
     return AmharicOCRCorrector(
         kenlm_path=KENLM_BIN, confusion_matrix_path=CONFUSION_JSON,
@@ -277,48 +315,48 @@ def configure_from_cli():
     global USE_MP, NUM_WORKERS, CANONICAL_METRICS, JSON_REPORT, EXPECTED_PAGES, MAX_DAMAGE_RATE
     global MORPHEMES_JSON, LIMIT_PAGES, TSV_DIR, VERDICT_DIR
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--gt-dir", default=GT_DIR)
-    parser.add_argument("--raw-dir", default=RAW_OCR_DIR)
-    parser.add_argument("--output-dir", default=CORRECTED_OUT_DIR)
-    parser.add_argument("--kenlm", default=KENLM_BIN)
-    parser.add_argument("--confusion", default=CONFUSION_JSON)
-    parser.add_argument("--dictionary", default=DICT_FILE)
+    parser.add_argument("--gt-dir", default=CONFIG["gt_dir"])
+    parser.add_argument("--raw-dir", default=CONFIG["raw_dir"])
+    parser.add_argument("--output-dir", default=CONFIG["output_dir"])
+    parser.add_argument("--kenlm", default=CONFIG["kenlm"])
+    parser.add_argument("--confusion", default=CONFIG["confusion"])
+    parser.add_argument("--dictionary", default=CONFIG["dictionary"])
     parser.add_argument(
-        "--backend", choices=("symspell",), default="symspell",
+        "--backend", choices=("symspell",), default=CONFIG["backend"],
         help="Kept for compatibility. The trie backend from an earlier revision "
              "is not present at HEAD; only 'symspell' is available.",
     )
-    parser.add_argument("--char-lm", default=None,
+    parser.add_argument("--char-lm", default=CONFIG["char_lm"],
                         help="Path to the character-level KenLM model (Stage 1 signal)")
-    parser.add_argument("--morphemes-json", default=None,
+    parser.add_argument("--morphemes-json", default=CONFIG["morphemes_json"],
                         help="Path to morphemes.json for the morpheme-peel guard")
-    parser.add_argument("--max-optical-cost", type=float, default=4.8)
+    parser.add_argument("--max-optical-cost", type=float, default=CONFIG["max_optical_cost"])
     # The anchor barrier is the ONLY "do no harm" mechanism in the system, and
     # it was not tunable from the CLI. It is the direct knob on clean-token
     # damage: raising it protects more verified tokens, lowering it lets the
     # LM rewrite them. Essential for the Stage 4 gate experiment.
-    parser.add_argument("--anchor-margin", type=float, default=3.5,
+    parser.add_argument("--anchor-margin", type=float, default=CONFIG["anchor_margin"],
                         help="Score bonus for keeping a verified token "
                              "(default 3.5). Raise to reduce clean-token damage.")
-    parser.add_argument("--max-candidates", type=int, default=25)
-    parser.add_argument("--workers", type=int, default=1)
-    parser.add_argument("--canonical-metrics", action="store_true")
-    parser.add_argument("--verdict-dir", default=None,
+    parser.add_argument("--max-candidates", type=int, default=CONFIG["max_candidates"])
+    parser.add_argument("--workers", type=int, default=CONFIG["workers"])
+    parser.add_argument("--canonical-metrics", action="store_true", default=CONFIG["canonical_metrics"])
+    parser.add_argument("--verdict-dir", default=CONFIG["verdict_dir"],
                         help="Write one <page>.verdicts.jsonl per page: every Stage 1 verdict with its ground-truth label")
-    parser.add_argument("--tsv-dir", default=None,
+    parser.add_argument("--tsv-dir", default=CONFIG["tsv_dir"],
                         help="Folder of Tesseract <page>.tsv files; adds per-word confidences to Stage 1")
-    parser.add_argument("--no-eos", action="store_true")
-    parser.add_argument("--json-report")
-    parser.add_argument("--expected-pages", type=int)
-    parser.add_argument("--limit-pages", type=int, default=None,
+    parser.add_argument("--no-eos", action="store_true", default=CONFIG["no_eos"])
+    parser.add_argument("--json-report", default=CONFIG["json_report"])
+    parser.add_argument("--expected-pages", type=int, default=CONFIG["expected_pages"])
+    parser.add_argument("--limit-pages", type=int, default=CONFIG["limit_pages"],
                         help="Run only the first N pages (sorted by name) for a quick smoke test")
-    parser.add_argument("--max-clean-damage-rate", type=float,
+    parser.add_argument("--max-clean-damage-rate", type=float, default=CONFIG["max_clean_damage_rate"],
                         help="Optional upper damage-rate gate in percent; headline metric mode applies")
-    parser.add_argument("--beam-width", type=int, default=5)
-    parser.add_argument("--lambda-optical", type=float, default=0.9)
-    parser.add_argument("--lambda-lm", type=float, default=2.0)
-    parser.add_argument("--lambda-morph", type=float, default=1.5)
-    parser.add_argument("--require-morphemes-json", action="store_true",
+    parser.add_argument("--beam-width", type=int, default=CONFIG["beam_width"])
+    parser.add_argument("--lambda-optical", type=float, default=CONFIG["lambda_optical"])
+    parser.add_argument("--lambda-lm", type=float, default=CONFIG["lambda_lm"])
+    parser.add_argument("--lambda-morph", type=float, default=CONFIG["lambda_morph"])
+    parser.add_argument("--require-morphemes-json", action="store_true", default=CONFIG["require_morphemes_json"],
                         help="Fail instead of continuing with the peel guard disabled")
     # Morphology is NOT a passive feature: with a working analyzer,
     # is_known_word() accepts any *decomposable* OOV token, and verified tokens
@@ -332,7 +370,7 @@ def configure_from_cli():
     # then passed to a constructor that rejected them, so every run with them
     # died with a TypeError. One has been restored for real; the rest now fail
     # with an explanation instead of "unrecognized arguments".
-    parser.add_argument("--symspell-distance", type=int, default=1,
+    parser.add_argument("--symspell-distance", type=int, default=CONFIG["symspell_distance"],
                         dest="symspell_distance",
                         help="SymSpell max edit distance (default 1; "
                              "2+ will OOM on a large lexicon)")
@@ -350,9 +388,9 @@ def configure_from_cli():
     # tokens, the top 500k cover 96.9%, and 65% of types occur exactly once --
     # those singletons are mostly OCR noise, so capping tends to help
     # precision as well as memory.
-    parser.add_argument("--max-lexicon-types", type=int, default=None,
+    parser.add_argument("--max-lexicon-types", type=int, default=CONFIG["max_lexicon_types"],
                         help="Keep only the N most frequent dictionary types")
-    parser.add_argument("--dict-min-freq", type=int, default=None,
+    parser.add_argument("--dict-min-freq", type=int, default=CONFIG["dict_min_freq"],
                         help="Drop dictionary types seen fewer than N times")
     parser.add_argument(
         "--no-morphology", dest="use_morphology", action="store_false", default=None,

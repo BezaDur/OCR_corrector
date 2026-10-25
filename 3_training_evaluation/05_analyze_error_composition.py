@@ -28,15 +28,35 @@ import os
 import random
 import sys
 
-sys.path.insert(0, "/home/user/tess")
+_REPO = _Path(__file__).resolve().parents[1]
+_sys.path.insert(0, str(_REPO / "tools"))
+import repo_paths  # noqa: E402
+import stage_paths  # noqa: E402
+stage_paths.register(str(_REPO))
 
-CONFUSION = "/home/user/tess/confusion_matrix.json"
-CORPUS = "/home/user/tess/amh_final_training_text.txt"
+CONFUSION = repo_paths.confusion_matrix()
+CORPUS = os.path.join(str(_REPO), "1_data_preparation", "data",
+                      "amh_final_training_text.txt")
 
 
 # --------------------------------------------------------------------------- #
 # synthetic corruption driven by the real confusion matrix
 # --------------------------------------------------------------------------- #
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python 3_training_evaluation/05_analyze_error_composition.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+CONFIG = {
+    "pairs_gt": None,  # set both pairs_* to analyse real GT/OCR dirs
+    "pairs_ocr": None,
+    "n_chars": 4_000_000,
+    "target_cer": 34.4,
+    "target_wer": 36.86,
+    "seed": 7,
+}
+
 class Channel:
     """P(observed | true) built from confusion_matrix.json (cost = -ln P)."""
 
@@ -204,14 +224,14 @@ def analyse(pairs, lexicon, label):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--pairs-gt", help="dir of *.gt.txt")
-    ap.add_argument("--pairs-ocr", help="dir of *.ocr.txt")
-    ap.add_argument("--n-chars", type=int, default=4_000_000)
-    ap.add_argument("--target-cer", type=float, default=34.4,
+    ap.add_argument("--pairs-gt", default=CONFIG["pairs_gt"], help="dir of *.gt.txt")
+    ap.add_argument("--pairs-ocr", default=CONFIG["pairs_ocr"], help="dir of *.ocr.txt")
+    ap.add_argument("--n-chars", type=int, default=CONFIG["n_chars"])
+    ap.add_argument("--target-cer", type=float, default=CONFIG["target_cer"],
                     help="calibrate synthetic corruption to this CER")
-    ap.add_argument("--target-wer", type=float, default=36.86,
+    ap.add_argument("--target-wer", type=float, default=CONFIG["target_wer"],
                     help="...and to this WER")
-    ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--seed", type=int, default=CONFIG["seed"])
     args = ap.parse_args()
 
     rng = random.Random(args.seed)
@@ -291,8 +311,7 @@ def corrupt_pairs(ch, lines, rng, rate, ins_rate, burst=0.0):
 def load_real_pairs(gt_dir, ocr_dir):
     """Align GT and OCR at token level using the same DP as step 03."""
     import glob
-    sys.path.insert(0, "/home/user/tess")
-    from ocr_metrics import edit_distance  # noqa
+    from ocr_metrics import edit_distance  # noqa  (stage_paths registers stage 3)
     pairs = []
     for gt_path in sorted(glob.glob(os.path.join(gt_dir, "*.gt.txt"))):
         base = os.path.basename(gt_path).replace(".gt.txt", "")

@@ -54,6 +54,24 @@ PUNCT_RE = re.compile(r"[^\w\s]|\d")
 ETHIOPIC_PUNCT_RE = re.compile(r"[፡።፣፤፥፦፧፨]")
 
 
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python 4_ocr_correction/error_detection/scripts/evaluate_child.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+CONFIG = {
+    "max_pages": 0,
+    "verbose": False,
+    "model": None,
+    "lexicon": None,
+    "confidence_policy": False,
+    "policy_demote_pass_conf": None,
+    "min_freq": None,
+    "min_recall": 80.0,
+    "max_false_flag": 2.0,
+}
+
 def clean_token(tok):
     tok = PUNCT_RE.sub("", tok or "").strip()
     return ETHIOPIC_PUNCT_RE.sub("", tok).strip()
@@ -197,33 +215,33 @@ def print_stats(stats):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--max-pages", type=int, default=0,
+    ap.add_argument("--max-pages", type=int, default=CONFIG["max_pages"],
                     help="evaluate only the first N pages (default: all)")
-    ap.add_argument("--verbose", action="store_true", help="per-page progress")
-    ap.add_argument("--model", default=None,
+    ap.add_argument("--verbose", action="store_true", default=CONFIG["verbose"], help="per-page progress")
+    ap.add_argument("--model", default=CONFIG["model"],
                     help="LightGBM payload to serve (default: auto-resolve, "
                          "which picks Model/detector_lgbm_conffree.pkl)")
-    ap.add_argument("--lexicon", default=None,
+    ap.add_argument("--lexicon", default=CONFIG["lexicon"],
                     help="lexicon for --model. A model trained on local_lexicon "
                          "must be served with it, or in_lexicon / "
                          "log_corpus_freq come from the wrong vocabulary")
-    ap.add_argument("--confidence-policy", action="store_true",
+    ap.add_argument("--confidence-policy", action="store_true", default=CONFIG["confidence_policy"],
                     help="apply the post-model confidence policy layer "
                          "(ConfidencePolicy.tuned(): promote gray->pass at "
                          "conf>=0.82, widen gray->flag at conf<0.65 & s>=0.35). "
                          "Off by default so this script keeps reproducing the "
                          "baseline the other numbers in this repo were measured at.")
-    ap.add_argument("--policy-demote-pass-conf", type=float, default=None,
+    ap.add_argument("--policy-demote-pass-conf", type=float, default=CONFIG["policy_demote_pass_conf"],
                     help="also enable policy rule C (pass->gray below this "
                          "confidence). Requires --confidence-policy. Disabled by "
                          "default: measured at 5.8%% marginal precision, it sends "
                          "~847 extra clean words to the corrector per 100 pages "
                          "and lowers attention precision.")
-    ap.add_argument("--min-freq", type=int, default=None,
+    ap.add_argument("--min-freq", type=int, default=CONFIG["min_freq"],
                     help="lexicon frequency filter to apply to --lexicon")
-    ap.add_argument("--min-recall", type=float, default=80.0,
+    ap.add_argument("--min-recall", type=float, default=CONFIG["min_recall"],
                     help="exit 1 if error recall (flag+gray) is below this %%")
-    ap.add_argument("--max-false-flag", type=float, default=2.0,
+    ap.add_argument("--max-false-flag", type=float, default=CONFIG["max_false_flag"],
                     help="exit 1 if the false-flag rate on clean words exceeds this %%")
     args = ap.parse_args(argv)
 

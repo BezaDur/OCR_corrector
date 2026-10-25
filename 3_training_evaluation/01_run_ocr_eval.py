@@ -39,6 +39,19 @@ NUM_WORKERS = 4
 # -------------------------------------------------
 
 
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python 3_training_evaluation/01_run_ocr_eval.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+CONFIG = {
+    "dataset_dir": DATASET_DIR,
+    "images_dir": IMAGES_DIR,
+    "out_dir": OCR_OUT_DIR,
+    "verbose": False,
+}
+
 def run_tesseract_on_page(image_path):
     """
     Executes Tesseract CLI on a single image and writes the OCR result to disk.
@@ -81,11 +94,11 @@ def _parse_args(argv=None):
     import argparse
     ap = argparse.ArgumentParser(description="Run Tesseract over the evaluation images and collect per-word output.",
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--dataset-dir", default=DATASET_DIR,
+    ap.add_argument("--dataset-dir", default=CONFIG["dataset_dir"],
                     help="synthetic evaluation set (images/ + ground_truth/)")
-    ap.add_argument("--images-dir", default=IMAGES_DIR, help="page images")
-    ap.add_argument("--out-dir", default=OCR_OUT_DIR, help="OCR output directory")
-    ap.add_argument("-v", "--verbose", action="store_true", help="more output")
+    ap.add_argument("--images-dir", default=CONFIG["images_dir"], help="page images")
+    ap.add_argument("--out-dir", default=CONFIG["out_dir"], help="OCR output directory")
+    ap.add_argument("-v", "--verbose", action="store_true", default=CONFIG["verbose"], help="more output")
     return ap.parse_args(argv)
 
 

@@ -26,6 +26,22 @@ for _p in (_ROOT, _CHILD):
         sys.path.insert(0, _p)
 
 
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python 4_ocr_correction/error_detection/scripts/probe_late_fusion.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+CONFIG = {
+    "model": None,
+    "lexicon": None,
+    "min_freq": None,
+    "max_pages": 0,
+    "dump": None,
+    "load": None,
+    "json_report": None,
+}
+
 def load_ev():
     path = os.path.join(_HERE, "evaluate_child.py")
     spec = importlib.util.spec_from_file_location("ev_probe", path)
@@ -135,13 +151,13 @@ def rule_stats(rows, name, predicate, frm, to):
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default=None)
-    ap.add_argument("--lexicon", default=None)
-    ap.add_argument("--min-freq", type=int, default=None)
-    ap.add_argument("--max-pages", type=int, default=0)
-    ap.add_argument("--dump", default=None)
-    ap.add_argument("--load", default=None)
-    ap.add_argument("--json-report", default=None)
+    ap.add_argument("--model", default=CONFIG["model"])
+    ap.add_argument("--lexicon", default=CONFIG["lexicon"])
+    ap.add_argument("--min-freq", type=int, default=CONFIG["min_freq"])
+    ap.add_argument("--max-pages", type=int, default=CONFIG["max_pages"])
+    ap.add_argument("--dump", default=CONFIG["dump"])
+    ap.add_argument("--load", default=CONFIG["load"])
+    ap.add_argument("--json-report", default=CONFIG["json_report"])
     args = ap.parse_args(argv)
 
     if args.load and os.path.exists(args.load):

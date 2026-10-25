@@ -76,6 +76,22 @@ TIERS = (
 )
 
 
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python 4_ocr_correction/error_detection/scripts/evaluate_out_of_sample.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+CONFIG = {
+    "corpus": CORPUS,
+    "model": SHIPPED_MODEL,
+    "dev_pages": 100,
+    "report": None,
+    "limit": None,
+    "eval_all": False,
+    "quiet": False,
+}
+
 def clean(text: str) -> str:
     """Strip punctuation and digits, collapse whitespace (same rule as the trainer)."""
     return " ".join(w for w in (PUNCT_RE.sub("", t).strip() for t in text.split()) if w)
@@ -209,15 +225,15 @@ def by_lexicon_state(sub: pd.DataFrame, pass_below: float, flag_above: float) ->
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--corpus", default=CORPUS)
-    ap.add_argument("--model", default=SHIPPED_MODEL)
-    ap.add_argument("--dev-pages", type=int, default=100,
+    ap.add_argument("--corpus", default=CONFIG["corpus"])
+    ap.add_argument("--model", default=CONFIG["model"])
+    ap.add_argument("--dev-pages", type=int, default=CONFIG["dev_pages"],
                     help="page_0001..page_N are the held-out development pages")
-    ap.add_argument("--report", default=None, help="write the JSON report here")
-    ap.add_argument("--limit", type=int, default=None, help="evaluate a prefix only (smoke)")
-    ap.add_argument("--eval-all", action="store_true",
+    ap.add_argument("--report", default=CONFIG["report"], help="write the JSON report here")
+    ap.add_argument("--limit", type=int, default=CONFIG["limit"], help="evaluate a prefix only (smoke)")
+    ap.add_argument("--eval-all", action="store_true", default=CONFIG["eval_all"],
                     help="score every row (a new corpus; no train/dev split)")
-    ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--quiet", action="store_true", default=CONFIG["quiet"])
     args = ap.parse_args(argv)
 
     def say(*a):

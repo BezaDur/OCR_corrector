@@ -38,17 +38,31 @@ import train_LightGBM as trainer  # noqa: E402  (same folder)
 DEFAULT_OUT = os.path.join(_HERE, "detector_lgbm_final.pkl")
 
 
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python 4_ocr_correction/error_detection/Model/train_final.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+CONFIG = {
+    "out": DEFAULT_OUT,
+    "no_save": False,
+    "sweep": False,
+    "no_char_lm": False,
+    "quick": False,
+}
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Train the README's FINAL detector.")
-    ap.add_argument("--out", default=DEFAULT_OUT,
+    ap.add_argument("--out", default=CONFIG["out"],
                     help="model output path (default: Model/detector_lgbm_final.pkl)")
-    ap.add_argument("--no-save", action="store_true",
+    ap.add_argument("--no-save", action="store_true", default=CONFIG["no_save"],
                     help="train and report, but write no model into the repository")
-    ap.add_argument("--sweep", action="store_true",
+    ap.add_argument("--sweep", action="store_true", default=CONFIG["sweep"],
                     help="reproduce the README's dictionary comparison table instead")
-    ap.add_argument("--no-char-lm", action="store_true",
+    ap.add_argument("--no-char-lm", action="store_true", default=CONFIG["no_char_lm"],
                     help="train without the character KenLM (the README's model has gain 0 for it)")
-    ap.add_argument("--quick", action="store_true", help="smoke run")
+    ap.add_argument("--quick", action="store_true", default=CONFIG["quick"], help="smoke run")
     args, passthrough = ap.parse_known_args(argv)
 
     if args.no_save:

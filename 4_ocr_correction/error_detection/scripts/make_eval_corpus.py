@@ -89,6 +89,23 @@ COLUMNS = ["page", "ocr_word", "gt_word", "is_error", "match_type",
 CONF_PLACEHOLDER = 75.0   # the constant the shipped corpus carries
 
 
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python 4_ocr_correction/error_detection/scripts/make_eval_corpus.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+CONFIG = {
+    "eval_dir": os.path.join(_ROOT, "Evaluation"),  # folder with GroundTruth/ + OCRed/
+    "out": None,  # set a path to write the corpus TSV
+    "report": None,
+    "reference": CORPUS,
+    "reference_dev_pages": 100,
+    "ngram": 5,
+    "no_check": False,
+    "quiet": False,
+}
+
 def tokens(text: str) -> list[str]:
     """Whitespace split, punctuation/digits stripped, empties dropped."""
     return [c for c in (PUNCT_RE.sub("", w).strip() for w in text.split()) if c]
@@ -260,17 +277,17 @@ def novelty(df: pd.DataFrame, reference: str = CORPUS, n: int = 5,
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--eval-dir", required=True,
+    ap.add_argument("--eval-dir", default=CONFIG["eval_dir"],
                     help="folder with GroundTruth/*.gt.txt and OCRed/*.ocr.txt")
-    ap.add_argument("--out", default=None, help="write the corpus TSV here")
-    ap.add_argument("--report", default=None, help="write build + novelty JSON here")
-    ap.add_argument("--reference", default=CORPUS,
+    ap.add_argument("--out", default=CONFIG["out"], help="write the corpus TSV here")
+    ap.add_argument("--report", default=CONFIG["report"], help="write build + novelty JSON here")
+    ap.add_argument("--reference", default=CONFIG["reference"],
                     help="corpus to measure novelty against (default: the shipped one)")
-    ap.add_argument("--reference-dev-pages", type=int, default=100,
+    ap.add_argument("--reference-dev-pages", type=int, default=CONFIG["reference_dev_pages"],
                     help="pages of the reference corpus to treat as training (default 100)")
-    ap.add_argument("--ngram", type=int, default=5)
-    ap.add_argument("--no-check", action="store_true", help="skip the novelty check")
-    ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--ngram", type=int, default=CONFIG["ngram"])
+    ap.add_argument("--no-check", action="store_true", default=CONFIG["no_check"], help="skip the novelty check")
+    ap.add_argument("--quiet", action="store_true", default=CONFIG["quiet"])
     args = ap.parse_args(argv)
 
     df, info = build(args.eval_dir, quiet=args.quiet)

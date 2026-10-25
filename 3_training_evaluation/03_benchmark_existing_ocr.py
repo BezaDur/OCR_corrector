@@ -95,6 +95,21 @@ PROGRESS_EVERY = 25
 _FAST = None
 
 
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python 3_training_evaluation/03_benchmark_existing_ocr.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+CONFIG = {
+    "gt_dir": GT_DIR,
+    "ocr": [],  # explicit NAME=DIR pairs; empty = use compare_all
+    "compare_all": True,  # the usual case: score every OCR dir next to ground_truth
+    "dataset_dir": DATASET_DIR,
+    "limit": None,  # first N pages only
+    "workers": NUM_WORKERS,
+}
+
 def _edit_distance_py(a, b):
     """Unit-cost Levenshtein, linear memory (same algorithm as ocr_metrics)."""
     if a == b:
@@ -219,15 +234,17 @@ def discover_ocr_dirs(dataset_dir, gt_dir):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--gt-dir", default=GT_DIR)
+    ap.add_argument("--gt-dir", default=CONFIG["gt_dir"])
     ap.add_argument("--ocr", action="append", default=[], metavar="NAME=DIR")
-    ap.add_argument("--compare-all", action="store_true",
+    ap.add_argument("--compare-all", action="store_true", default=CONFIG["compare_all"],
                     help="score every dir next to ground_truth that has "
                          "*.ocr.txt (recommended)")
-    ap.add_argument("--dataset-dir", default=DATASET_DIR)
-    ap.add_argument("--limit", type=int)
-    ap.add_argument("--workers", type=int, default=NUM_WORKERS)
+    ap.add_argument("--dataset-dir", default=CONFIG["dataset_dir"])
+    ap.add_argument("--limit", type=int, default=CONFIG["limit"])
+    ap.add_argument("--workers", type=int, default=CONFIG["workers"])
     args = ap.parse_args()
+    if not args.ocr:
+        args.ocr = list(CONFIG["ocr"])  # in-file RUN SETTINGS
 
     specs = []
     for s in args.ocr:

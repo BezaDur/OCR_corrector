@@ -45,6 +45,18 @@ ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 from error_detection.normalizer import AmharicNormalizer  # noqa: E402
 from error_detection.features import clean_surface  # noqa: E402
 
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python tools/analysis/check_dictionary_coverage.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+CONFIG = {
+    "dict": os.path.join(_REPO, "4_ocr_correction", "error_detection", "Model",
+            "main_i7_frq10.txt"),
+    "set": EVAL,  # folder with GroundTruth/ and OCRed/
+}
+
 def load_vocab(path, norm):
     vocab = {}
     with open(path, "r", encoding="utf-8", errors="ignore") as f:
@@ -64,8 +76,8 @@ def tokens(folder, pattern):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--dict", required=True)
-    ap.add_argument("--set", required=True, help="folder with GroundTruth/ and OCRed/")
+    ap.add_argument("--dict", default=CONFIG["dict"])
+    ap.add_argument("--set", default=CONFIG["set"], help="folder with GroundTruth/ and OCRed/")
     args = ap.parse_args()
 
     normalizer = AmharicNormalizer()

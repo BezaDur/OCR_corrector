@@ -4,6 +4,7 @@ Forensic Diagnostic Tracer: Inspects candidate generation and decoding gates
 for any given (observed_ocr_token -> expected_word) pair in context.
 
 Usage:
+  python trace_candidate.py            # uses CONFIG below (edit the words there)
   python trace_candidate.py <observed_ocr_token> <expected_word> [optional_context_sentence]
 """
 
@@ -35,6 +36,19 @@ from amharic_ocr_corrector import AmharicOCRCorrector, EthiopicPunctuationManage
 KENLM_BIN = repo_paths.word_kenlm()
 CONFUSION_JSON = repo_paths.confusion_matrix()
 DICT_FILE = repo_paths.main_i7_dict()
+
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python 4_ocr_correction/trace_candidate.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+CONFIG = {
+    "ocr_token": "ፕርጀከት",
+    "expected_word": "ፕሮጀክት",
+    "context_sentence": "ትልቁ ፕርጀከት ነው",
+}
+
 
 
 def get_sub_cost(corrector, true_ch, obs_ch):
@@ -318,14 +332,11 @@ def trace_pair(corrector, ocr_token, expected, context_sentence=None):
 
 
 def main():
-    if len(sys.argv) < 3:
-        print("Usage: python trace_candidate.py <ocr_token> <expected_word> [optional_sentence]")
-        print("Example: python trace_candidate.py ፕርጀከት ፕሮጀክት 'ትልቁ ፕርጀከት ነው'")
-        return
-
-    ocr_tok = sys.argv[1]
-    expected_word = sys.argv[2]
-    ctx = sys.argv[3] if len(sys.argv) > 3 else None
+    # No arguments needed: anything not given on the command line falls back
+    # to CONFIG above (positional args, if given, still override it).
+    ocr_tok = sys.argv[1] if len(sys.argv) > 1 else CONFIG["ocr_token"]
+    expected_word = sys.argv[2] if len(sys.argv) > 2 else CONFIG["expected_word"]
+    ctx = sys.argv[3] if len(sys.argv) > 3 else CONFIG["context_sentence"]
 
     corrector = AmharicOCRCorrector(
         kenlm_path=KENLM_BIN,

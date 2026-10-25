@@ -81,6 +81,20 @@ FONTS_WHITELIST = [
 # -------------------------------------------------
 
 
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python 1_data_preparation/05_generate_training_boxes.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+CONFIG = {
+    "fonts_dir": FONTS_DIR,
+    "training_text": TRAINING_TEXT,
+    "out_dir": OUTPUT_DIR,
+    "lines": TARGET_LINE_COUNT,
+    "verbose": False,
+}
+
 def sanitize_tag(text):
     """Sanitizes strings to contain strictly letters, numbers, and underscores."""
     t = str(text).replace(".", "_").replace("-", "neg")
@@ -176,13 +190,13 @@ def _parse_args(argv=None):
     import argparse
     ap = argparse.ArgumentParser(description="Generate Tesseract training boxes + images from the final training text.",
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--fonts-dir", default=FONTS_DIR, help="font directory")
-    ap.add_argument("--training-text", default=TRAINING_TEXT,
+    ap.add_argument("--fonts-dir", default=CONFIG["fonts_dir"], help="font directory")
+    ap.add_argument("--training-text", default=CONFIG["training_text"],
                     help="final training text (one line per training line)")
-    ap.add_argument("--out-dir", default=OUTPUT_DIR, help="box/gt output directory")
-    ap.add_argument("--lines", type=int, default=TARGET_LINE_COUNT,
+    ap.add_argument("--out-dir", default=CONFIG["out_dir"], help="box/gt output directory")
+    ap.add_argument("--lines", type=int, default=CONFIG["lines"],
                     help="how many training lines to render (default %(default)s)")
-    ap.add_argument("-v", "--verbose", action="store_true", help="more output")
+    ap.add_argument("-v", "--verbose", action="store_true", default=CONFIG["verbose"], help="more output")
     return ap.parse_args(argv)
 
 

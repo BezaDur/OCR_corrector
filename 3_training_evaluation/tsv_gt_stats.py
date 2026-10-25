@@ -15,6 +15,21 @@ import os
 from tsv_gt import annotate_rows
 
 
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python 3_training_evaluation/tsv_gt_stats.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+CONFIG = {
+    "tsv_dir": os.path.join(os.environ.get("TESSERACT_WORKSPACE", "/media/des/Tess/Tesseract2"),
+            "synthetic_eval", "tsv"),  # folder of <page>.tsv files
+    "gt_dir": os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "Evaluation", "GroundTruth"),
+    "low": 50.0,
+    "high": 80.0,
+}
+
 def collect(tsv_dir: str, gt_dir: str):
     words = []  # (page, conf, status)
     pages = 0
@@ -37,10 +52,10 @@ def collect(tsv_dir: str, gt_dir: str):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("tsv_dir")
-    ap.add_argument("gt_dir")
-    ap.add_argument("--low", type=float, default=50)
-    ap.add_argument("--high", type=float, default=80)
+    ap.add_argument("tsv_dir", nargs="?", default=CONFIG["tsv_dir"])
+    ap.add_argument("gt_dir", nargs="?", default=CONFIG["gt_dir"])
+    ap.add_argument("--low", type=float, default=CONFIG["low"])
+    ap.add_argument("--high", type=float, default=CONFIG["high"])
     a = ap.parse_args()
     words, pages = collect(a.tsv_dir, a.gt_dir)
     clean = [c for _, c, s in words if s == "clean"]

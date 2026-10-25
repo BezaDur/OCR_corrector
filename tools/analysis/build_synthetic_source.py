@@ -50,6 +50,20 @@ CORPUS_FILES = [
 TRAIN_TSV = os.path.join(DETECTOR, "Model", "harmonized_corpus_jiwer.tsv")
 EVAL_GT = os.path.join(EVAL, "GroundTruth")
 
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python tools/analysis/build_synthetic_source.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+CONFIG = {
+    "source": os.path.join(DATA, "telegram_c4.txt"),
+    "out": "synthetic_eval",
+    "pages": 100,
+    "lines_per_page": 35,
+    "seed": 7,
+}
+
 def clean(text):
     return " ".join(w for w in (PUNCT.sub("", t).strip() for t in text.split()) if w)
 
@@ -82,11 +96,11 @@ def corpus_grams():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--source", required=True)
-    ap.add_argument("--out", required=True)
-    ap.add_argument("--pages", type=int, default=100)
-    ap.add_argument("--lines-per-page", type=int, default=35)
-    ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--source", default=CONFIG["source"])
+    ap.add_argument("--out", default=CONFIG["out"])
+    ap.add_argument("--pages", type=int, default=CONFIG["pages"])
+    ap.add_argument("--lines-per-page", type=int, default=CONFIG["lines_per_page"])
+    ap.add_argument("--seed", type=int, default=CONFIG["seed"])
     args = ap.parse_args()
 
     with open(args.source, encoding="utf-8", errors="ignore") as f:

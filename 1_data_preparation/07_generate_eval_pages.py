@@ -85,6 +85,20 @@ FONT_OBJ_CACHE = {}
 # -------------------------------------------------
 
 
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python 1_data_preparation/07_generate_eval_pages.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+CONFIG = {
+    "fonts_dir": FONTS_DIR,
+    "gt_source": GT_SOURCE_FILE,
+    "out_dir": OUTPUT_DIR,
+    "pages": NUM_PAGES_TO_GENERATE,
+    "verbose": False,
+}
+
 def get_font_codepoints(font_path):
     if font_path not in FONT_CMAP_CACHE:
         try:
@@ -273,15 +287,15 @@ def _parse_args(argv=None):
     import argparse
     ap = argparse.ArgumentParser(description="Generate synthetic evaluation pages (fonts → degraded page images + ground truth).",
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--fonts-dir", default=FONTS_DIR,
+    ap.add_argument("--fonts-dir", default=CONFIG["fonts_dir"],
                     help="directory with the Ethiopic fonts")
-    ap.add_argument("--gt-source", default=GT_SOURCE_FILE,
+    ap.add_argument("--gt-source", default=CONFIG["gt_source"],
                     help="merged ground-truth text to draw paragraphs from")
-    ap.add_argument("--out-dir", default=OUTPUT_DIR,
+    ap.add_argument("--out-dir", default=CONFIG["out_dir"],
                     help="where to write the pages + ground truth")
-    ap.add_argument("--pages", type=int, default=NUM_PAGES_TO_GENERATE,
+    ap.add_argument("--pages", type=int, default=CONFIG["pages"],
                     help="how many pages to generate (default %(default)s)")
-    ap.add_argument("-v", "--verbose", action="store_true", help="more output")
+    ap.add_argument("-v", "--verbose", action="store_true", default=CONFIG["verbose"], help="more output")
     return ap.parse_args(argv)
 
 

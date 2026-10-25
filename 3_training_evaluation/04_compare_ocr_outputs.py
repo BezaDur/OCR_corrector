@@ -32,6 +32,20 @@ import os
 import sys
 
 
+# ============================================================================
+# RUN SETTINGS — edit these values, then run this script with NO arguments:
+#     python 3_training_evaluation/04_compare_ocr_outputs.py
+# Every value is the default for the CLI flag of the same name (--kebab-case);
+# passing the flag still overrides it, but you never need to. See HOW_TO_RUN.md.
+# ============================================================================
+_WS = os.environ.get("TESSERACT_WORKSPACE", "/media/des/Tess/Tesseract2")
+CONFIG = {
+    "gt": _WS + "/synthetic_eval/ground_truth",
+    "ocr": ["pred=" + _WS + "/synthetic_eval/ocr_pred",
+            "new=" + _WS + "/synthetic_eval/ocr_new_model"],
+    "limit": None,  # first N pages only
+}
+
 def edit_distance(a, b):
     """Levenshtein distance with O(min(len)) memory."""
     if a == b:
@@ -91,15 +105,17 @@ def evaluate(gt_dir, ocr_dir, limit=None):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--gt", required=True)
+    ap.add_argument("--gt", default=CONFIG["gt"])
     ap.add_argument("--ocr", action="append", default=[],
                     metavar="NAME=DIR",
                     help="repeatable: --ocr pred=/path/to/ocr_pred")
-    ap.add_argument("--limit", type=int, help="only first N pages (fast check)")
+    ap.add_argument("--limit", type=int, default=CONFIG["limit"], help="only first N pages (fast check)")
     args = ap.parse_args()
 
     if not args.ocr:
-        raise SystemExit("give at least one --ocr NAME=DIR")
+        args.ocr = list(CONFIG["ocr"])  # in-file RUN SETTINGS
+    if not args.ocr:
+        raise SystemExit("give at least one --ocr NAME=DIR (or set CONFIG['ocr'])")
 
     rows = []
     for spec in args.ocr:
